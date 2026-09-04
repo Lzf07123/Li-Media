@@ -1,0 +1,3 @@
+[submodule "packages/li-design"]
+	path = packages/li-design
+	url = https://github.com/Lzf07123/Li-Design.git

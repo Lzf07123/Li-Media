@@ -1,0 +1,1704 @@
+/* =============================================================
+   Li& 系列 · 品牌令牌骨架（Tailwind CSS 4）· V1.3 海玻璃全量版
+
+   用法（详见同目录 REUSABLE-BRAND-SCHEME.md §4.2）：
+   ⚠️ 本模板仅首次设计时复制使用，落地后以项目内文件为准。
+   1. 复制本文件到新项目 frontend/src/index.css（或项目实际样式文件）
+   2. 全局替换 limedia 为项目技术标识（如 lipass / chat / liblog）
+   3. 按槽位表 7–12、16、21–22 填主色、中性色、语义色、强调色（明暗两套）
+   4. 组件一律引用语义类（bg-primary 等），禁止硬编码 hex
+
+   V1.3 变更（2026-08-20，全家族实现总览见 PROJECTS-IMPLEMENTATION-INDEX.md）：
+   - 浅色语义色采用 AA 调校值（muted #64736C / success #2A7C52 /
+     warning #9A5C05 / destructive #C43737，Li&Chat + Li&Blog 已验证）
+   - 新增深色软底实色粉彩令牌（*-soft-solid / *-soft-fg，带文字组件必用）
+   - 新增按钮扫光（--*-btn-sweep）与极光令牌（--*-aurora-1..4）
+   - 补全科技光效层 CSS（网格/光束/光点 + 关键帧）与极光层 CSS
+   - 补全组件：card-signature / card-halo / brand-halo / flow-rule /
+     btn-ripple / icon-btn / status-dot / notice / toast / modal /
+     table-shell / scroll-tabs / blur-unit（全部来自已验证项目实现）
+
+   铁律：
+   - 技术实现栈一致（V1.5.2）：本模板为 Tailwind CSS 4 结构；项目必须沿用
+     同一技术栈实例化（@theme 语义别名 + 与参考实现相同的 utility class），
+     视觉效果必须像素级一致（一模一样的效果），禁止手写 CSS 近似。
+     零依赖项目变体按 REUSABLE-BRAND-SCHEME.md 附录 F 等价实现对照表执行。
+   - 全淡色口径：无粉色系、无大面积重色；深色 = 雾灰中间调不压黑
+   - 主按钮用半透明单色着色 + 细描边 + ::after 扫光，不用多色渐变色块
+   - 阴影透明度总和 < 0.1；动效只动 transform/opacity/background-position
+   - 每个 animation 必须有对应 @keyframes（科技光效层尤其注意）
+   - 尊重 prefers-reduced-motion；移动端减量省电
+   - 关键帧名可加项目前缀防碰撞（如 --chat- 对应 chat-signature-border）
+============================================================= */
+
+@import "tailwindcss";
+
+/* 基于 class 的深色模式（html.dark） */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* 字体：不加载远程字体，优先本机，中文回退 PingFang SC / 微软雅黑 */
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+
+  /* 语义别名：组件只引用这一层，值由 :root / .dark 提供 */
+  --color-background: var(--limedia-bg);
+  --color-surface: var(--limedia-surface);
+  --color-surface-2: var(--limedia-surface-2);
+  --color-foreground: var(--limedia-fg);
+  --color-muted: var(--limedia-muted);
+  --color-border: var(--limedia-border);
+
+  --color-primary: var(--limedia-primary);
+  --color-primary-hover: var(--limedia-primary-hover);
+  --color-primary-soft: var(--limedia-primary-soft);
+  --color-primary-foreground: var(--limedia-primary-fg);
+
+  --color-secondary: var(--limedia-secondary);
+  --color-secondary-soft: var(--limedia-secondary-soft);
+
+  --color-success: var(--limedia-success);
+  --color-success-soft: var(--limedia-success-soft);
+  --color-warning: var(--limedia-warning);
+  --color-warning-soft: var(--limedia-warning-soft);
+  --color-destructive: var(--limedia-destructive);
+  --color-destructive-soft: var(--limedia-destructive-soft);
+  --color-destructive-foreground: var(--limedia-destructive-fg);
+
+  --color-accent-ice: var(--limedia-accent-ice);
+  --color-accent-ice-soft: var(--limedia-accent-ice-soft);
+  --color-accent-aqua: var(--limedia-accent-aqua);
+  --color-accent-aqua-soft: var(--limedia-accent-aqua-soft);
+  --color-accent-lilac: var(--limedia-accent-lilac);
+  --color-accent-lilac-soft: var(--limedia-accent-lilac-soft);
+  --color-accent-sage: var(--limedia-accent-sage);
+  --color-accent-sage-soft: var(--limedia-accent-sage-soft);
+  --color-accent-mint: var(--limedia-accent-mint);
+  --color-accent-mint-soft: var(--limedia-accent-mint-soft);
+  --color-accent-sand: var(--limedia-accent-sand);
+  --color-accent-sand-soft: var(--limedia-accent-sand-soft);
+
+  --color-ring: var(--limedia-ring);
+}
+
+/* 浅色模式：海玻璃全淡色（无粉色、无重色；60/30/10 比例，强调色 ≤15%） */
+:root {
+  --limedia-bg: #f6fbf9;
+  --limedia-surface: #ffffff;
+  --limedia-surface-2: #eef6f3;
+  --limedia-fg: #35423f;
+  --limedia-muted: #64736c;
+  --limedia-border: #e1ece8;
+
+  --limedia-primary: #25786d;
+  --limedia-primary-hover: #1f6359;
+  --limedia-primary-soft: #d9f4ee;
+  --limedia-primary-fg: #ffffff;
+
+  --limedia-secondary: #2f678f;
+  --limedia-secondary-soft: #dff1fa;
+
+  --limedia-success: #2a7c52;
+  --limedia-success-soft: #e3f6e9;
+  --limedia-warning: #9a5c05;
+  --limedia-warning-soft: #fdf3d8;
+  --limedia-destructive: #c43737;
+  --limedia-destructive-soft: #fdeeee;
+  --limedia-destructive-fg: #ffffff;
+
+  --limedia-accent-ice: #2f678f;
+  --limedia-accent-ice-soft: #dff1fa;
+  --limedia-accent-aqua: #25786d;
+  --limedia-accent-aqua-soft: #d9f4ee;
+  --limedia-accent-lilac: #51488f;
+  --limedia-accent-lilac-soft: #edeafb;
+  --limedia-accent-sage: #557546;
+  --limedia-accent-sage-soft: #eaf2e3;
+  --limedia-accent-mint: #2f7c52;
+  --limedia-accent-mint-soft: #e3f6e9;
+  --limedia-accent-sand: #876741;
+  --limedia-accent-sand-soft: #f7efe0;
+
+  --limedia-ring: #25786d;
+
+  /* 主按钮：半透明单色着色 + 细描边 + 斜向扫光（浅色侧，扫光为白） */
+  --limedia-btn-primary-bg: rgba(47, 127, 116, 0.1);
+  --limedia-btn-primary-bg-hover: rgba(47, 127, 116, 0.17);
+  --limedia-btn-primary-border: rgba(47, 127, 116, 0.26);
+  --limedia-btn-sweep: rgba(255, 255, 255, 0.42);
+  --limedia-brand-fg: #24433e;
+
+  /* 海玻璃粉彩流光线（签名描边/流光规则线/顶栏流光线共用） */
+  --limedia-flow-gradient: linear-gradient(
+    90deg,
+    #7fd4c6,
+    #8fc7f0,
+    #a9a2e8,
+    #a9cc8f,
+    #7fd4c6
+  );
+
+  /* 科技光效层（网格/光束/光点），浅色侧 */
+  --limedia-tech-grid-line: rgba(47, 127, 116, 0.09);
+  --limedia-tech-grid-accent: rgba(127, 212, 198, 0.22);
+  --limedia-tech-grid-accent-2: rgba(74, 143, 191, 0.18);
+  --limedia-tech-beam: rgba(127, 212, 198, 0.26);
+  --limedia-tech-beam-2: rgba(143, 199, 240, 0.22);
+  --limedia-tech-beam-3: rgba(176, 199, 158, 0.2);
+  --limedia-tech-dot-glow: rgba(127, 212, 198, 0.6);
+
+  /* 极光层（4 枚弥散光斑），浅色侧 */
+  --limedia-aurora-1: rgba(127, 212, 198, 0.32);
+  --limedia-aurora-2: rgba(143, 199, 240, 0.3);
+  --limedia-aurora-3: rgba(169, 162, 232, 0.26);
+  --limedia-aurora-4: rgba(169, 204, 143, 0.24);
+
+  /* 弥散阴影（水绿 tint，透明度总和 < 0.1，三层叠加） */
+  --shadow-sm: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
+    0px 2.4px 7.2px rgba(24, 58, 51, 0.05);
+  --shadow-md: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
+    0px 2.4px 7.2px rgba(24, 58, 51, 0.05),
+    0px 8px 24px rgba(24, 58, 51, 0.08);
+  --shadow-lg: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
+    0px 2.4px 7.2px rgba(24, 58, 51, 0.05),
+    0px 8px 32px rgba(24, 58, 51, 0.1);
+
+  /* 缓动曲线与时长 */
+  --ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-in: cubic-bezier(0.55, 0.06, 0.68, 0.19);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-fast: 150ms;
+  --motion-base: 250ms;
+  --motion-slow: 350ms;
+
+  color-scheme: light;
+}
+
+/* 深色模式：D1 雾灰中间调（不压黑），主色取雾面 300 档 */
+.dark {
+  --limedia-bg: #3a3f45;
+  --limedia-surface: #434950;
+  --limedia-surface-2: #4b5259;
+  --limedia-fg: #f0f2f4;
+  --limedia-muted: #b8c0c7;
+  --limedia-border: #545c64;
+
+  --limedia-primary: #7fd4c6;
+  --limedia-primary-hover: #a5e4d9;
+  --limedia-primary-soft: rgba(127, 212, 198, 0.16);
+  --limedia-primary-fg: #17332e;
+
+  --limedia-secondary: #a8d4f0;
+  --limedia-secondary-soft: rgba(168, 212, 240, 0.16);
+
+  --limedia-success: #86d6ac;
+  --limedia-success-soft: rgba(134, 214, 172, 0.14);
+  --limedia-warning: #ead48e;
+  --limedia-warning-soft: rgba(234, 212, 142, 0.14);
+  --limedia-destructive: #e8a49a;
+  --limedia-destructive-soft: rgba(232, 164, 154, 0.14);
+  --limedia-destructive-fg: #43211d;
+
+  --limedia-accent-ice: #a8cbe8;
+  --limedia-accent-ice-soft: rgba(168, 203, 232, 0.16);
+  --limedia-accent-aqua: #7fd4c6;
+  --limedia-accent-aqua-soft: rgba(127, 212, 198, 0.16);
+  --limedia-accent-lilac: #b0a8de;
+  --limedia-accent-lilac-soft: rgba(176, 168, 222, 0.18);
+  --limedia-accent-sage: #b0c79e;
+  --limedia-accent-sage-soft: rgba(176, 199, 158, 0.18);
+  --limedia-accent-mint: #9adfad;
+  --limedia-accent-mint-soft: rgba(154, 223, 173, 0.16);
+  --limedia-accent-sand: #d9c49e;
+  --limedia-accent-sand-soft: rgba(217, 196, 158, 0.16);
+
+  --limedia-ring: #7fd4c6;
+
+  --limedia-btn-primary-bg: rgba(127, 212, 198, 0.13);
+  --limedia-btn-primary-bg-hover: rgba(127, 212, 198, 0.21);
+  --limedia-btn-primary-border: rgba(127, 212, 198, 0.3);
+  --limedia-btn-sweep: rgba(255, 255, 255, 0.18);
+  --limedia-brand-fg: #d7efea;
+
+  --limedia-flow-gradient: linear-gradient(
+    90deg,
+    rgba(127, 212, 198, 0.65),
+    rgba(168, 212, 240, 0.65),
+    rgba(176, 168, 222, 0.65),
+    rgba(176, 199, 158, 0.6),
+    rgba(127, 212, 198, 0.65)
+  );
+
+  --limedia-tech-grid-line: rgba(176, 199, 158, 0.13);
+  --limedia-tech-grid-accent: rgba(127, 212, 198, 0.18);
+  --limedia-tech-grid-accent-2: rgba(168, 212, 240, 0.16);
+  --limedia-tech-beam: rgba(127, 212, 198, 0.2);
+  --limedia-tech-beam-2: rgba(168, 212, 240, 0.19);
+  --limedia-tech-beam-3: rgba(176, 199, 158, 0.15);
+  --limedia-tech-dot-glow: rgba(127, 212, 198, 0.55);
+
+  --limedia-aurora-1: rgba(127, 212, 198, 0.4);
+  --limedia-aurora-2: rgba(168, 212, 240, 0.36);
+  --limedia-aurora-3: rgba(176, 168, 222, 0.32);
+  --limedia-aurora-4: rgba(176, 199, 158, 0.28);
+
+  /* 深色软底带文字组件：实色粉彩底 + 深字（rgba 软底对比上限 ≈3.9，不达标） */
+  --limedia-primary-soft-solid: #d9f4ee;
+  --limedia-primary-soft-fg: #17332e;
+  --limedia-success-soft-solid: #e3f6e9;
+  --limedia-success-soft-fg: #14532d;
+  --limedia-warning-soft-solid: #fdf3d8;
+  --limedia-warning-soft-fg: #78350f;
+  --limedia-destructive-soft-solid: #fdeeee;
+  --limedia-destructive-soft-fg: #7f1d1d;
+
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  ::selection {
+    @apply bg-primary/20 text-foreground;
+  }
+
+  /* 键盘焦点始终可见：2px 主色描边 + 2px 偏移 */
+  :focus-visible {
+    outline: 2px solid var(--limedia-ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* 尊重系统减弱偏好：全部动效收敛为单帧 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* 卡片：表面 + 边框 + 16px 圆角 + 弥散阴影；hover 仅 1px 上移 + 阴影变化 */
+  .card {
+    @apply rounded-2xl border border-border bg-surface shadow-sm;
+    transition:
+      transform var(--motion-base) var(--ease-out),
+      box-shadow var(--motion-base) var(--ease-out);
+    will-change: transform;
+  }
+  .card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* 认证卡签名描边：海玻璃粉彩渐变沿边框缓慢流动（9s），替换静态边框。
+     实现：padding-box 表面 + border-box 渐变边框双背景，只动第二层
+     background-position。零依赖 CSS；Chat 另有 ::after mask 环等价变体。 */
+  .card-signature {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(var(--limedia-surface), var(--limedia-surface))
+        padding-box,
+      linear-gradient(
+          140deg,
+          rgba(127, 212, 198, 0.5) 0%,
+          rgba(143, 199, 240, 0.42) 26%,
+          rgba(169, 162, 232, 0.46) 54%,
+          rgba(169, 204, 143, 0.4) 78%,
+          rgba(47, 127, 116, 0.45) 100%
+        )
+        border-box;
+    background-size:
+      100% 100%,
+      300% 300%;
+    animation: signature-flow 9s linear infinite;
+  }
+  .dark .card-signature {
+    background:
+      linear-gradient(var(--limedia-surface), var(--limedia-surface))
+        padding-box,
+      linear-gradient(
+          140deg,
+          rgba(127, 212, 198, 0.42) 0%,
+          rgba(168, 212, 240, 0.34) 30%,
+          rgba(176, 168, 222, 0.4) 60%,
+          rgba(176, 199, 158, 0.34) 85%,
+          rgba(127, 212, 198, 0.42) 100%
+        )
+        border-box;
+  }
+
+  /* 认证卡呼吸辉光：卡后一层浅水绿光晕缓慢明暗呼吸（4.5s） */
+  .card-halo {
+    position: relative;
+    isolation: isolate;
+  }
+  .card-halo::before {
+    content: "";
+    position: absolute;
+    inset: -18px;
+    border-radius: 26px;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      rgba(127, 212, 198, 0.2) 0%,
+      rgba(74, 143, 191, 0.12) 45%,
+      transparent 72%
+    );
+    z-index: -1;
+    animation: card-halo-pulse 4.5s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .dark .card-halo::before {
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      rgba(127, 212, 198, 0.24) 0%,
+      rgba(168, 212, 240, 0.13) 45%,
+      transparent 72%
+    );
+  }
+
+  /* 品牌 Logo 辉光（静态 drop-shadow，不参与动画） */
+  .brand-halo {
+    filter: drop-shadow(0 0 14px rgba(47, 127, 116, 0.38))
+      drop-shadow(0 0 30px rgba(74, 143, 191, 0.28));
+  }
+  .dark .brand-halo {
+    filter: drop-shadow(0 0 16px rgba(127, 212, 198, 0.45))
+      drop-shadow(0 0 34px rgba(143, 199, 240, 0.28));
+  }
+
+  /* 流光规则线：分区标题短装饰线或顶栏底部全长渐变线（5s 位移） */
+  .flow-rule {
+    display: block;
+    height: 3px;
+    border-radius: 9999px;
+    background: var(--limedia-flow-gradient);
+    background-size: 250% 100%;
+    animation: flow-line-shift 5s linear infinite;
+  }
+
+  /* 按钮：统一 8px 圆角；可点击必须有 cursor-pointer；按压 scale(0.97) */
+  .btn {
+    @apply relative inline-flex cursor-pointer select-none items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-lg px-4 py-3 text-sm font-medium leading-none disabled:pointer-events-none disabled:opacity-50;
+    transition:
+      color var(--motion-fast) var(--ease-out),
+      background-color var(--motion-fast) var(--ease-out),
+      border-color var(--motion-fast) var(--ease-out),
+      box-shadow var(--motion-fast) var(--ease-out),
+      transform var(--motion-base) var(--ease-spring);
+    will-change: transform;
+  }
+  .btn:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+  .btn:not(:disabled):active {
+    transform: translateY(0) scale(0.97);
+  }
+  .btn-primary {
+    @apply shadow-sm;
+    color: var(--limedia-brand-fg);
+    background-color: var(--limedia-btn-primary-bg);
+    border: 1px solid var(--limedia-btn-primary-border);
+  }
+  /* 主按钮斜向扫光：只动 transform（GPU 合成），4s 循环、长停顿；disabled 关闭 */
+  .btn-primary::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(
+      105deg,
+      transparent 42%,
+      var(--limedia-btn-sweep) 50%,
+      transparent 58%
+    );
+    transform: translateX(-130%);
+    animation: btn-sheen 4s var(--ease-out) 1s infinite;
+    pointer-events: none;
+  }
+  .btn-primary:disabled::after {
+    display: none;
+  }
+  .btn-primary:not(:disabled):hover {
+    background-color: var(--limedia-btn-primary-bg-hover);
+    box-shadow: var(--shadow-md);
+  }
+  .btn-secondary {
+    @apply border border-border bg-surface text-foreground hover:bg-surface-2;
+  }
+  .btn-ghost {
+    @apply text-muted hover:bg-surface-2 hover:text-foreground;
+  }
+  .btn-danger {
+    @apply bg-destructive text-destructive-foreground shadow-sm hover:opacity-90;
+  }
+  .btn-link {
+    @apply cursor-pointer whitespace-nowrap px-0 py-0 text-primary hover:underline;
+  }
+
+  /* 点击涟漪：JS 向按钮注入 span.btn-ripple，animationend 后移除（零依赖） */
+  .btn-ripple {
+    position: absolute;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.18;
+    transform: scale(0);
+    pointer-events: none;
+    animation: ripple-expand 500ms var(--ease-out) forwards;
+  }
+
+  /* 图标按钮：44px 触控热区，移动端不缩小 */
+  .icon-btn {
+    @apply inline-flex h-11 w-11 shrink-0 cursor-pointer select-none items-center justify-center rounded-lg border border-border bg-surface text-foreground transition-colors hover:bg-surface-2;
+    transition:
+      background-color var(--motion-fast) var(--ease-out),
+      color var(--motion-fast) var(--ease-out),
+      transform var(--motion-base) var(--ease-spring);
+  }
+  .icon-btn:active {
+    transform: scale(0.95);
+  }
+  .icon-btn svg {
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+
+  /* 表单 */
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-foreground;
+  }
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-foreground shadow-sm placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
+    transition:
+      border-color var(--motion-fast) var(--ease-out),
+      box-shadow var(--motion-fast) var(--ease-out),
+      background-color var(--motion-fast) var(--ease-out);
+  }
+  .input-sm {
+    @apply w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
+    transition:
+      border-color var(--motion-fast) var(--ease-out),
+      box-shadow var(--motion-fast) var(--ease-out),
+      background-color var(--motion-fast) var(--ease-out);
+  }
+
+  /* 徽章：深色下带文字组件回退到实色粉彩底 + 深字（soft-solid / soft-fg） */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap;
+  }
+  .badge-success {
+    @apply bg-success-soft text-success;
+  }
+  .badge-warning {
+    @apply bg-warning-soft text-warning;
+  }
+  .badge-danger {
+    @apply bg-destructive-soft text-destructive;
+  }
+  .badge-muted {
+    @apply bg-surface-2 text-muted;
+  }
+  .badge-primary {
+    @apply bg-primary-soft text-primary;
+  }
+  .dark .badge-primary {
+    background-color: var(--limedia-primary-soft-solid);
+    color: var(--limedia-primary-soft-fg);
+  }
+  .dark .badge-success {
+    background-color: var(--limedia-success-soft-solid);
+    color: var(--limedia-success-soft-fg);
+  }
+  .dark .badge-warning {
+    background-color: var(--limedia-warning-soft-solid);
+    color: var(--limedia-warning-soft-fg);
+  }
+  .dark .badge-danger {
+    background-color: var(--limedia-destructive-soft-solid);
+    color: var(--limedia-destructive-soft-fg);
+  }
+
+  /* 状态点：连接/在线状态（8px 圆点，语义色） */
+  .status-dot {
+    display: inline-block;
+    height: 8px;
+    width: 8px;
+    border-radius: 9999px;
+    background: var(--limedia-muted);
+  }
+  .status-connecting {
+    background: var(--limedia-warning);
+  }
+  .status-connected {
+    background: var(--limedia-success);
+  }
+  .status-disconnected {
+    background: var(--limedia-muted);
+  }
+  .status-invalid {
+    background: var(--limedia-destructive);
+  }
+
+  /* 页面内持久提示条（与 Toast 同一视觉语言） */
+  .notice {
+    @apply flex items-start gap-2.5 rounded-xl border p-3.5 text-sm;
+    animation: page-fade-up var(--motion-base) var(--ease-out) both;
+  }
+  .notice-icon {
+    @apply mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full;
+  }
+  .notice-success {
+    @apply border-success/25 bg-success-soft text-success;
+  }
+  .notice-warning {
+    @apply border-warning/30 bg-warning-soft text-warning;
+  }
+  .notice-error {
+    @apply border-destructive/25 bg-destructive-soft text-destructive;
+  }
+  .notice-info {
+    @apply border-primary/25 bg-primary-soft text-primary;
+  }
+  /* 深色下提示条正文用高亮浅色文字（在 rgba 软底上 ≥4.5:1） */
+  .dark .notice-success {
+    color: #cff0de;
+  }
+  .dark .notice-warning {
+    color: #f7ebc4;
+  }
+  .dark .notice-error {
+    color: #f6d0c8;
+  }
+  .dark .notice-info {
+    color: #cdefe9;
+  }
+
+  /* ========== Toast 弹窗通知（z-80 必须高于 Modal 遮罩 z-70） ========== */
+  .toast-viewport {
+    @apply pointer-events-none fixed inset-x-0 top-4 z-[80] flex flex-col items-center gap-2 px-4 sm:top-5;
+  }
+  .toast {
+    @apply pointer-events-auto relative flex w-full max-w-md items-start gap-3 overflow-hidden rounded-xl border border-border bg-surface p-3.5 pr-10 text-left;
+    box-shadow:
+      0 2px 8px rgba(2, 6, 23, 0.08),
+      0 12px 32px rgba(2, 6, 23, 0.14);
+  }
+  .toast-icon {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full;
+  }
+  .toast-title {
+    @apply text-sm font-semibold text-foreground;
+  }
+  .toast-message {
+    @apply mt-0.5 text-sm text-foreground/80;
+  }
+  .toast-close {
+    @apply absolute right-2 top-2 rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-foreground;
+  }
+  .toast-action {
+    @apply shrink-0 self-center rounded-md px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary-soft;
+  }
+  .toast-progress {
+    @apply absolute bottom-0 left-0 h-0.5 w-full origin-left;
+    animation-name: toast-progress;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+  .toast:hover .toast-progress {
+    animation-play-state: paused;
+  }
+  .toast-success {
+    @apply border-l-4 border-l-success;
+  }
+  .toast-success .toast-icon {
+    @apply bg-success-soft text-success;
+  }
+  .toast-success .toast-progress {
+    @apply bg-success/60;
+  }
+  .toast-error {
+    @apply border-l-4 border-l-destructive;
+  }
+  .toast-error .toast-icon {
+    @apply bg-destructive-soft text-destructive;
+  }
+  .toast-error .toast-progress {
+    @apply bg-destructive/60;
+  }
+  .toast-warning {
+    @apply border-l-4 border-l-warning;
+  }
+  .toast-warning .toast-icon {
+    @apply bg-warning-soft text-warning;
+  }
+  .toast-warning .toast-progress {
+    @apply bg-warning/60;
+  }
+  .toast-info {
+    @apply border-l-4 border-l-primary;
+  }
+  .toast-info .toast-icon {
+    @apply bg-primary-soft text-primary;
+  }
+  .toast-info .toast-progress {
+    @apply bg-primary/50;
+  }
+  .toast-enter {
+    animation: toast-in 320ms var(--ease-spring) both;
+    animation-delay: calc(var(--toast-index, 0) * 40ms);
+  }
+  .toast-leave {
+    animation: toast-out 220ms var(--ease-in) both;
+  }
+  .toast-icon-pop {
+    animation: toast-icon-pop 180ms var(--ease-spring) both;
+  }
+
+  /* ========== Modal 弹窗（z-70） ========== */
+  .modal-backdrop {
+    @apply fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm;
+  }
+  .modal-backdrop-in {
+    animation: modal-backdrop-in 200ms var(--ease-out) both;
+  }
+  .modal-backdrop-out {
+    animation: modal-backdrop-out 180ms var(--ease-in) both;
+  }
+  .modal-panel {
+    @apply relative w-full overflow-hidden rounded-2xl border border-border bg-surface text-left;
+    box-shadow:
+      0 4px 16px rgba(2, 6, 23, 0.1),
+      0 24px 64px rgba(2, 6, 23, 0.22);
+    outline: none;
+  }
+  .modal-panel-in {
+    animation: modal-panel-in 260ms var(--ease-spring) both;
+  }
+  .modal-panel-out {
+    animation: modal-panel-out 180ms var(--ease-in) both;
+  }
+  .modal-accent {
+    @apply h-1 w-full;
+  }
+  .modal-icon {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full;
+  }
+  .modal-body {
+    @apply mt-3 text-sm text-muted;
+  }
+  .modal-close {
+    @apply absolute right-3 top-3 rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-foreground;
+  }
+  .modal-footer {
+    @apply flex flex-wrap items-center justify-end gap-2 border-t border-border bg-surface-2/60 px-5 py-3.5 sm:px-6;
+  }
+  .modal-info .modal-accent {
+    @apply bg-primary;
+  }
+  .modal-info .modal-icon {
+    @apply bg-primary-soft text-primary;
+  }
+  .modal-success .modal-accent {
+    @apply bg-success;
+  }
+  .modal-success .modal-icon {
+    @apply bg-success-soft text-success;
+  }
+  .modal-warning .modal-accent {
+    @apply bg-warning;
+  }
+  .modal-warning .modal-icon {
+    @apply bg-warning-soft text-warning;
+  }
+  .modal-danger .modal-accent {
+    @apply bg-destructive;
+  }
+  .modal-danger .modal-icon {
+    @apply bg-destructive-soft text-destructive;
+  }
+
+  /* 表格容器：表头 surface-2 + muted 小字；行 hover；移动端横向滚动 */
+  .table-shell {
+    @apply overflow-x-auto rounded-xl border border-border bg-surface;
+  }
+  .table-shell table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+  .table-shell thead th {
+    @apply border-b border-border bg-surface-2 px-3 py-2.5 text-xs font-semibold tracking-wide text-muted;
+  }
+  .table-shell tbody td {
+    @apply border-b border-border/70 px-3 py-2.5 align-middle text-foreground last:border-b-0;
+  }
+  .table-shell tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .table-shell tbody tr {
+    @apply transition-colors duration-150 hover:bg-surface-2/60;
+  }
+
+  /* 表格长文本列：窄屏单行截断，桌面恢复自然换行 */
+  .table-cell-clip {
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (min-width: 1024px) {
+    .table-cell-clip {
+      max-width: none;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+    }
+  }
+
+  /* 横向滑动标签栏：单行、隐藏滚动条、snap 吸附 */
+  .scroll-tabs {
+    @apply flex items-center gap-2 overflow-x-auto;
+    flex-wrap: nowrap;
+    padding-block: 0.375rem;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 1rem;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scroll-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .scroll-tabs > * {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  /* ========== 选择控件与下拉（V1.4 全量补全） ========== */
+
+  /* 原生 select：与 .input 完全同视觉；令牌色 chevron 用双三角渐变绘制，
+     不引入硬编码图标与颜色 */
+  .select {
+    @apply w-full appearance-none rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
+    padding-right: 2.5rem;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--limedia-muted) 50%),
+      linear-gradient(135deg, var(--limedia-muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 17px) calc(50% - 1px),
+      calc(100% - 12px) calc(50% - 1px);
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+    transition:
+      border-color var(--motion-fast) var(--ease-out),
+      box-shadow var(--motion-fast) var(--ease-out),
+      background-color var(--motion-fast) var(--ease-out);
+  }
+  .select-sm {
+    @apply w-full appearance-none rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
+    padding-right: 2rem;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--limedia-muted) 50%),
+      linear-gradient(135deg, var(--limedia-muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 15px) calc(50% - 1px),
+      calc(100% - 10px) calc(50% - 1px);
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+    transition:
+      border-color var(--motion-fast) var(--ease-out),
+      box-shadow var(--motion-fast) var(--ease-out),
+      background-color var(--motion-fast) var(--ease-out);
+  }
+  .select option {
+    color: var(--limedia-fg);
+    background-color: var(--limedia-surface);
+  }
+
+  /* 自定义下拉（Blog 已验证，渐进增强）：
+     隐藏原生 select + button[aria-haspopup=listbox] + ul[role=listbox] + li[role=option]；
+     键盘契约见方案 §5 与附录 F。 */
+  .custom-select {
+    position: relative;
+    display: inline-block;
+    min-width: 140px;
+  }
+  .custom-select-native {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+    clip: rect(0 0 0 0);
+  }
+  .custom-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--limedia-border);
+    border-radius: 8px;
+    background: var(--limedia-surface);
+    color: var(--limedia-fg);
+    font: inherit;
+    font-size: 0.85rem;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+  }
+  .custom-select-trigger:hover {
+    border-color: var(--limedia-primary);
+  }
+  .custom-select.is-open .custom-select-trigger {
+    border-color: var(--limedia-primary);
+    box-shadow: 0 0 0 3px var(--limedia-primary-soft);
+  }
+  .custom-select-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .custom-select-chevron {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--limedia-muted);
+    transition: transform var(--motion-fast) var(--ease-out);
+  }
+  .custom-select.is-open .custom-select-chevron {
+    transform: rotate(180deg);
+  }
+  .custom-select-menu {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--limedia-border);
+    border-radius: 8px;
+    background: var(--limedia-surface);
+    box-shadow: var(--shadow-md);
+  }
+  .custom-select-option {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--limedia-fg);
+    font: inherit;
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .custom-select-option:hover,
+  .custom-select-option.is-active {
+    background: var(--limedia-primary-soft);
+    color: var(--limedia-primary);
+  }
+  .custom-select-option.is-selected {
+    font-weight: 600;
+    color: var(--limedia-primary);
+  }
+  .custom-select-menu::-webkit-scrollbar {
+    width: 8px;
+  }
+  .custom-select-menu::-webkit-scrollbar-thumb {
+    background: var(--limedia-border);
+    border-radius: 999px;
+  }
+  label .custom-select {
+    display: block;
+  }
+
+  /* 下拉菜单（Chat 已验证）：绝对定位在触发器下方，surface + shadow-lg */
+  .dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 200px;
+    padding: 8px;
+    background: var(--limedia-surface);
+    border: 1px solid var(--limedia-border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .dropdown-menu[hidden] {
+    display: none;
+  }
+  .dropdown-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-bottom: 1px solid var(--limedia-border);
+    margin-bottom: 4px;
+  }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 10px;
+    background: none;
+    color: var(--limedia-fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .menu-item:hover {
+    background: var(--limedia-surface-2);
+  }
+  .menu-item-danger {
+    color: var(--limedia-destructive);
+  }
+  .menu-item-danger:hover {
+    background: var(--limedia-destructive-soft);
+  }
+  .menu-separator {
+    height: 1px;
+    margin: 4px 0;
+    border: 0;
+    background: var(--limedia-border);
+  }
+
+  /* 建议选项 chips（Chat 提及列表已验证）：浮动在输入框上方，胶囊选项 */
+  .suggest-menu {
+    position: absolute;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 260px;
+    padding: 8px;
+    border: 1px solid var(--limedia-border);
+    border-radius: 10px;
+    background: var(--limedia-surface);
+    box-shadow: var(--shadow-md);
+  }
+  .suggest-menu[hidden] {
+    display: none;
+  }
+  .suggest-option {
+    border: 1px solid var(--limedia-border);
+    border-radius: 999px;
+    background: var(--limedia-surface-2);
+    color: var(--limedia-fg);
+    font-size: 0.78rem;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  .suggest-option:hover {
+    background: var(--limedia-primary-soft);
+    color: var(--limedia-primary);
+  }
+
+  /* 头像：圆形 object-fit；占位符用 primary 底 + primary-fg 字 */
+  .avatar {
+    height: 32px;
+    width: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--limedia-surface-2);
+    flex-shrink: 0;
+  }
+  .avatar-sm {
+    height: 28px;
+    width: 28px;
+  }
+  .avatar-md {
+    height: 36px;
+    width: 36px;
+  }
+  .avatar-lg {
+    height: 56px;
+    width: 56px;
+    font-size: 1.4rem;
+  }
+  .avatar-placeholder {
+    display: grid;
+    place-items: center;
+    background: var(--limedia-primary);
+    color: var(--limedia-primary-fg);
+    font-weight: 600;
+  }
+
+  /* 复选框 / 单选 / 文件按钮（Blog 已验证） */
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    accent-color: var(--limedia-primary);
+    cursor: pointer;
+  }
+  .field-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+  input[type="file"]::file-selector-button {
+    margin-right: 10px;
+    padding: 8px 14px;
+    border: 1px solid var(--limedia-border);
+    border-radius: 8px;
+    background: var(--limedia-surface-2);
+    color: var(--limedia-fg);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition:
+      background-color var(--motion-fast) var(--ease-out),
+      color var(--motion-fast) var(--ease-out),
+      border-color var(--motion-fast) var(--ease-out);
+  }
+  input[type="file"]::file-selector-button:hover {
+    background: var(--limedia-primary-soft);
+    color: var(--limedia-primary);
+  }
+
+  /* 分页（Blog 已验证） */
+  .pagination {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .pagination-info {
+    color: var(--limedia-muted);
+    font-size: 0.85rem;
+  }
+  .pagination .btn {
+    min-height: 36px;
+  }
+  .pagination a[aria-disabled="true"] {
+    pointer-events: none;
+    opacity: 0.5;
+  }
+
+  /* 面包屑（Blog 已验证） */
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: var(--limedia-muted);
+    font-size: 0.8rem;
+  }
+  .breadcrumb a {
+    color: var(--limedia-muted);
+  }
+  .breadcrumb a:hover {
+    color: var(--limedia-primary);
+  }
+  .breadcrumb-sep {
+    color: var(--limedia-border);
+  }
+  .breadcrumb [aria-current="page"] {
+    color: var(--limedia-fg);
+    font-weight: 600;
+  }
+
+  /* 进度条（Chat / Blog 已验证）：胶囊轨道 + primary 填充，只动 width */
+  .progress {
+    display: block;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--limedia-border);
+    overflow: hidden;
+  }
+  .progress-sm {
+    height: 6px;
+  }
+  .progress-bar {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: var(--limedia-primary);
+    transition: width var(--motion-fast) linear;
+  }
+  .progress.is-success .progress-bar {
+    background: var(--limedia-success);
+  }
+  .progress.is-danger .progress-bar {
+    background: var(--limedia-destructive);
+  }
+
+  /* 表格空状态（Blog 已验证）：居中弱化；容器虚线提示 */
+  .table-empty-row td {
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--limedia-muted);
+    font-size: 0.9rem;
+  }
+  .table-shell:has(.table-empty-row) {
+    border-style: dashed;
+  }
+
+  /* 列表筛选行（Blog 已验证）：搜索框 + 下拉 + 按钮等高成行 */
+  .list-filters {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .list-filters input[type="search"] {
+    width: 240px;
+  }
+  .list-filters select,
+  .list-filters input[type="search"] {
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+  }
+  .list-filters .btn {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+  @media (max-width: 767px) {
+    .list-filters input[type="search"] {
+      width: 100%;
+    }
+    .list-filters select {
+      flex: 1;
+    }
+  }
+
+  /* 紧凑按钮（桌面紧凑密度用；移动端仍保 44px 热区） */
+  .btn-sm {
+    @apply min-h-9 px-3 py-1.5 text-sm;
+  }
+
+  /* ========== Footer 页脚（Pass / Panel 已验证） ==========
+     结构：<footer class="site-footer"><div class="site-footer-inner">…</div></footer>
+     - 版权/备案/链接全部由 brand.ts 驱动（禁止硬编码文案）：
+       © 年份 + 版权方、ICP/公安备案、FOOTER_LINKS、GitHub、开源协议、反馈问题、联系我们
+     - Panel 变体：运行时 site_settings 为事实来源，未配置回退 brand.ts；
+       备案图标缺失/加载失败时用 .filing-icon-placeholder 字形方块占位
+     - 大小与高度（Pass / Panel 1:1 一致）：
+       单行高 56px = text-xs（12px / 行高 16px）+ py-5（上下 20px），min-h-14 兜底；
+       图标/备案占位 14×14px、占位圆角 4px；gap-x-2（8px）/ gap-y-1（4px）；
+       内容 max-w-7xl 居中，px-4（16px）→ lg:px-8（32px）；移动端允许换行、无横向滚动
+     - 链接颜色铁律（V1.5.1，2026-08-21 固化）：
+       页脚内链接（版权/备案/归档/许可等）一律 muted 文字色、hover 转 foreground；
+       禁止被全局链接主色（如 a { color: primary }）覆盖。存在全局链接着色的项目
+       必须在页脚以同/更高优先级显式覆盖为 muted。
+       来源：实例化项目实测——全局 a{color:primary} 泄漏导致备案文字呈青色，已修复回写。 */
+  .site-footer {
+    @apply relative mt-auto border-t border-border/60 bg-surface/60 backdrop-blur;
+  }
+  .site-footer-inner {
+    @apply mx-auto flex min-h-14 max-w-7xl flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 py-5 text-xs text-muted lg:px-8;
+  }
+  .site-footer a {
+    @apply text-muted transition-colors duration-200 hover:text-foreground;
+  }
+  .filing-icon-placeholder {
+    @apply inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[4px] bg-surface-2 text-[9px] font-semibold leading-none text-muted;
+  }
+}
+
+@layer utilities {
+  /* 路由切换：整页淡入上移 */
+  @keyframes page-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .page-enter {
+    animation: page-fade-up var(--motion-slow) var(--ease-out) both;
+  }
+
+  /* 骨架扫光（background-position 动画，不触发重排） */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--limedia-surface-2) 25%,
+      rgba(255, 255, 255, 0.65) 37%,
+      var(--limedia-surface-2) 63%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  /* 加载旋转 */
+  .spinner {
+    display: inline-block;
+    height: 1rem;
+    width: 1rem;
+    border-radius: 9999px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* 文字浮现：词级 blur+位移入场（零依赖；JS 按词拆 span 并设 --blur-index） */
+  .blur-unit {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(8px);
+    will-change: transform, opacity, filter;
+    animation: blur-in 450ms var(--ease-out) both;
+    animation-delay: calc(var(--blur-index, 0) * 35ms);
+  }
+
+  @keyframes blur-in {
+    to {
+      opacity: 1;
+      transform: none;
+      filter: blur(0);
+    }
+  }
+
+  /* 按钮涟漪扩散（配合 .btn-ripple 使用） */
+  @keyframes ripple-expand {
+    to {
+      transform: scale(1);
+      opacity: 0;
+    }
+  }
+
+  /* 签名描边 / 流光线 / 按钮扫光 / 卡片辉光 / Toast / Modal 关键帧 */
+  @keyframes signature-flow {
+    from {
+      background-position:
+        0 0,
+        0% 50%;
+    }
+    to {
+      background-position:
+        0 0,
+        100% 50%;
+    }
+  }
+  @keyframes flow-line-shift {
+    to {
+      background-position: -250% 0;
+    }
+  }
+  @keyframes btn-sheen {
+    0% {
+      transform: translateX(-130%);
+    }
+    45%,
+    100% {
+      transform: translateX(130%);
+    }
+  }
+  @keyframes card-halo-pulse {
+    0%,
+    100% {
+      opacity: 0.65;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.04);
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(-14px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes toast-out {
+    from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.97);
+    }
+  }
+  @keyframes toast-progress {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
+    }
+  }
+  @keyframes toast-icon-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes modal-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes modal-backdrop-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes modal-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes modal-panel-out {
+    from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(12px) scale(0.96);
+    }
+  }
+}
+
+/* =============================================================
+   氛围与科技光效层（按槽位 19/22 接入）
+   - FloatingBackground（Canvas）：z-0 垫底、pointer-events: none；
+     认证 10 / 授权 4 / 中心 10 + scrollWind / 后台 4 × 0.5；
+     Chat 零依赖 ambient.js 与 Blog React 版见实现总览 §3
+   - AuroraBackground：4 枚弥散光斑（18/22/28/24s），full=4 / soft=2
+   - TechAmbience：缓移网格 12s + 3 条光束 10s（错峰 0.8/4.2/7.5s）
+     + 8 枚光点 6s；认证默认、工作台/后台 soft；移动端隐藏光束/光点
+   - ⚠️ 每个 animation 必须定义对应 @keyframes；reduced-motion 下单帧
+============================================================= */
+
+/* Canvas 氛围层容器：垫底、不拦截交互 */
+.ambient-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 极光层：4 枚 radial-gradient 光斑缓慢漂移（仅 transform） */
+.aurora,
+.tech-ambience {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora-blob {
+  position: absolute;
+  width: min(46vw, 720px);
+  height: min(46vw, 720px);
+  border-radius: 50%;
+  opacity: 0.9;
+  will-change: transform;
+  animation: aurora-drift-1 24s var(--ease-out) infinite alternate;
+}
+
+.aurora-blob:nth-child(1) {
+  top: -14%;
+  left: -8%;
+  background: radial-gradient(closest-side, var(--limedia-aurora-1), transparent 72%);
+}
+
+.aurora-blob:nth-child(2) {
+  top: 8%;
+  right: -12%;
+  background: radial-gradient(closest-side, var(--limedia-aurora-2), transparent 72%);
+  animation-name: aurora-drift-2;
+  animation-duration: 22s;
+}
+
+.aurora-blob:nth-child(3) {
+  bottom: -18%;
+  left: 8%;
+  background: radial-gradient(closest-side, var(--limedia-aurora-3), transparent 72%);
+  animation-name: aurora-drift-3;
+  animation-duration: 28s;
+}
+
+.aurora-blob:nth-child(4) {
+  bottom: -8%;
+  right: 6%;
+  background: radial-gradient(closest-side, var(--limedia-aurora-4), transparent 72%);
+  animation-name: aurora-drift-4;
+  animation-duration: 18s;
+}
+
+@keyframes aurora-drift-1 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(7vw, 6vh) scale(1.08);
+  }
+}
+
+@keyframes aurora-drift-2 {
+  from {
+    transform: translate(0, 0) scale(1.06);
+  }
+  to {
+    transform: translate(-6vw, 5vh) scale(0.98);
+  }
+}
+
+@keyframes aurora-drift-3 {
+  from {
+    transform: translate(0, 0) scale(0.96);
+  }
+  to {
+    transform: translate(5vw, -7vh) scale(1.05);
+  }
+}
+
+@keyframes aurora-drift-4 {
+  from {
+    transform: translate(0, 0) scale(1.02);
+  }
+  to {
+    transform: translate(-7vw, -5vh) scale(0.94);
+  }
+}
+
+/* 已登录/工作台降浓度 */
+.aurora-soft {
+  opacity: 0.55;
+}
+
+/* 科技光效层：缓移网格（56px 基线 + 336px 亮线双层，径向渐隐） */
+.tech-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--limedia-tech-grid-accent) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--limedia-tech-grid-accent-2) 1px, transparent 1px),
+    linear-gradient(to right, var(--limedia-tech-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--limedia-tech-grid-line) 1px, transparent 1px);
+  background-size:
+    336px 336px,
+    336px 336px,
+    56px 56px,
+    56px 56px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 88% 76% at 50% 42%,
+    #000 22%,
+    transparent 80%
+  );
+  mask-image: radial-gradient(
+    ellipse 88% 76% at 50% 42%,
+    #000 22%,
+    transparent 80%
+  );
+  animation: tech-grid-pan 12s linear infinite;
+  will-change: background-position;
+  pointer-events: none;
+}
+
+@keyframes tech-grid-pan {
+  from {
+    background-position:
+      0 0,
+      0 0,
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      336px 336px,
+      336px 336px,
+      336px 336px,
+      336px 336px;
+  }
+}
+
+/* 扫掠光束：斜切 16° 透明渐变带，三条错峰；基态 opacity:0 */
+.tech-beam {
+  position: absolute;
+  top: -15%;
+  bottom: -15%;
+  left: 0;
+  width: 36%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--limedia-tech-beam) 45%,
+    var(--limedia-tech-beam) 55%,
+    transparent 100%
+  );
+  transform: translateX(-150%) skewX(-16deg);
+  opacity: 0;
+  animation: tech-beam-sweep 10s var(--ease-out) 0.8s infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.tech-beam--violet {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--limedia-tech-beam-2) 45%,
+    var(--limedia-tech-beam-2) 55%,
+    transparent 100%
+  );
+  animation-delay: 4.2s;
+}
+
+.tech-beam--sage {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--limedia-tech-beam-3) 45%,
+    var(--limedia-tech-beam-3) 55%,
+    transparent 100%
+  );
+  animation-delay: 7.5s;
+}
+
+@keyframes tech-beam-sweep {
+  0% {
+    transform: translateX(-150%) skewX(-16deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  42% {
+    transform: translateX(560%) skewX(-16deg);
+    opacity: 0.7;
+  }
+  50%,
+  100% {
+    transform: translateX(560%) skewX(-16deg);
+    opacity: 0;
+  }
+}
+
+/* 呼吸光点：7px 圆点 + 辉光；颜色默认 secondary，可经
+   --tech-dot-color 覆盖（Blog 用六强调色做实体→色相稳定哈希） */
+.tech-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--tech-dot-color, var(--limedia-secondary));
+  box-shadow: 0 0 14px 3px var(--limedia-tech-dot-glow);
+  opacity: 0.55;
+  animation: tech-dot-pulse 6s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+@keyframes tech-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-7px) scale(1.45);
+  }
+}
+
+/* 工作台/后台降浓度 */
+.tech-ambience--soft .tech-grid {
+  opacity: 0.45;
+}
+.tech-ambience--soft .tech-beam,
+.tech-ambience--soft .tech-dot {
+  opacity: 0.35;
+}
+
+/* 移动端：隐藏光束/光点，停用网格动画，极光减速 */
+@media (max-width: 767px) {
+  .tech-beam,
+  .tech-dot {
+    display: none;
+  }
+  .tech-grid {
+    animation: none;
+    opacity: 0.55;
+  }
+  .aurora {
+    opacity: 0.7;
+  }
+  .aurora-blob {
+    animation-duration: 52s;
+  }
+}
