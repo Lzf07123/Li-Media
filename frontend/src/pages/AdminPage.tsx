@@ -63,8 +63,8 @@ export default function AdminPage() {
   const submitMemory = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (!file || !title) {
-      setError("请填写标题并选择文件");
+    if (!file) {
+      setError("请选择要上传的照片或视频文件");
       return;
     }
 
@@ -84,8 +84,8 @@ export default function AdminPage() {
       setFile(null);
       setError(null);
       await loadMemories(token);
-    } catch {
-      setError("上传失败，请检查文件格式后重试");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "上传失败，请稍后重试");
     } finally {
       setIsUploading(false);
     }
@@ -156,12 +156,11 @@ export default function AdminPage() {
         onSubmit={submitMemory}
       >
         <label className="flex flex-col gap-2 text-sm">
-          标题
+          标题（可留空，自动读取文件名或元数据）
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             className="min-h-11 rounded-md border border-border bg-surface px-3"
-            required
           />
         </label>
 

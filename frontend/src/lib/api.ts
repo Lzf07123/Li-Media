@@ -39,6 +39,20 @@ class ApiError extends Error {
   }
 }
 
+async function readApiErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { detail?: unknown };
+
+    if (typeof payload.detail === "string") {
+      return payload.detail;
+    }
+  } catch {
+    // Fall through to the generic message.
+  }
+
+  return `请求失败（${response.status}）`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
@@ -48,7 +62,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new ApiError(`请求失败（${response.status}）`, response.status);
+    throw new ApiError(await readApiErrorMessage(response), response.status);
   }
 
   return (await response.json()) as T;
@@ -102,7 +116,7 @@ export async function createMemory(
   token: string,
   payload: {
     file: File;
-    title: string;
+    title?: string;
     description: string;
     location?: string;
     captured_at?: string;
@@ -110,8 +124,11 @@ export async function createMemory(
 ): Promise<Memory> {
   const form = new FormData();
   form.set("file", payload.file);
-  form.set("title", payload.title);
   form.set("description", payload.description);
+
+  if (payload.title) {
+    form.set("title", payload.title);
+  }
 
   if (payload.location) {
     form.set("location", payload.location);
@@ -155,6 +172,6 @@ export async function deleteMemory(token: string, memoryId: string): Promise<voi
   });
 
   if (!response.ok) {
-    throw new ApiError(`请求失败（${response.status}）`, response.status);
+    throw new ApiError(await readApiErrorMessage(response), response.status);
   }
 }

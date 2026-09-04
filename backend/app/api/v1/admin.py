@@ -26,6 +26,7 @@ from app.services.memory_files import (
     infer_memory_kind,
     save_upload,
 )
+from app.services.memory_metadata import extract_memory_metadata
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -68,7 +69,7 @@ def list_admin_memories(
 
 @router.post("/memories", response_model=MemoryRead)
 def create_memory(
-    title: str = Form(min_length=1, max_length=255),
+    title: str | None = Form(default=None, max_length=255),
     description: str = Form(default=""),
     location: str | None = Form(default=None, max_length=255),
     captured_at: datetime | None = Form(default=None),
@@ -82,16 +83,22 @@ def create_memory(
     target_path, size_bytes, relative_path = save_upload(
         file, media_root, kind=kind
     )
+    metadata = extract_memory_metadata(target_path, kind)
+    fallback_title = Path(file.filename or target_path.name).stem.strip()[:255]
+    final_title = (title or metadata.title or fallback_title).strip()[:255]
     memory_id = uuid.uuid4()
 
     memory = Memory(
         id=memory_id,
-        title=title,
-        description=description,
+        title=final_title or "未命名回忆",
+        description=description or metadata.description or "",
         kind=kind,
         status="published",
-        captured_at=captured_at,
-        location=location,
+        captured_at=captured_at or metadata.captured_at,
+        location=location or metadata.location,
+        width=metadata.width,
+        height=metadata.height,
+        duration_seconds=metadata.duration_seconds,
     )
     memory_file = MemoryFile(
         memory_id=memory_id,
