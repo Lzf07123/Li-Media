@@ -64,6 +64,8 @@ class MemoryFile(Base):
     source: Mapped[str] = mapped_column(String(32), default="baidupan")
     remote_path: Mapped[str] = mapped_column(String(1024), index=True)
     remote_id: Mapped[str | None] = mapped_column(String(128))
+    source_path: Mapped[str] = mapped_column(String(1024))
+    mime_type: Mapped[str] = mapped_column(String(128))
     size_bytes: Mapped[int | None]
     status: Mapped[MemoryFileStatus] = mapped_column(
         String(32), default=MemoryFileStatus.DISCOVERED, index=True

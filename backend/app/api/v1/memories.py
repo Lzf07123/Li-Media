@@ -1,11 +1,14 @@
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
-from app.models.memory import Memory, MemoryKind, MemoryStatus
+from app.models.memory import Memory, MemoryFile, MemoryKind, MemoryStatus
 from app.schemas.memory import MemoryRead
 from app.schemas.responses import MemoryListResponse
 
@@ -57,3 +60,40 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
         )
 
     return memory
+
+
+@router.get("/{memory_id}/file")
+def get_memory_file(
+    memory_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    memory = db.get(Memory, memory_id)
+
+    if memory is None or memory.status != MemoryStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
+        )
+
+    memory_file = db.scalar(
+        select(MemoryFile).where(MemoryFile.memory_id == memory_id)
+    )
+
+    if memory_file is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory file not found"
+        )
+
+    settings = get_settings()
+    media_root = Path(settings.media_root).resolve()
+    target_path = (media_root / memory_file.source_path).resolve()
+
+    if not target_path.is_relative_to(media_root) or not target_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory file missing"
+        )
+
+    return FileResponse(
+        target_path,
+        media_type=memory_file.mime_type,
+        filename=memory_file.remote_path,
+    )

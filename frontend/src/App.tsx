@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
+import AdminPage from "@/pages/AdminPage";
 import HomePage from "@/pages/HomePage";
 import MemoryDetailPage from "@/pages/MemoryDetailPage";
 import NotFoundPage from "@/pages/NotFoundPage";
@@ -15,6 +16,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/memories/:memoryId" element={<MemoryDetailPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>

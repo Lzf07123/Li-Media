@@ -51,16 +51,19 @@ export default function MemoryDetailPage() {
     <article className="grid gap-8 lg:grid-cols-[380px_1fr]">
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
         <div className="aspect-[4/3] bg-surface-2">
-          {memory.thumbnail_path ? (
+          {memory.kind === "video" ? (
+            <video
+              controls
+              preload="metadata"
+              className="size-full bg-surface-2"
+              src={memory.file_url}
+            />
+          ) : (
             <img
-              src={memory.thumbnail_path}
+              src={memory.file_url}
               alt={memory.title}
               className="size-full object-cover"
             />
-          ) : (
-            <div className="flex size-full items-center justify-center text-sm text-muted">
-              暂无缩略图
-            </div>
           )}
         </div>
       </div>

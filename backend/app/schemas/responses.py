@@ -8,3 +8,8 @@ class MemoryListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class AdminMemoryListResponse(BaseModel):
+    items: list[MemoryRead]
+    total: int

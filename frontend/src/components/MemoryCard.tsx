@@ -10,9 +10,9 @@ export default function MemoryCard({ memory }: { memory: Memory }) {
       className="group flex h-full flex-col overflow-hidden rounded-lg border border-border bg-surface transition hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <div className="relative aspect-[4/3] bg-surface-2">
-        {memory.thumbnail_path ? (
+        {memory.thumbnail_url ? (
           <img
-            src={memory.thumbnail_path}
+            src={memory.thumbnail_url}
             alt={memory.title}
             className="size-full object-cover"
             loading="lazy"

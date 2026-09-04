@@ -12,6 +12,7 @@ dependencies = [
   "psycopg[binary]>=3.2.0",
   "redis>=5.2.0",
   "httpx>=0.27.0",
+  "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]
@@ -25,4 +26,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
-

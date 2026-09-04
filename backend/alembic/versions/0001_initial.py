@@ -61,6 +61,8 @@ def upgrade() -> None:
         sa.Column("source", sa.String(length=32), nullable=False, server_default="baidupan"),
         sa.Column("remote_path", sa.String(length=1024), nullable=False),
         sa.Column("remote_id", sa.String(length=128), nullable=True),
+        sa.Column("source_path", sa.String(length=1024), nullable=False),
+        sa.Column("mime_type", sa.String(length=128), nullable=False),
         sa.Column("size_bytes", sa.BigInteger(), nullable=True),
         sa.Column(
             "status",
