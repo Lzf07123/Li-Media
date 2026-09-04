@@ -9,6 +9,15 @@ from app.db.session import get_db
 router = APIRouter(tags=["health"])
 
 
+@router.get("/")
+async def root() -> dict[str, str]:
+    return {
+        "status": "ok",
+        "service": "Li&Media API",
+        "api_docs": "/api/docs",
+    }
+
+
 @router.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -37,4 +46,3 @@ async def readyz(db: Session = Depends(get_db)) -> dict[str, str]:
         ) from exc
 
     return {"status": "ready", "database": "ok", "redis": "ok"}
-
