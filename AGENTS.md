@@ -12,7 +12,8 @@
 - 后端使用 FastAPI + SQLAlchemy 2 + Alembic。
 - 前端使用 React + TypeScript + Vite + Tailwind CSS 4。
 - 网盘凭据、下载链接和用户数据不写入仓库，只放 `.env` 或服务配置。
-- 后端公开数据只返回 `published` 状态的媒体。
+- 内容类型只做 `photo` 与 `video`，不做电影、剧集、动漫、纪录片或音乐 MV。
+- 后端公开数据只返回 `published` 状态的回忆内容。
 - 百度网盘地址必须由服务端短期解析，前端不得长期保存直链。
 - 新增接口先落在 `/api/v1`，公开接口和后台接口分目录维护。
 

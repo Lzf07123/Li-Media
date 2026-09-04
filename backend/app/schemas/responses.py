@@ -1,11 +1,10 @@
 from pydantic import BaseModel
 
-from app.schemas.media import MediaRead
+from app.schemas.memory import MemoryRead
 
 
-class MediaListResponse(BaseModel):
-    items: list[MediaRead]
+class MemoryListResponse(BaseModel):
+    items: list[MemoryRead]
     total: int
     page: int
     page_size: int
-

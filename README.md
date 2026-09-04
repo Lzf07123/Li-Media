@@ -1,6 +1,6 @@
 # Li&Media
 
-> 基于百度网盘存储的公开媒体库。当前仓库是生产基础框架，包含 FastAPI 后端、React 前端、数据库迁移和 Docker Compose 编排。
+> 基于百度网盘存储的公开回忆库，用于展示照片和视频等内容。当前仓库是生产基础框架，包含 FastAPI 后端、React 前端、数据库迁移和 Docker Compose 编排。
 
 ## 技术栈
 

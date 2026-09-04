@@ -5,7 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.session import Base
-from app.models.media import Media, MediaFile  # noqa: F401
+from app.models.memory import Memory, MemoryFile  # noqa: F401
 
 
 config = context.config
@@ -48,4 +48,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

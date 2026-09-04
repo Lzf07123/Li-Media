@@ -1,36 +1,36 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { getMediaById, type Media } from "@/lib/api";
+import { getMemoryById, type Memory } from "@/lib/api";
 
-export default function MediaDetailPage() {
-  const { mediaId } = useParams();
-  const [media, setMedia] = useState<Media | null>(null);
+export default function MemoryDetailPage() {
+  const { memoryId } = useParams();
+  const [memory, setMemory] = useState<Memory | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!mediaId) {
+    if (!memoryId) {
       return;
     }
 
     let active = true;
 
-    getMediaById(mediaId)
+    getMemoryById(memoryId)
       .then((data) => {
         if (active) {
-          setMedia(data);
+          setMemory(data);
         }
       })
       .catch(() => {
         if (active) {
-          setError("没有找到对应媒体");
+          setError("没有找到对应回忆");
         }
       });
 
     return () => {
       active = false;
     };
-  }, [mediaId]);
+  }, [memoryId]);
 
   if (error) {
     return (
@@ -43,23 +43,23 @@ export default function MediaDetailPage() {
     );
   }
 
-  if (!media) {
+  if (!memory) {
     return <div className="h-72 rounded-lg bg-surface-2" />;
   }
 
   return (
-    <article className="grid gap-8 lg:grid-cols-[280px_1fr]">
+    <article className="grid gap-8 lg:grid-cols-[380px_1fr]">
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
-        <div className="aspect-[2/3] bg-surface-2">
-          {media.poster_path ? (
+        <div className="aspect-[4/3] bg-surface-2">
+          {memory.thumbnail_path ? (
             <img
-              src={media.poster_path}
-              alt={media.title}
+              src={memory.thumbnail_path}
+              alt={memory.title}
               className="size-full object-cover"
             />
           ) : (
             <div className="flex size-full items-center justify-center text-sm text-muted">
-              暂无海报
+              暂无缩略图
             </div>
           )}
         </div>
@@ -67,20 +67,21 @@ export default function MediaDetailPage() {
 
       <div>
         <p className="text-sm text-muted">
-          {media.kind}
-          {media.year ? ` · ${media.year}` : ""}
+          {memory.kind === "video" ? "视频" : "照片"}
+          {memory.captured_at
+            ? ` · ${new Date(memory.captured_at).toLocaleDateString()}`
+            : ""}
         </p>
-        <h1 className="mt-2 text-3xl font-semibold">{media.title}</h1>
+        <h1 className="mt-2 text-3xl font-semibold">{memory.title}</h1>
 
-        {media.original_title && media.original_title !== media.title ? (
-          <p className="mt-1 text-sm text-muted">{media.original_title}</p>
+        {memory.location ? (
+          <p className="mt-1 text-sm text-muted">{memory.location}</p>
         ) : null}
 
         <p className="mt-6 whitespace-pre-line text-sm leading-6">
-          {media.overview || "暂无简介。"}
+          {memory.description || "暂无描述。"}
         </p>
       </div>
     </article>
   );
 }
-

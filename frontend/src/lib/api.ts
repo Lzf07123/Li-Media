@@ -1,20 +1,21 @@
-export type Media = {
+export type Memory = {
   id: string;
   title: string;
-  original_title: string | null;
-  kind: "movie" | "tv" | "anime" | "documentary" | "mv";
+  description: string;
+  kind: "photo" | "video";
   status: "pending" | "draft" | "published" | "hidden" | "error";
-  year: number | null;
-  overview: string;
-  rating: string | null;
-  poster_path: string | null;
-  backdrop_path: string | null;
+  captured_at: string | null;
+  location: string | null;
+  thumbnail_path: string | null;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
   created_at: string;
   updated_at: string;
 };
 
-export type MediaListResponse = {
-  items: Media[];
+export type MemoryListResponse = {
+  items: Memory[];
   total: number;
   page: number;
   page_size: number;
@@ -47,12 +48,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function getMedia(params: {
+export async function getMemories(params: {
   keyword?: string;
   kind?: string;
   page?: number;
   page_size?: number;
-} = {}): Promise<MediaListResponse> {
+} = {}): Promise<MemoryListResponse> {
   const search = new URLSearchParams();
 
   if (params.keyword) {
@@ -73,10 +74,9 @@ export async function getMedia(params: {
 
   const query = search.toString();
 
-  return request<MediaListResponse>(`/media${query ? `?${query}` : ""}`);
+  return request<MemoryListResponse>(`/memories${query ? `?${query}` : ""}`);
 }
 
-export function getMediaById(mediaId: string): Promise<Media> {
-  return request<Media>(`/media/${mediaId}`);
+export function getMemoryById(memoryId: string): Promise<Memory> {
+  return request<Memory>(`/memories/${memoryId}`);
 }
-
