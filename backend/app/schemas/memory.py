@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime
-
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.models.memory import MemoryKind, MemoryStatus
 
@@ -22,3 +21,25 @@ class MemoryRead(BaseModel):
     height: int | None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def file_url(self) -> str:
+        return f"/api/v1/memories/{self.id}/file"
+
+    @computed_field
+    @property
+    def thumbnail_url(self) -> str | None:
+        if self.kind == MemoryKind.PHOTO:
+            return self.file_url
+        return None
+
+
+class MemoryUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    kind: MemoryKind | None = None
+    status: MemoryStatus | None = None
+    captured_at: datetime | None = None
+    location: str | None = None
+    thumbnail_path: str | None = None

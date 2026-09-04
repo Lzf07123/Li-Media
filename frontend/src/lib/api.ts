@@ -6,7 +6,8 @@ export type Memory = {
   status: "pending" | "draft" | "published" | "hidden" | "error";
   captured_at: string | null;
   location: string | null;
-  thumbnail_path: string | null;
+  file_url: string;
+  thumbnail_url: string | null;
   duration_seconds: number | null;
   width: number | null;
   height: number | null;
@@ -19,6 +20,11 @@ export type MemoryListResponse = {
   total: number;
   page: number;
   page_size: number;
+};
+
+export type MemoryAdminListResponse = {
+  items: Memory[];
+  total: number;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
@@ -79,4 +85,76 @@ export async function getMemories(params: {
 
 export function getMemoryById(memoryId: string): Promise<Memory> {
   return request<Memory>(`/memories/${memoryId}`);
+}
+
+export async function getAdminMemories(
+  token: string,
+): Promise<MemoryAdminListResponse> {
+  return request<MemoryAdminListResponse>("/admin/memories", {
+    headers: {
+      Accept: "application/json",
+      "X-Admin-Token": token,
+    },
+  });
+}
+
+export async function createMemory(
+  token: string,
+  payload: {
+    file: File;
+    title: string;
+    description: string;
+    location?: string;
+    captured_at?: string;
+  },
+): Promise<Memory> {
+  const form = new FormData();
+  form.set("file", payload.file);
+  form.set("title", payload.title);
+  form.set("description", payload.description);
+
+  if (payload.location) {
+    form.set("location", payload.location);
+  }
+
+  if (payload.captured_at) {
+    form.set("captured_at", payload.captured_at);
+  }
+
+  return request<Memory>("/admin/memories", {
+    method: "POST",
+    headers: {
+      "X-Admin-Token": token,
+    },
+    body: form,
+  });
+}
+
+export async function updateMemory(
+  token: string,
+  memoryId: string,
+  payload: Partial<Pick<Memory, "title" | "description" | "location" | "status">>,
+): Promise<Memory> {
+  return request<Memory>(`/admin/memories/${memoryId}`, {
+    method: "PATCH",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Admin-Token": token,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteMemory(token: string, memoryId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/memories/${memoryId}`, {
+    method: "DELETE",
+    headers: {
+      "X-Admin-Token": token,
+    },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(`请求失败（${response.status}）`, response.status);
+  }
 }

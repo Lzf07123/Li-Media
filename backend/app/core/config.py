@@ -14,12 +14,13 @@ class Settings(BaseSettings):
 
     project_name: str = "Li&Media"
     version: str = "0.1.0"
-    database_url: str = "postgresql+psycopg://media:change-me@localhost:5432/media"
+    database_url: str = "sqlite:///./data/app.db"
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
+    admin_token: str = ""
+    media_root: str = "./data/media"
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
