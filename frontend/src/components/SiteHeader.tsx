@@ -1,4 +1,4 @@
-import { Film } from "lucide-react";
+import { Camera } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { brand } from "@/lib/brand";
@@ -11,7 +11,7 @@ export default function SiteHeader() {
           to="/"
           className="flex min-h-11 items-center gap-2 rounded-md text-lg font-semibold"
         >
-          <Film aria-hidden="true" className="size-5 text-primary" />
+          <Camera aria-hidden="true" className="size-5 text-primary" />
           {brand.name}
         </Link>
 
@@ -30,4 +30,3 @@ export default function SiteHeader() {
     </header>
   );
 }
-

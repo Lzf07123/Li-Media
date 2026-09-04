@@ -1,16 +1,14 @@
 export const brand = {
   name: "Li&Media",
   shortName: "Media",
-  slogan: "把散乱文件整理成可浏览的媒体库",
-  description: "基于百度网盘存储的公开媒体库。",
+  slogan: "把照片和视频整理成可以回看的记忆",
+  description: "基于百度网盘存储的公开回忆库。",
   nav: [
     { label: "首页", href: "/" },
-    { label: "电影", href: "/?kind=movie" },
-    { label: "剧集", href: "/?kind=tv" },
-    { label: "动画", href: "/?kind=anime" },
+    { label: "照片", href: "/?kind=photo" },
+    { label: "视频", href: "/?kind=video" },
   ],
   footerLinks: [],
 } as const;
 
 export type Brand = typeof brand;
-
