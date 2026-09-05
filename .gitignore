@@ -13,4 +13,5 @@ node_modules/
 dist/
 .vite/
 coverage/
+frontend/test-results/
 backend/data/

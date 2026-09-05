@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: limedia-quality
+        name: Li&Media quality gates
+        entry: python3 scripts/check.py
+        language: system
+        pass_filenames: false
