@@ -93,7 +93,12 @@ export default function MemoryDetailPage() {
       <div className="card overflow-hidden p-0">
         <div className="bg-surface-2">
           {memory.kind === "video" ? (
-            <VideoPlayer src={resolveMediaUrl(memory.file_url)} />
+            <VideoPlayer
+              dimensions={dimensions}
+              duration={duration}
+              poster={memory.thumbnail_url ? resolveMediaUrl(memory.thumbnail_url) : null}
+              src={resolveMediaUrl(memory.file_url)}
+            />
           ) : (
             <PhotoPreview alt={memory.title} src={resolveMediaUrl(memory.file_url)} />
           )}

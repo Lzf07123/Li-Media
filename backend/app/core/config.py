@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
     admin_token: str = ""
     media_root: str = "./data/media"
+    thumbnail_max_size: int = 1280
+    thumbnail_quality: int = 82
 
 
 @lru_cache

@@ -42,9 +42,10 @@ class MemoryRead(BaseModel):
     @computed_field
     @property
     def thumbnail_url(self) -> str | None:
-        if self.kind == MemoryKind.PHOTO:
-            return self.file_url
-        return None
+        if not self.thumbnail_path:
+            return None
+
+        return f"/api/v1/memories/{self.id}/thumbnail"
 
 class MemoryUpdate(BaseModel):
     title: str | None = None

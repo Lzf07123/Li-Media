@@ -27,6 +27,10 @@ from app.services.memory_files import (
     save_upload,
 )
 from app.services.memory_metadata import extract_memory_metadata
+from app.services.memory_thumbnails import (
+    create_memory_thumbnail,
+    remove_media_file,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -101,6 +105,13 @@ def create_memory(
         width=metadata.width,
         height=metadata.height,
         duration_seconds=metadata.duration_seconds,
+        thumbnail_path=create_memory_thumbnail(
+            target_path,
+            media_root,
+            kind=kind,
+            memory_id=memory_id,
+            duration_seconds=metadata.duration_seconds,
+        ),
     )
     memory_file = MemoryFile(
         memory_id=memory_id,
@@ -161,10 +172,9 @@ def delete_memory(
     ).all()
 
     for memory_file in files:
-        if memory_file.source_path:
-            target_path = (media_root / memory_file.source_path).resolve()
-            if target_path.is_relative_to(media_root) and target_path.is_file():
-                target_path.unlink()
+        remove_media_file(media_root, memory_file.source_path)
+
+    remove_media_file(media_root, memory.thumbnail_path)
 
     db.delete(memory)
     db.commit()

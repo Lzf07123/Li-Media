@@ -17,11 +17,19 @@ type ModalProps = {
   children: ReactNode;
   onClose: () => void;
   open: boolean;
+  panelClassName?: string;
   title: string;
   tone?: ModalTone;
 };
 
-export default function Modal({ children, onClose, open, title, tone = "info" }: ModalProps) {
+export default function Modal({
+  children,
+  onClose,
+  open,
+  panelClassName = "",
+  title,
+  tone = "info",
+}: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,7 +63,7 @@ export default function Modal({ children, onClose, open, title, tone = "info" }:
     <div className="modal-backdrop modal-backdrop-in" onClick={onClose}>
       <div
         aria-modal="true"
-        className={`modal-panel modal-panel-in ${toneClass[tone]} p-5 sm:p-6`}
+        className={`modal-panel modal-panel-in ${toneClass[tone]} p-5 sm:p-6 ${panelClassName}`}
         onClick={(event) => event.stopPropagation()}
         ref={panelRef}
         role="dialog"
