@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
     admin_token: str = ""
+    admin_session_cookie_name: str = "limedia_admin_session"
+    admin_session_ttl_minutes: int = 120
+    admin_login_max_attempts: int = 5
+    admin_login_base_delay: float = 0.2
+    admin_login_max_delay: float = 2.0
+    admin_cookie_secure: bool = False
     media_root: str = "./data/media"
     thumbnail_max_size: int = 1280
     thumbnail_quality: int = 82

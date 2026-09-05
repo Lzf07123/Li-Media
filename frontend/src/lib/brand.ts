@@ -60,6 +60,7 @@ export const brand = {
     adminTokenLabel: "管理令牌",
     adminLogin: "进入管理",
     adminLoginFailed: "管理令牌不正确，或服务暂时不可用",
+    adminLogout: "退出登录",
     adminAllMemories: "全部回忆",
     adminTitleLabel: "标题（可留空，自动读取文件名或元数据）",
     adminDescriptionLabel: "描述",

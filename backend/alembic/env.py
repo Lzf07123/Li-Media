@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.session import Base
+from app.models.admin import AdminOperationLog, AdminSession  # noqa: F401
 from app.models.memory import Memory, MemoryFile  # noqa: F401
 
 
