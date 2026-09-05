@@ -77,6 +77,22 @@ download_url_cache = DownloadUrlCache(
 )
 
 
+class BaiduStreamResponse:
+    """Small facade so route handlers cannot touch the underlying URL."""
+
+    def __init__(self, response: httpx.Response, context: object) -> None:
+        self._response = response
+        self._context = context
+
+    def iter_bytes(self):
+        yield from self._response.iter_bytes()
+
+    def close(self) -> None:
+        close = getattr(self._context, "close", None)
+        if callable(close):
+            close()
+
+
 class BaiduPanClient:
     def __init__(self, settings: Settings) -> None:
         access_token = get_baidu_access_token(settings)
@@ -164,7 +180,7 @@ class BaiduPanClient:
         remote_id: str,
         *,
         range_header: str | None,
-    ) -> tuple[int, int | None, str | None, object, httpx.Response]:
+    ) -> tuple[int, int | None, str | None, object, BaiduStreamResponse]:
         """Return an iterable response plus metadata for a short-lived link.
 
         The URL itself is intentionally not returned so callers cannot persist it.
@@ -177,25 +193,30 @@ class BaiduPanClient:
         if range_header:
             headers["Range"] = range_header
 
-        download_url = self.resolve_download_url(remote_id)
+        download_url = self._with_current_access_token(
+            self.resolve_download_url(remote_id)
+        )
         try:
-            response = httpx.stream(
+            stream_context = httpx.stream(
                 "GET",
                 download_url,
-                params={"access_token": self._settings.baidu_access_token},
                 headers=headers,
                 follow_redirects=True,
                 timeout=httpx.Timeout(30, read=300),
             )
-            opened = response.__enter__()
-            opened.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            response.close()
+            opened = stream_context.__enter__()
+        except httpx.HTTPError:
+            stream_context.close()
             self.invalidate_download_url(remote_id)
-            raise self._transport_error(exc.response) from exc
+            raise BaiduPanError("远程文件暂时无法读取") from None
         except httpx.HTTPError as exc:
-            response.close()
+            stream_context.close()
             raise BaiduPanError("远程文件暂时无法读取") from exc
+
+        if opened.status_code >= 400:
+            stream_context.close()
+            self.invalidate_download_url(remote_id)
+            raise self._transport_error(opened)
 
         content_length = opened.headers.get("content-length")
         content_range = opened.headers.get("content-range")
@@ -205,7 +226,7 @@ class BaiduPanClient:
             int(content_length) if content_length is not None else None,
             content_range,
             content_type,
-            response,
+            BaiduStreamResponse(opened, stream_context),
         )
 
     def resolve_download_url(self, remote_id: str) -> str:
@@ -373,6 +394,17 @@ class BaiduPanClient:
         )
         if delay > 0:
             time.sleep(delay)
+
+    def _with_current_access_token(self, url: str) -> str:
+        parsed = httpx.URL(url)
+        if parsed.params.get("access_token"):
+            return str(parsed)
+
+        return str(
+            parsed.copy_merge_params(
+                {"access_token": self._settings.baidu_access_token}
+            )
+        )
 
     @staticmethod
     def _api_error(errno: int) -> BaiduPanError:

@@ -1829,7 +1829,7 @@ html {
 
 .masonry {
   column-width: 288px;
-  column-count: 3;
+  column-count: 4;
   column-gap: 24px;
   margin-top: 28px;
   padding-inline: 8px;
@@ -1838,10 +1838,15 @@ html {
   break-inside: avoid;
   margin: 0 0 24px !important;
 }
+.masonry > .post-card {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 16px;
+}
 .post-cover-link {
   display: block;
-  margin: -24px -28px 16px;
-  border-radius: 20px 20px 0 0;
+  margin: 0;
+  border-radius: inherit;
   overflow: hidden;
   transition: opacity var(--limedia-motion-fast) var(--limedia-ease-out);
 }
@@ -1851,11 +1856,28 @@ html {
 .post-cover {
   display: block;
   width: 100%;
-  aspect-ratio: var(--limedia-cover-ratio, 16 / 9);
   height: auto;
   object-fit: cover;
   background: transparent;
   transition: transform var(--limedia-motion-slow) var(--limedia-ease-out);
+}
+.waterfall-badge {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--limedia-glass-border-soft);
+  border-radius: 999px;
+  background: var(--limedia-primary-soft-solid);
+  color: var(--limedia-primary-soft-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  backdrop-filter: blur(var(--limedia-glass-blur));
 }
 
 .project-card,

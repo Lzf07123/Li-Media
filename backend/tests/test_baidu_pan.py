@@ -104,3 +104,61 @@ def test_thumbnail_request_does_not_append_access_token(monkeypatch):
     assert "test-access-token" not in str(requests[0].url)
     assert "Authorization" not in requests[0].headers
     assert str(requests[0].url).endswith("size=c1600_u1600&expires=8h")
+
+
+def test_open_stream_reuses_url_token_and_closes_context(monkeypatch):
+    settings = Settings(baidu_access_token="test-access-token")
+    client = BaiduPanClient(settings)
+
+    class FakeStream:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def __enter__(self):
+            return httpx.Response(
+                206,
+                content=b"ab",
+                headers={
+                    "content-range": "bytes 0-1/3",
+                    "content-length": "2",
+                    "content-type": "video/mp4",
+                },
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake_stream = FakeStream()
+    stream_contexts = [fake_stream]
+    requests: list[httpx.Request] = []
+
+    monkeypatch.setattr(
+        client,
+        "resolve_download_url",
+        lambda remote_id: "https://d.pcs.baidu.com/file/demo?access_token=from-url",
+    )
+
+    def fake_stream(method: str, url: str, *, headers: dict[str, str], **kwargs):
+        assert method == "GET"
+        request = httpx.Request(method, url, headers=headers)
+        requests.append(request)
+        created_stream = FakeStream()
+        stream_contexts.append(created_stream)
+        return created_stream
+
+    monkeypatch.setattr("app.services.baidu_pan.httpx.stream", fake_stream)
+    status_code, length, content_range, content_type, stream = client.open_stream(
+        "123",
+        range_header="bytes=0-1",
+    )
+    stream.close()
+
+    assert (status_code, length, content_range, content_type) == (
+        206,
+        2,
+        "bytes 0-1/3",
+        "video/mp4",
+    )
+    assert len(requests) == 1
+    assert requests[0].url.params.get_list("access_token") == ["from-url"]
+    assert stream_contexts[-1].closed is True
