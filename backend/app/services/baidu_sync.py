@@ -1,248 +1,434 @@
+from __future__ import annotations
+
+import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.models.memory import Memory, MemoryFile, MemoryFileStatus, MemoryKind, MemoryStatus
-from app.services.baidu_pan import BaiduPanError, BaiduRemoteFile
-from app.services.memory_files import (
-    guess_mime_type,
-    hash_file,
-    infer_memory_kind_or_none,
+from app.models.memory import (
+    Memory,
+    MemoryFile,
+    MemoryFileStatus,
+    MemoryKind,
+    MemoryStatus,
+    RemoteFileState,
+    RemoteScanStatus,
+    RemoteScanTask,
+    RemoteStreamState,
+    RemoteThumbnailState,
 )
-from app.services.memory_metadata import extract_memory_metadata
-from app.services.memory_thumbnails import create_memory_thumbnail
+from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
+from app.services.memory_files import guess_mime_type, infer_memory_kind_or_none
 
 
 class RemoteMediaClient(Protocol):
-    def list_directory(self, remote_dir: str) -> list[BaiduRemoteFile]:
+    def list_page(
+        self,
+        remote_dir: str,
+        *,
+        start: int,
+        limit: int | None = None,
+    ) -> BaiduListPage:
         ...
 
-    def download(
-        self,
-        remote_id: str,
-        target_path: Path,
-        *,
-        max_bytes: int,
-    ) -> int:
+    def get_file_metadata(self, remote_id: str) -> BaiduRemoteItem:
         ...
 
 
 @dataclass(frozen=True, slots=True)
-class BaiduSyncSummary:
+class BaiduScanSummary:
+    task_id: UUID
+    status: RemoteScanStatus
+    processed_items: int = 0
+    scanned_files: int = 0
+    scanned_directories: int = 0
     discovered: int = 0
-    matched: int = 0
-    failed: int = 0
+    refreshed: int = 0
+    skipped: int = 0
+    limit_reached: bool = False
+    failure_reason: str | None = None
+    cursor: str | None = None
 
 
-def sync_remote_directory(
+def scan_remote_directory(
     db: Session,
     client: RemoteMediaClient,
     *,
     remote_dir: str,
-) -> int:
-    remote_files = client.list_directory(remote_dir)
-    now = datetime.now(timezone.utc)
-    discovered_count = 0
-    scanned_paths: set[str] = set()
-
-    for remote_file in remote_files:
-        kind = infer_memory_kind_or_none(remote_file.filename, None)
-        if kind is None:
-            scanned_paths.add(remote_file.remote_path)
-            continue
-
-        scanned_paths.add(remote_file.remote_path)
-
-        memory_file = db.scalar(
-            select(MemoryFile).where(
-                MemoryFile.source == "baidupan",
-                MemoryFile.remote_path == remote_file.remote_path,
-            )
-        )
-
-        if memory_file is None:
-            memory_id = uuid4()
-            fallback_title = Path(remote_file.filename).stem.strip()[:255]
-            memory = Memory(
-                id=memory_id,
-                title=fallback_title or "未命名回忆",
-                kind=kind,
-                status=MemoryStatus.PENDING,
-            )
-            memory_file = MemoryFile(
-                memory_id=memory_id,
-                source="baidupan",
-                remote_path=remote_file.remote_path,
-                remote_id=remote_file.remote_id,
-                source_path="",
-                mime_type=guess_mime_type(remote_file.filename, None),
-                size_bytes=remote_file.size_bytes,
-                status=MemoryFileStatus.PENDING,
-                last_synced_at=now,
-            )
-            db.add(memory)
-            db.add(memory_file)
-            discovered_count += 1
-        else:
-            memory_file.remote_id = remote_file.remote_id
-            memory_file.size_bytes = remote_file.size_bytes
-            memory_file.last_synced_at = now
-            if memory_file.status == MemoryFileStatus.MATCHED and (
-                memory_file.remote_id != remote_file.remote_id
-                or memory_file.size_bytes != remote_file.size_bytes
-            ):
-                memory_file.status = MemoryFileStatus.PENDING
-                memory_file.sync_error = None
-
-            if memory_file.status in {
-                MemoryFileStatus.MISSING,
-                MemoryFileStatus.REMOVED,
-            }:
-                memory_file.status = MemoryFileStatus.PENDING
-
-    existing_files = db.scalars(
-        select(MemoryFile).where(MemoryFile.source == "baidupan")
-    ).all()
-    for memory_file in existing_files:
-        if memory_file.remote_path not in scanned_paths:
-            memory_file.status = MemoryFileStatus.MISSING
-            memory_file.sync_error = "网盘目录中未找到该文件"
-            memory_file.last_synced_at = now
-
-    db.commit()
-    return discovered_count
-
-
-def sync_baidu_files(
-    db: Session,
-    client: RemoteMediaClient,
-    media_root: Path,
-    *,
-    remote_dir: str,
-    max_files: int = 5,
-    max_bytes: int = 2 * 1024 * 1024 * 1024,
-) -> BaiduSyncSummary:
-    discovered = sync_remote_directory(db, client, remote_dir=remote_dir)
-    processed = sync_pending_remote_files(
-        db,
-        client,
-        media_root,
-        max_files=max_files,
-        max_bytes=max_bytes,
-    )
-    return BaiduSyncSummary(
-        discovered=discovered,
-        matched=processed.matched,
-        failed=processed.failed,
-    )
-
-
-def sync_pending_remote_files(
-    db: Session,
-    client: RemoteMediaClient,
-    media_root: Path,
-    *,
-    max_files: int = 5,
-    max_bytes: int = 2 * 1024 * 1024 * 1024,
-) -> BaiduSyncSummary:
-    pending_files = db.scalars(
-        select(MemoryFile)
-        .where(
-            MemoryFile.source == "baidupan",
-            MemoryFile.status.in_(
-                [MemoryFileStatus.PENDING, MemoryFileStatus.FAILED]
+    max_depth: int = 8,
+    max_items: int = 5000,
+    resume_task_id: UUID | None = None,
+) -> BaiduScanSummary:
+    if resume_task_id is not None:
+        task = db.get(RemoteScanTask, resume_task_id)
+        if task is None or task.status == RemoteScanStatus.COMPLETED:
+            raise ValueError("扫描任务不存在或已完成")
+    else:
+        task = RemoteScanTask(
+            remote_dir=remote_dir,
+            max_depth=max(0, max_depth),
+            max_items=max(1, max_items),
+            cursor=json.dumps(
+                [{"path": remote_dir, "start": 0, "depth": 0}],
+                ensure_ascii=False,
             ),
         )
-        .order_by(MemoryFile.updated_at.asc())
-        .limit(max_files)
-    ).all()
-    matched_count = 0
-    failed_count = 0
-
-    for memory_file in pending_files:
-        memory = memory_file.memory or db.get(Memory, memory_file.memory_id)
-
-        if memory is None:
-            memory_file.status = MemoryFileStatus.MISSING
-            memory_file.sync_error = "缺少关联回忆记录"
-            memory_file.last_synced_at = datetime.now(timezone.utc)
-            db.commit()
-            failed_count += 1
-            continue
-
-        memory_file.status = MemoryFileStatus.SYNCING
-        memory_file.sync_error = None
+        db.add(task)
         db.commit()
+        db.refresh(task)
 
-        target_path = media_root / "remote" / str(memory_file.id)
-        try:
-            downloaded_size = client.download(
-                memory_file.remote_id or "",
-                target_path,
-                max_bytes=max_bytes,
+    summary = BaiduScanSummary(task_id=task.id, status=RemoteScanStatus.RUNNING)
+    queue = _decode_cursor(task.cursor, remote_dir)
+    limit_reached = False
+
+    try:
+        while queue:
+            current = queue[-1]
+            directory = str(current["path"])
+            start = int(current.get("start", 0))
+            depth = int(current.get("depth", 0))
+            pending_directories: list[dict[str, object]] = list(
+                current.get("pending_dirs", [])
             )
-            kind = MemoryKind(memory.kind)
-            content_hash = hash_file(target_path)
-            duplicate_file = db.scalar(
-                select(MemoryFile).where(
-                    MemoryFile.content_hash == content_hash,
-                    MemoryFile.id != memory_file.id,
+            page = client.list_page(
+                directory,
+                start=start,
+            )
+            child_directories: list[dict[str, object]] = []
+            page_consumed = 0
+
+            for item in page.items:
+                if task.processed_items >= task.max_items:
+                    limit_reached = True
+                    break
+
+                task.processed_items += 1
+                page_consumed += 1
+                if item.is_dir:
+                    task.scanned_directories += 1
+                    if depth + 1 <= task.max_depth:
+                        child_directories.append(
+                            {"path": item.remote_path, "start": 0, "depth": depth + 1}
+                        )
+                    else:
+                        task.skipped += 1
+                    continue
+
+                task.scanned_files += 1
+                _upsert_remote_file(db, item, task=task)
+
+            pending_directories.extend(child_directories)
+
+            if limit_reached:
+                queue[-1] = {
+                    "path": directory,
+                    "start": start + page_consumed,
+                    "depth": depth,
+                    "pending_dirs": pending_directories,
+                }
+                task.cursor = json.dumps(queue, ensure_ascii=False)
+                break
+
+            if page.next_start is not None:
+                queue[-1] = {
+                    "path": directory,
+                    "start": page.next_start,
+                    "depth": depth,
+                    "pending_dirs": pending_directories,
+                }
+            else:
+                queue.pop()
+                queue.extend(pending_directories)
+
+            task.cursor = json.dumps(queue, ensure_ascii=False)
+            db.commit()
+
+        task.status = RemoteScanStatus.COMPLETED
+        task.completed_at = datetime.now(timezone.utc)
+        task.cursor = None
+
+        if not limit_reached:
+            db.execute(
+                update(MemoryFile)
+                .where(
+                    MemoryFile.source == "baidupan",
+                    MemoryFile.last_scan_task_id != task.id,
+                )
+                .values(
+                    status=MemoryFileStatus.MISSING,
+                    remote_state=RemoteFileState.MISSING,
+                    stream_state=RemoteStreamState.UNAVAILABLE,
+                    sync_error="网盘目录中未找到该文件",
+                    last_synced_at=task.completed_at,
                 )
             )
-            if duplicate_file is not None:
-                raise RuntimeError("duplicate content")
 
-            metadata = extract_memory_metadata(target_path, kind)
-            thumbnail_path = create_memory_thumbnail(
-                target_path,
-                media_root,
+        db.commit()
+        db.refresh(task)
+        return _summary_from_task(task, limit_reached=limit_reached)
+    except BaiduPanError as exc:
+        db.rollback()
+        task = db.get(RemoteScanTask, task.id)
+        if task is not None:
+            task.status = RemoteScanStatus.FAILED
+            task.failure_reason = str(exc)
+            db.commit()
+            db.refresh(task)
+        return _summary_from_task(task) if task else summary
+    except Exception as exc:
+        db.rollback()
+        task = db.get(RemoteScanTask, task.id)
+        if task is not None:
+            task.status = RemoteScanStatus.FAILED
+            task.failure_reason = type(exc).__name__
+            db.commit()
+            db.refresh(task)
+        return _summary_from_task(task) if task else summary
+
+
+def refresh_remote_entry(
+    db: Session,
+    client: RemoteMediaClient,
+    memory_file: MemoryFile,
+) -> MemoryFile:
+    if memory_file.source != "baidupan":
+        raise ValueError("只有网盘条目可以刷新远程状态")
+
+    try:
+        item = client.get_file_metadata(memory_file.remote_id or "")
+    except BaiduPanError:
+        memory_file.remote_state = RemoteFileState.FAILED
+        memory_file.stream_state = RemoteStreamState.FAILED
+        memory_file.sync_error = "远程元数据刷新失败"
+        memory_file.last_synced_at = datetime.now(timezone.utc)
+        db.commit()
+        raise
+
+    if item.is_dir or item.remote_path != memory_file.remote_path:
+        memory_file.remote_state = RemoteFileState.FAILED
+        memory_file.stream_state = RemoteStreamState.FAILED
+        memory_file.sync_error = "远程路径已变化或条目无效"
+        memory_file.last_synced_at = datetime.now(timezone.utc)
+        db.commit()
+        raise BaiduPanError(memory_file.sync_error)
+
+    _apply_remote_metadata(memory_file, item)
+    memory_file.remote_state = RemoteFileState.READY
+    memory_file.stream_state = RemoteStreamState.READY
+    memory_file.status = MemoryFileStatus.MATCHED
+    memory_file.sync_error = None
+    memory_file.last_synced_at = datetime.now(timezone.utc)
+    memory = memory_file.memory or db.get(Memory, memory_file.memory_id)
+
+    if memory is not None:
+        _fill_memory_from_remote(memory, item, allow_update=True)
+
+    db.commit()
+    db.refresh(memory_file)
+    return memory_file
+
+
+def _upsert_remote_file(
+    db: Session,
+    item: BaiduRemoteItem,
+    *,
+    task: RemoteScanTask,
+) -> None:
+    kind = infer_memory_kind_or_none(item.filename, None)
+    if kind is None:
+        task.skipped += 1
+        return
+
+    memory_file = db.scalar(
+        select(MemoryFile).where(
+            MemoryFile.source == "baidupan",
+            MemoryFile.remote_id == item.remote_id,
+            MemoryFile.remote_path == item.remote_path,
+        )
+    )
+    now = datetime.now(timezone.utc)
+
+    if memory_file is not None:
+        task.refreshed += 1
+        changed = (
+            memory_file.size_bytes != item.size_bytes
+            or memory_file.modified_at != item.modified_at
+            or memory_file.remote_md5 != item.md5
+        )
+        _apply_remote_metadata(memory_file, item)
+        memory_file.remote_state = RemoteFileState.READY
+        memory_file.stream_state = RemoteStreamState.READY
+        memory_file.status = MemoryFileStatus.MATCHED
+        memory_file.sync_error = None
+        memory_file.last_synced_at = now
+        memory_file.last_scan_task_id = task.id
+
+        if changed:
+            memory = memory_file.memory or db.get(Memory, memory_file.memory_id)
+            if memory is not None:
+                _fill_memory_from_remote(memory, item, allow_update=True)
+        return
+
+    duplicate_by_md5 = None
+    if item.md5:
+        db.flush()
+        duplicate_by_md5 = db.scalar(
+            select(MemoryFile)
+            .where(
+                MemoryFile.source == "baidupan",
+                MemoryFile.remote_md5 == item.md5,
+            )
+            .order_by(MemoryFile.created_at.asc())
+        )
+    memory_id = duplicate_by_md5.memory_id if duplicate_by_md5 else uuid4()
+
+    if duplicate_by_md5 is None:
+        fallback_title, captured_at, location = _derive_remote_metadata(item)
+        db.add(
+            Memory(
+                id=memory_id,
+                title=fallback_title,
                 kind=kind,
-                memory_id=memory.id,
-                duration_seconds=metadata.duration_seconds,
+                status=MemoryStatus.PENDING,
+                captured_at=captured_at,
+                location=location,
             )
-            fallback_title = Path(memory_file.remote_path).stem.strip()[:255]
+        )
 
-            if memory.title == fallback_title and metadata.title:
-                memory.title = metadata.title.strip()[:255] or memory.title
-            if not memory.description:
-                memory.description = metadata.description or ""
-            if memory.captured_at is None:
-                memory.captured_at = metadata.captured_at
-            if memory.location is None:
-                memory.location = metadata.location
-            if memory.width is None:
-                memory.width = metadata.width
-            if memory.height is None:
-                memory.height = metadata.height
-            if memory.duration_seconds is None:
-                memory.duration_seconds = metadata.duration_seconds
-            if memory.status in {MemoryStatus.PENDING, MemoryStatus.ERROR}:
-                memory.status = MemoryStatus.PENDING
+    memory_file = MemoryFile(
+        memory_id=memory_id,
+        source="baidupan",
+        remote_id=item.remote_id,
+        remote_path=item.remote_path,
+        parent_path=item.parent_path,
+        filename=item.filename,
+        extension=PurePosixPath(item.filename).suffix.lstrip(".").lower() or None,
+        mime_type=guess_mime_type(item.filename, None),
+        size_bytes=item.size_bytes,
+        modified_at=item.modified_at,
+        remote_md5=item.md5,
+        raw_metadata_summary=item.raw_metadata_summary,
+        status=MemoryFileStatus.MATCHED,
+        remote_state=RemoteFileState.READY,
+        thumbnail_state=(
+            RemoteThumbnailState.READY if item.thumbnail_url else RemoteThumbnailState.MISSING
+        ),
+        stream_state=RemoteStreamState.READY,
+        last_synced_at=now,
+        last_scan_task_id=task.id,
+    )
+    db.add(memory_file)
+    task.discovered += 1
 
-            memory_file.source_path = target_path.relative_to(media_root).as_posix()
-            memory_file.size_bytes = downloaded_size or memory_file.size_bytes
-            memory_file.content_hash = content_hash
-            memory.thumbnail_path = thumbnail_path
-            memory_file.status = MemoryFileStatus.MATCHED
-            memory_file.sync_error = None
-            memory_file.last_synced_at = datetime.now(timezone.utc)
-            db.commit()
-            matched_count += 1
-        except Exception as exc:
-            target_path.unlink(missing_ok=True)
-            memory_file.status = MemoryFileStatus.FAILED
-            memory_file.sync_error = (
-                str(exc) if isinstance(exc, BaiduPanError) else type(exc).__name__
-            )
-            memory_file.last_synced_at = datetime.now(timezone.utc)
-            if memory.status not in {MemoryStatus.PUBLISHED, MemoryStatus.HIDDEN}:
-                memory.status = MemoryStatus.ERROR
-            db.commit()
-            failed_count += 1
 
-    return BaiduSyncSummary(matched=matched_count, failed=failed_count)
+def _apply_remote_metadata(memory_file: MemoryFile, item: BaiduRemoteItem) -> None:
+    memory_file.remote_id = item.remote_id
+    memory_file.remote_path = item.remote_path
+    memory_file.parent_path = item.parent_path
+    memory_file.filename = item.filename
+    memory_file.extension = (
+        PurePosixPath(item.filename).suffix.lstrip(".").lower() or None
+    )
+    memory_file.size_bytes = item.size_bytes
+    memory_file.modified_at = item.modified_at
+    memory_file.remote_md5 = item.md5
+    memory_file.raw_metadata_summary = item.raw_metadata_summary
+    memory_file.thumbnail_state = (
+        RemoteThumbnailState.READY if item.thumbnail_url else RemoteThumbnailState.MISSING
+    )
+
+
+def _fill_memory_from_remote(
+    memory: Memory,
+    item: BaiduRemoteItem,
+    *,
+    allow_update: bool,
+) -> None:
+    title, captured_at, location = _derive_remote_metadata(item)
+    fallback_title = title
+
+    if allow_update and (not memory.title or memory.title == fallback_title):
+        memory.title = title
+
+    if memory.captured_at is None:
+        memory.captured_at = captured_at
+
+    if memory.location is None:
+        memory.location = location
+
+    if memory.status not in {MemoryStatus.PUBLISHED, MemoryStatus.HIDDEN}:
+        memory.status = MemoryStatus.PENDING
+
+
+def _derive_remote_metadata(item: BaiduRemoteItem) -> tuple[str, datetime | None, str | None]:
+    stem = PurePosixPath(item.filename).stem.replace("_", " ").replace("-", " ").strip()
+    captured_at = _parse_datetime(item.filename) or _parse_datetime(item.parent_path)
+    location_name = PurePosixPath(item.parent_path).name if item.parent_path else ""
+    location = location_name.strip() or None
+    return (stem[:255] or "未命名回忆", captured_at, location)
+
+
+def _parse_datetime(value: str) -> datetime | None:
+    if not value:
+        return None
+
+    match = re.search(
+        r"(?P<year>20\d{2})[-_. ]?(?P<month>\d{2})[-_. ]?(?P<day>\d{2})"
+        r"(?:[T_ -]+(?P<hour>\d{2})[:.]?(?P<minute>\d{2})[:.]?(?P<second>\d{2})?)?",
+        value,
+    )
+    if match is None:
+        return None
+
+    try:
+        parsed = datetime(
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+            int(match.group("hour") or 0),
+            int(match.group("minute") or 0),
+            int(match.group("second") or 0),
+            tzinfo=timezone.utc,
+        )
+    except ValueError:
+        return None
+
+    return parsed
+
+
+def _decode_cursor(cursor: str | None, remote_dir: str) -> list[dict[str, object]]:
+    if not cursor:
+        return [{"path": remote_dir, "start": 0, "depth": 0}]
+
+    try:
+        queue = json.loads(cursor)
+    except (TypeError, ValueError):
+        return [{"path": remote_dir, "start": 0, "depth": 0}]
+
+    return queue if isinstance(queue, list) and queue else []
+
+
+def _summary_from_task(
+    task: RemoteScanTask,
+    *,
+    limit_reached: bool = False,
+) -> BaiduScanSummary:
+    return BaiduScanSummary(
+        task_id=task.id,
+        status=RemoteScanStatus(task.status),
+        processed_items=task.processed_items,
+        scanned_files=task.scanned_files,
+        scanned_directories=task.scanned_directories,
+        discovered=task.discovered,
+        refreshed=task.refreshed,
+        skipped=task.skipped,
+        limit_reached=limit_reached,
+        failure_reason=task.failure_reason,
+        cursor=task.cursor,
+    )

@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     baidu_sync_dir: str = "/apps/Li&Media"
     baidu_sync_page_size: int = 1000
     baidu_sync_max_bytes: int = 2 * 1024 * 1024 * 1024
+    baidu_scan_max_depth: int = 8
+    baidu_scan_max_items: int = 5000
+    baidu_request_interval_seconds: float = 0.2
+    baidu_retry_attempts: int = 3
+    baidu_retry_base_delay: float = 0.5
+    baidu_retry_max_delay: float = 8.0
+    baidu_download_url_ttl_seconds: int = 300
 
 
 @lru_cache

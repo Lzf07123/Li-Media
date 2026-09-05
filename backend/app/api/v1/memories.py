@@ -2,17 +2,25 @@ import mimetypes
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.models.memory import Memory, MemoryFile, MemoryKind, MemoryStatus
+from app.models.memory import (
+    Memory,
+    MemoryFile,
+    MemoryKind,
+    MemoryStatus,
+    RemoteThumbnailState,
+)
 from app.schemas.memory import MemoryRead, to_memory_read
 from app.schemas.responses import MemoryListResponse
 from app.services.memory_thumbnails import resolve_media_path
+from app.services.admin_logs import record_admin_operation
+from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -67,11 +75,13 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
     return to_memory_read(memory)
 
 
-@router.get("/{memory_id}/file")
-def get_memory_file(
+@router.api_route("/{memory_id}/file", methods=["GET"], response_model=None)
+@router.api_route("/{memory_id}/stream", methods=["GET"], response_model=None)
+def stream_memory(
     memory_id: uuid.UUID,
+    request: Request,
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> FileResponse | StreamingResponse:
     memory = db.get(Memory, memory_id)
 
     if memory is None or memory.status != MemoryStatus.PUBLISHED:
@@ -89,25 +99,61 @@ def get_memory_file(
         )
 
     settings = get_settings()
-    target_path = resolve_media_path(Path(settings.media_root), memory_file.source_path)
+    media_root = Path(settings.media_root)
+    target_path = resolve_media_path(media_root, memory_file.source_path)
 
-    if target_path is None or not target_path.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="memory file missing"
+    if target_path is not None and target_path.is_file():
+        return FileResponse(
+            target_path,
+            media_type=memory_file.mime_type,
+            filename=memory_file.remote_path,
         )
 
-    return FileResponse(
-        target_path,
-        media_type=memory_file.mime_type,
-        filename=memory_file.remote_path,
+    try:
+        status_code, content_length, content_range, content_type, response = (
+            BaiduPanClient(settings).open_stream(
+                memory_file.remote_id or "",
+                range_header=request.headers.get("range"),
+            )
+        )
+    except BaiduPanError as exc:
+        record_admin_operation(
+            db,
+            action="stream_proxy_failed",
+            target_type="memory",
+            target_id=memory.id,
+            detail=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc) or "远程媒体暂时无法播放",
+        ) from exc
+
+    def stream_response():
+        try:
+            yield from response.iter_bytes()
+        finally:
+            response.close()
+
+    headers: dict[str, str] = {"Accept-Ranges": "bytes"}
+    if content_range:
+        headers["Content-Range"] = str(content_range)
+    if content_length is not None:
+        headers["Content-Length"] = str(content_length)
+
+    return StreamingResponse(
+        stream_response(),
+        status_code=206 if content_range else (status_code or 200),
+        media_type=str(content_type),
+        headers=headers,
     )
 
 
-@router.get("/{memory_id}/thumbnail")
+@router.get("/{memory_id}/thumbnail", response_model=None)
 def get_memory_thumbnail(
     memory_id: uuid.UUID,
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> FileResponse | Response:
     memory = db.get(Memory, memory_id)
 
     if memory is None or memory.status != MemoryStatus.PUBLISHED:
@@ -115,20 +161,63 @@ def get_memory_thumbnail(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    if not memory.thumbnail_path:
+    memory_file = db.scalar(
+        select(MemoryFile).where(MemoryFile.memory_id == memory_id)
+    )
+
+    if (
+        not memory.thumbnail_path
+        and (
+            memory_file is None
+            or not memory_file.remote_id
+            or memory_file.thumbnail_state == RemoteThumbnailState.MISSING
+        )
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory thumbnail missing"
         )
 
     settings = get_settings()
-    target_path = resolve_media_path(Path(settings.media_root), memory.thumbnail_path)
+    target_path = (
+        resolve_media_path(Path(settings.media_root), memory.thumbnail_path)
+        if memory.thumbnail_path
+        else None
+    )
 
-    if target_path is None or not target_path.is_file():
+    if target_path is not None and target_path.is_file():
+        return FileResponse(
+            target_path,
+            media_type=mimetypes.guess_type(target_path.name)[0] or "image/webp",
+        )
+
+    if memory_file is None or not memory_file.remote_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory thumbnail missing"
         )
 
-    return FileResponse(
-        target_path,
-        media_type=mimetypes.guess_type(target_path.name)[0] or "image/webp",
+    try:
+        content, content_type = BaiduPanClient(settings).get_thumbnail(
+            memory_file.remote_id
+        )
+    except BaiduPanError as exc:
+        memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+        record_admin_operation(
+            db,
+            action="thumbnail_proxy_failed",
+            target_type="memory",
+            target_id=memory.id,
+            detail=str(exc),
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc) or "远程缩略图暂时无法加载",
+        ) from exc
+
+    memory_file.thumbnail_state = RemoteThumbnailState.READY
+    db.commit()
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=300"},
     )

@@ -1,60 +1,86 @@
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.db.session import Base, get_db
 from app.main import app
-from app.models.memory import MemoryFile, MemoryFileStatus, MemoryStatus
-from app.services.baidu_pan import BaiduRemoteFile
-from app.services.baidu_sync import sync_baidu_files
+from app.models.admin import AdminOperationLog
+from app.models.memory import (
+    Memory,
+    MemoryFile,
+    MemoryFileStatus,
+    MemoryKind,
+    MemoryStatus,
+    RemoteFileState,
+    RemoteScanStatus,
+    RemoteStreamState,
+)
+from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
+from app.services.baidu_sync import refresh_remote_entry, scan_remote_directory
 
 
-class FakeBaiduClient:
-    def __init__(self, source_path: Path) -> None:
-        self.source_path = source_path
+def remote_item(
+    remote_path: str,
+    *,
+    fs_id: str,
+    is_dir: bool = False,
+    md5: str | None = None,
+) -> BaiduRemoteItem:
+    path = Path(remote_path)
+    return BaiduRemoteItem(
+        remote_id=fs_id,
+        remote_path=remote_path,
+        filename=path.name,
+        parent_path=str(path.parent) if str(path.parent) != "/" else "",
+        is_dir=is_dir,
+        size_bytes=None if is_dir else 256,
+        modified_at=datetime(2024, 3, 4, 12, 30, tzinfo=UTC),
+        md5=md5,
+        category="3" if remote_path.endswith((".jpg", ".mp4")) else None,
+        thumbnail_url=None,
+        raw_metadata_summary={
+            "fs_id": fs_id,
+            "is_dir": is_dir,
+            "md5": md5,
+            "mtime": 1709555400,
+            "size": 256,
+            "has_download_link": False,
+            "has_thumbnail": False,
+        },
+    )
 
-    def list_directory(self, remote_dir: str) -> list[BaiduRemoteFile]:
-        return [
-            BaiduRemoteFile(
-                remote_id="123456",
-                remote_path=f"{remote_dir}/metadata.jpg",
-                filename="metadata.jpg",
-                size_bytes=self.source_path.stat().st_size,
-                modified_at=datetime.now(timezone.utc),
-            )
-        ]
 
-    def download(
+class FakeRemoteClient:
+    def __init__(self, tree: dict[str, list[BaiduRemoteItem]]) -> None:
+        self.tree = tree
+        self.metadata_calls = 0
+
+    def list_page(
         self,
-        remote_id: str,
-        target_path: Path,
+        remote_dir: str,
         *,
-        max_bytes: int,
-    ) -> int:
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(self.source_path.read_bytes())
-        return target_path.stat().st_size
+        start: int,
+        limit: int | None = None,
+    ) -> BaiduListPage:
+        page_size = limit or 1
+        items = self.tree.get(remote_dir, [])
+        page = items[start : start + page_size]
+        next_start = start + len(page) if len(page) == page_size else None
+        return BaiduListPage(items=page, next_start=next_start)
 
-
-def create_test_image(path: Path) -> None:
-    image = Image.new("RGB", (2400, 1200), "white")
-    exif = Image.Exif()
-    exif[40091] = "同步标题".encode("utf-16le")
-    exif[270] = "同步描述".encode("utf-8")
-    exif_ifd = exif.get_ifd(0x8769)
-    exif_ifd[36867] = "2024:03:04 12:34:56"
-    gps_ifd = exif.get_ifd(0x8825)
-    gps_ifd[1] = "N"
-    gps_ifd[2] = (30.0, 0.0, 0.0)
-    gps_ifd[3] = "E"
-    gps_ifd[4] = (120.0, 0.0, 0.0)
-    image.save(path, format="JPEG", exif=exif)
+    def get_file_metadata(self, remote_id: str) -> BaiduRemoteItem:
+        self.metadata_calls += 1
+        for items in self.tree.values():
+            for item in items:
+                if item.remote_id == remote_id:
+                    return item
+        raise BaiduPanError("远程文件不存在")
 
 
 def create_database(tmp_path: Path) -> sessionmaker[Session]:
@@ -71,139 +97,149 @@ def override_database(session_factory: sessionmaker[Session]) -> Generator[Sessi
         session.close()
 
 
-def test_sync_downloads_metadata_and_prevents_duplicates(tmp_path: Path) -> None:
-    source_path = tmp_path / "source.jpg"
-    create_test_image(source_path)
-    media_root = tmp_path / "media"
-    media_root.mkdir()
+def test_scan_is_recursive_incremental_and_deduplicates(tmp_path: Path) -> None:
+    tree = {
+        "/root": [
+            remote_item("/root/2024", fs_id="10", is_dir=True),
+            remote_item("/root/IMG_20240304_123456.jpg", fs_id="11"),
+            remote_item("/root/notes.txt", fs_id="12"),
+        ],
+        "/root/2024": [
+            remote_item("/root/2024/clip.mp4", fs_id="13"),
+            remote_item("/root/2024/copy.jpg", fs_id="14", md5="same-md5"),
+        ],
+    }
+    tree["/root/2024"].insert(0, remote_item("/root/2024/photo.jpg", fs_id="15", md5="same-md5"))
     session_factory = create_database(tmp_path)
 
     with session_factory() as session:
-        summary = sync_baidu_files(
+        first = scan_remote_directory(
             session,
-            FakeBaiduClient(source_path),
-            media_root,
-            remote_dir="/apps/Li&Media",
+            FakeRemoteClient(tree),
+            remote_dir="/root",
+            max_depth=4,
+            max_items=100,
         )
-        memory_file = session.scalar(select(MemoryFile))
-        memory = memory_file.memory
+        memories = session.scalars(select(Memory)).all()
+        files = session.scalars(select(MemoryFile)).all()
 
-        assert summary.discovered == 1
-        assert memory_file.sync_error is None
-        assert summary.matched == 1
-        assert memory_file is not None
-        assert memory_file.status == MemoryFileStatus.MATCHED
-        assert memory_file.remote_id == "123456"
-        assert memory_file.source_path.startswith("remote/")
-        assert memory_file.last_synced_at is not None
-        assert memory_file.sync_error is None
-        assert memory is not None
-        assert memory.title == "同步标题"
-        assert memory.description == "同步描述"
-        assert memory.captured_at is not None
-        assert memory.captured_at.year == 2024
-        assert memory.location == "30.000000, 120.000000"
-        assert memory.width == 2400
-        assert memory.height == 1200
-        assert memory.thumbnail_path is not None
-        assert (media_root / memory.thumbnail_path).is_file()
-        assert memory.status == MemoryStatus.PENDING
+        assert first.status == RemoteScanStatus.COMPLETED
+        assert first.scanned_directories == 1
+        assert first.skipped == 1
+        assert first.discovered == 4
+        assert len(memories) == 3
+        assert len(files) == 4
+        assert all(file.source_path == "" for file in files)
+        assert all(file.status == MemoryFileStatus.MATCHED for file in files)
+        assert {file.extension for file in files} == {"jpg", "mp4"}
+        duplicate_paths = [file.remote_path for file in files if file.remote_md5 == "same-md5"]
+        assert len(duplicate_paths) == 2
+        duplicate_memory_ids = {
+            file.memory_id for file in files if file.remote_md5 == "same-md5"
+        }
+        assert len(duplicate_memory_ids) == 1
+        memory_ids = {memory.id for memory in memories}
 
-        second_summary = sync_baidu_files(
+        second = scan_remote_directory(
             session,
-            FakeBaiduClient(source_path),
-            media_root,
-            remote_dir="/apps/Li&Media",
+            FakeRemoteClient(tree),
+            remote_dir="/root",
+            max_depth=4,
+            max_items=100,
         )
-        file_count = len(session.scalars(select(MemoryFile)).all())
+        assert second.discovered == 0
+        assert second.refreshed == 4
+        assert {memory.id for memory in session.scalars(select(Memory)).all()} == memory_ids
 
-        assert second_summary.discovered == 0
-        assert file_count == 1
 
+def test_failed_scan_keeps_checkpoint_and_can_resume(tmp_path: Path) -> None:
+    tree = {
+        "/root": [
+            remote_item("/root/first.jpg", fs_id="21"),
+            remote_item("/root/second.jpg", fs_id="22"),
+        ]
+    }
 
-def test_sync_failure_records_status_without_local_source(tmp_path: Path) -> None:
-    media_root = tmp_path / "media"
-    media_root.mkdir()
+    class FailingClient(FakeRemoteClient):
+        def list_page(self, remote_dir: str, *, start: int, limit: int | None = None):
+            if start == 1:
+                raise BaiduPanError("分页请求失败")
+            return super().list_page(remote_dir, start=start, limit=limit)
+
     session_factory = create_database(tmp_path)
-
-    class FailingClient:
-        def list_directory(self, remote_dir: str) -> list[BaiduRemoteFile]:
-            return [
-                BaiduRemoteFile(
-                    remote_id="123456",
-                    remote_path=f"{remote_dir}/metadata.jpg",
-                    filename="metadata.jpg",
-                    size_bytes=64,
-                    modified_at=datetime.now(timezone.utc),
-                )
-            ]
-
-        def download(
-            self,
-            remote_id: str,
-            target_path: Path,
-            *,
-            max_bytes: int,
-        ) -> int:
-            target_path.write_bytes(b"partial")
-            raise RuntimeError("download interrupted")
-
     with session_factory() as session:
-        summary = sync_baidu_files(
+        failed = scan_remote_directory(
             session,
-            FailingClient(),
-            media_root,
-            remote_dir="/apps/Li&Media",
+            FailingClient(tree),
+            remote_dir="/root",
+            max_depth=2,
+            max_items=100,
         )
-        memory_file = session.scalar(select(MemoryFile))
+        assert failed.status == RemoteScanStatus.FAILED
+        assert failed.failure_reason == "分页请求失败"
+        assert failed.processed_items == 1
+        assert failed.cursor is not None
+        assert '"start": 1' in failed.cursor
+        assert session.scalar(select(MemoryFile)).remote_path == "/root/first.jpg"
 
-        assert summary.failed == 1
-        assert memory_file is not None
-        assert memory_file.status == MemoryFileStatus.FAILED
-        assert memory_file.source_path == ""
-        assert memory_file.sync_error is not None
-        assert memory_file.last_synced_at is not None
-        assert not (media_root / "remote" / str(memory_file.id)).exists()
+        resumed = scan_remote_directory(
+            session,
+            FakeRemoteClient(tree),
+            remote_dir="/root",
+            max_depth=2,
+            max_items=100,
+            resume_task_id=failed.task_id,
+        )
+        assert resumed.status == RemoteScanStatus.COMPLETED
+        assert resumed.processed_items == 2
+        assert len(session.scalars(select(MemoryFile)).all()) == 2
 
 
-def test_sync_marks_absent_remote_file_missing(tmp_path: Path) -> None:
-    source_path = tmp_path / "source.jpg"
-    create_test_image(source_path)
-    media_root = tmp_path / "media"
-    media_root.mkdir()
+def test_refresh_remote_entry_marks_metadata_failure(tmp_path: Path) -> None:
     session_factory = create_database(tmp_path)
-
-    class EmptyClient:
-        def list_directory(self, remote_dir: str) -> list[BaiduRemoteFile]:
-            return []
-
-        def download(self, remote_id: str, target_path: Path, *, max_bytes: int) -> int:
-            return 0
-
     with session_factory() as session:
-        sync_baidu_files(
-            session,
-            FakeBaiduClient(source_path),
-            media_root,
-            remote_dir="/apps/Li&Media",
+        memory = Memory(
+            title="remote",
+            kind=MemoryKind.PHOTO,
+            status=MemoryStatus.PENDING,
         )
-        summary = sync_baidu_files(
-            session,
-            EmptyClient(),
-            media_root,
-            remote_dir="/apps/Li&Media",
+        memory_file = MemoryFile(
+            memory_id=memory.id,
+            source="baidupan",
+            remote_id="31",
+            remote_path="/root/photo.jpg",
+            parent_path="/root",
+            filename="photo.jpg",
+            mime_type="image/jpeg",
+            status=MemoryFileStatus.FAILED,
+            remote_state=RemoteFileState.FAILED,
+            stream_state=RemoteStreamState.FAILED,
         )
-        memory_file = session.scalar(select(MemoryFile))
+        session.add_all([memory, memory_file])
+        session.commit()
 
-        assert summary.discovered == 0
-        assert memory_file is not None
-        assert memory_file.status == MemoryFileStatus.MISSING
-        assert memory_file.sync_error == "网盘目录中未找到该文件"
+        class MissingClient:
+            def get_file_metadata(self, remote_id: str) -> BaiduRemoteItem:
+                raise BaiduPanError("远程文件不存在")
+
+        try:
+            refresh_remote_entry(session, MissingClient(), memory_file)
+        except BaiduPanError:
+            pass
+        else:
+            raise AssertionError("expected BaiduPanError")
+
+        assert memory_file.remote_state == RemoteFileState.FAILED
+        assert memory_file.sync_error == "远程元数据刷新失败"
 
 
-def test_admin_sync_endpoint_uses_worker(tmp_path: Path, monkeypatch) -> None:
-    source_path = tmp_path / "source.jpg"
-    create_test_image(source_path)
+def test_admin_scan_is_scan_only_and_retry_logs_operation(tmp_path: Path, monkeypatch) -> None:
+    tree = {
+        "/apps/Li&Media": [
+            remote_item("/apps/Li&Media/photo.jpg", fs_id="41"),
+        ]
+    }
+    client = FakeRemoteClient(tree)
     media_root = tmp_path / "media"
     media_root.mkdir()
     session_factory = create_database(tmp_path)
@@ -213,11 +249,10 @@ def test_admin_sync_endpoint_uses_worker(tmp_path: Path, monkeypatch) -> None:
         media_root=str(media_root),
         baidu_sync_dir="/apps/Li&Media",
     )
-
     monkeypatch.setattr("app.api.v1.admin.get_settings", lambda: settings)
     monkeypatch.setattr(
         "app.api.v1.admin.BaiduPanClient",
-        lambda settings: FakeBaiduClient(source_path),
+        lambda settings: client,
     )
 
     def override_get_db() -> Generator[Session, None, None]:
@@ -225,18 +260,28 @@ def test_admin_sync_endpoint_uses_worker(tmp_path: Path, monkeypatch) -> None:
 
     app.dependency_overrides[get_db] = override_get_db
     try:
-        with TestClient(app) as client:
-            login_response = client.post(
-                "/api/v1/admin/login",
-                json={"token": "test-token"},
-            )
-            assert login_response.status_code == 204
+        with TestClient(app) as test_client:
+            assert test_client.post(
+                "/api/v1/admin/login", json={"token": "test-token"}
+            ).status_code == 204
 
-            response = client.post(
-                "/api/v1/admin/sync",
-            )
+            scan_response = test_client.post("/api/v1/admin/sync")
+            assert scan_response.status_code == 200
+            payload = scan_response.json()
+            assert payload["discovered"] == 1
+            assert payload["scan_task"]["status"] == "completed"
+            assert "dlink" not in scan_response.text.lower()
+            assert not any(media_root.rglob("*"))
 
-        assert response.status_code == 200
-        assert response.json() == {"discovered": 1, "matched": 1, "failed": 0}
+            file_id = session_factory().scalar(select(MemoryFile)).id
+            retry_response = test_client.post(
+                f"/api/v1/admin/remote-entries/{file_id}/retry"
+            )
+            assert retry_response.status_code == 200
+            assert retry_response.json()["primary_file"]["remote_state"] == "ready"
+
+        with session_factory() as session:
+            actions = set(session.scalars(select(AdminOperationLog.action)).all())
+            assert {"login", "scan", "remote_retry"}.issubset(actions)
     finally:
         app.dependency_overrides.clear()
