@@ -57,6 +57,7 @@ def test_baidu_api_errors_have_distinct_messages(monkeypatch, errno, message):
 def test_thumbnail_request_does_not_append_access_token(monkeypatch):
     settings = Settings(
         baidu_access_token="test-access-token",
+        baidu_thumbnail_size="c1600_u1600",
         baidu_oauth_client_id="",
         baidu_oauth_client_secret="",
         baidu_credentials_path="/tmp/limedia-test-baidu-token.json",
@@ -72,7 +73,7 @@ def test_thumbnail_request_does_not_append_access_token(monkeypatch):
         modified_at=None,
         md5=None,
         category=None,
-        thumbnail_url="https://thumbnail.baidupcs.com/signed-image",
+        thumbnail_url="https://thumbnail.baidupcs.com/signed-image?size=c60_u60&expires=8h",
         raw_metadata_summary={"has_thumbnail": True},
     )
     requests: list[httpx.Request] = []
@@ -102,3 +103,4 @@ def test_thumbnail_request_does_not_append_access_token(monkeypatch):
     assert len(requests) == 1
     assert "test-access-token" not in str(requests[0].url)
     assert "Authorization" not in requests[0].headers
+    assert str(requests[0].url).endswith("size=c1600_u1600&expires=8h")

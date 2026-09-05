@@ -544,6 +544,23 @@
     color: var(--limedia-destructive-soft-fg);
   }
 
+  /* 状态条：横向单行滑动，所有状态文字禁止换行 */
+  .status-strip {
+    @apply flex items-center gap-3 overflow-x-auto rounded-xl border border-border bg-surface p-3;
+    flex-wrap: nowrap;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .status-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .status-strip > * {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
   /* 状态点：连接/在线状态（8px 圆点，语义色） */
   .status-dot {
     display: inline-block;
@@ -1110,8 +1127,16 @@
     gap: 12px;
     align-items: center;
     justify-content: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin-top: 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .pagination::-webkit-scrollbar {
+    display: none;
+  }
+  .pagination > * {
+    white-space: nowrap;
   }
   .pagination-info {
     color: var(--limedia-muted);
@@ -1133,6 +1158,15 @@
     margin-bottom: 12px;
     color: var(--limedia-muted);
     font-size: 0.8rem;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .breadcrumb::-webkit-scrollbar {
+    display: none;
+  }
+  .breadcrumb > * {
+    white-space: nowrap;
   }
   .breadcrumb a {
     color: var(--limedia-muted);
