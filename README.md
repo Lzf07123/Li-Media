@@ -61,6 +61,7 @@ frontend/
   src/                 React 前端
 design-system/limedia/ 项目级设计方案
 packages/li-design/    设计模板子模块
+CHECKLIST.md          下一阶段待办清单
 ```
 
 ## 当前进度
