@@ -315,8 +315,9 @@ class BaiduPanClient:
                 self._sleep_backoff(attempt)
                 continue
 
-            if payload.get("errno", 0) != 0:
-                raise BaiduPanError(f"百度网盘返回错误 {payload.get('errno')}")
+            errno = payload.get("errno", 0)
+            if errno != 0:
+                raise self._api_error(int(errno))
 
             return payload
 
@@ -342,6 +343,16 @@ class BaiduPanClient:
         )
         if delay > 0:
             time.sleep(delay)
+
+    @staticmethod
+    def _api_error(errno: int) -> BaiduPanError:
+        if errno == -6:
+            return BaiduPanError(
+                "百度网盘访问凭证无效、过期或授权范围不足"
+            )
+        if errno == 111:
+            return BaiduPanError("百度网盘访问凭证已过期，请重新授权")
+        return BaiduPanError(f"百度网盘返回错误 {errno}")
 
     @staticmethod
     def _should_retry(response: httpx.Response | None) -> bool:
