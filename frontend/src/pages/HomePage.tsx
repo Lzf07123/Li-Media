@@ -102,13 +102,11 @@ export default function HomePage() {
       </h1>
       <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
 
-      <form className="list-filters mt-6" onSubmit={submitSearch}>
-        <label className="sr-only" htmlFor="library-search">
-          {brand.copy.searchLabel}
-        </label>
+      <form className="list-filters mx-auto mt-6 w-full max-w-lg flex-col sm:flex-row sm:items-center" onSubmit={submitSearch}>
         <div className="relative w-full sm:w-72">
           <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
           <input
+            aria-label={brand.copy.searchLabel}
             className="input pl-10"
             id="library-search"
             onChange={(event) => setSearchInput(event.target.value)}
@@ -123,7 +121,7 @@ export default function HomePage() {
             {brand.copy.clearSearch}
           </Button>
         ) : null}
-        <Button type="submit">
+        <Button className="w-full sm:w-auto" type="submit">
           <Search aria-hidden="true" className="size-4" />
           {brand.copy.searchLabel}
         </Button>
