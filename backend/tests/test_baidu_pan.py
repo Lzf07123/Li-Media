@@ -1,8 +1,14 @@
 import httpx
 import pytest
+import time
 
 from app.core.config import Settings
-from app.services.baidu_pan import BaiduPanClient, BaiduPanError, BaiduRemoteItem
+from app.services.baidu_pan import (
+    BaiduPanClient,
+    BaiduPanError,
+    BaiduRemoteItem,
+    download_url_cache,
+)
 
 
 @pytest.mark.parametrize(
@@ -162,3 +168,30 @@ def test_open_stream_reuses_url_token_and_closes_context(monkeypatch):
     assert len(requests) == 1
     assert requests[0].url.params.get_list("access_token") == ["from-url"]
     assert stream_contexts[-1].closed is True
+
+
+def test_direct_url_refreshes_stale_link_after_403(monkeypatch):
+    settings = Settings(baidu_access_token="test-access-token")
+    client = BaiduPanClient(settings)
+    download_url_cache.set("123", "https://baidu.invalid/stale?access_token=old")
+    probes: list[str] = []
+
+    def fake_probe(url: str) -> bool:
+        probes.append(url)
+        return "fresh" in url
+
+    monkeypatch.setattr(client, "_probe_direct_url", fake_probe)
+    monkeypatch.setattr(
+        client,
+        "resolve_download_url",
+        lambda remote_id: "https://baidu.invalid/fresh?access_token=new",
+    )
+
+    try:
+        url, ttl = client.resolve_direct_url("123")
+
+        assert url == "https://baidu.invalid/fresh?access_token=new"
+        assert len(probes) == 2
+        assert time.monotonic() + ttl > time.monotonic()
+    finally:
+        download_url_cache.invalidate("123")

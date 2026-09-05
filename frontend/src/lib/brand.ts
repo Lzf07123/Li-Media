@@ -80,6 +80,7 @@ export const brand = {
   adminSyncFailed: "网盘同步失败",
   adminRemoteScanTitle: "远程索引扫描",
   adminScanStatus: "状态",
+  adminScanQueued: "已加入异步索引队列。",
   adminScanRunning: "扫描中",
   adminScanCompleted: "已完成",
   adminScanFailed: "已失败",

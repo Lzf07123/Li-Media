@@ -49,6 +49,7 @@ export type MemoryAdminListResponse = {
 export type MemorySyncResponse = {
   discovered: number;
   matched: number;
+  deleted: number;
   failed: number;
   scan_task: RemoteScanTask;
 };
@@ -59,6 +60,7 @@ export type RemoteScanTask = {
   status: "running" | "completed" | "failed";
   max_depth: number;
   max_items: number;
+  delete_missing: boolean;
   processed_items: number;
   scanned_files: number;
   scanned_directories: number;
@@ -241,7 +243,6 @@ export async function logoutAdmin(): Promise<void> {
 }
 
 export async function syncMemories(
-  maxItems?: number,
   resumeTaskId?: string,
 ): Promise<MemorySyncResponse> {
   return request<MemorySyncResponse>("/admin/sync", {
@@ -251,7 +252,8 @@ export async function syncMemories(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      max_items: maxItems ?? 5000,
+      max_items: 5000,
+      delete_missing: true,
       resume_task_id: resumeTaskId,
     }),
   });

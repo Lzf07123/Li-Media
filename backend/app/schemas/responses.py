@@ -30,6 +30,7 @@ class AdminSyncRequest(BaseModel):
     max_files: int = Field(default=5, ge=1, le=20)
     max_depth: int = Field(default=8, ge=0, le=32)
     max_items: int = Field(default=5000, ge=1, le=50000)
+    delete_missing: bool = True
     resume_task_id: uuid.UUID | None = None
 
 
@@ -45,6 +46,7 @@ class RemoteScanTaskRead(BaseModel):
     status: RemoteScanStatus
     max_depth: int
     max_items: int
+    delete_missing: bool
     processed_items: int
     scanned_files: int
     scanned_directories: int
@@ -60,6 +62,7 @@ class RemoteScanTaskRead(BaseModel):
 class AdminSyncResponse(BaseModel):
     discovered: int
     matched: int
+    deleted: int
     failed: int
     scan_task: RemoteScanTaskRead
 
