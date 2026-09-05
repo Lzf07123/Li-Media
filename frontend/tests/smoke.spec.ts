@@ -104,7 +104,8 @@ test("home shows memory and toggles between light and dark", async ({ page }) =>
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "回忆库" })).toBeVisible();
-  await expect(page.getByText("湖边清晨")).toBeVisible();
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 
   await page.getByRole("button", { name: "切换到深色主题" }).click();
@@ -112,6 +113,16 @@ test("home shows memory and toggles between light and dark", async ({ page }) =>
   await expect(
     page.getByRole("button", { name: "切换到浅色主题" }),
   ).toBeVisible();
+});
+
+test("home waterfall card opens detail", async ({ page }) => {
+  await mockPublicMemoryRoutes(page);
+  await page.goto("/");
+
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await page.locator(".masonry .post-card").click();
+  await expect(page.getByRole("list", { name: "状态" })).toBeVisible();
+  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
 });
 
 test("detail shows status strip without resource data", async ({ page }) => {
@@ -180,8 +191,8 @@ test("remote photo without preview uses placeholder", async ({ page }) => {
   });
   await page.goto("/");
 
-  await expect(page.getByText("湖边清晨")).toBeVisible();
-  await expect(page.locator("img[alt=\"湖边清晨\"]")).toHaveCount(0);
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await expect(page.locator("img[alt=\"回忆预览\"]")).toHaveCount(0);
 });
 
 test("detail load failure shows a recovery state", async ({ page }) => {
