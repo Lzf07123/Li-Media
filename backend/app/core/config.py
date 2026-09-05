@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/app.db"
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
+    public_base_url: str = "http://127.0.0.1:8080"
     admin_token: str = ""
     admin_session_cookie_name: str = "limedia_admin_session"
     admin_session_ttl_minutes: int = 120
@@ -29,6 +30,13 @@ class Settings(BaseSettings):
     thumbnail_quality: int = 82
     baidu_api_base_url: str = "https://pan.baidu.com/rest/2.0/xpan"
     baidu_access_token: str = ""
+    baidu_oauth_client_id: str = ""
+    baidu_oauth_client_secret: str = ""
+    baidu_oauth_redirect_uri: str = ""
+    baidu_oauth_scope: str = "basic,netdisk"
+    baidu_oauth_authorize_url: str = "https://openapi.baidu.com/oauth/2.0/authorize"
+    baidu_oauth_token_url: str = "https://openapi.baidu.com/oauth/2.0/token"
+    baidu_credentials_path: str = "./data/config/baidu_token.json"
     baidu_sync_dir: str = "/apps/Li&Media"
     baidu_sync_page_size: int = 1000
     baidu_sync_max_bytes: int = 2 * 1024 * 1024 * 1024

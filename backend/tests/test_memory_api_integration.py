@@ -118,8 +118,12 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
             assert config.status_code == 200
             assert config.json() == {
                 "configured": True,
+                "authorized": False,
+                "oauth_configured": False,
                 "scan_dir": "/apps/Li&Media",
+                "redirect_uri": "http://127.0.0.1:8080/admin/baidu/callback",
                 "docs_url": "https://pan.baidu.com/union/doc/",
+                "token_expires_at": None,
             }
 
             admin_list = client.get("/api/v1/admin/memories")

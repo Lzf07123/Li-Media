@@ -1,7 +1,7 @@
 import secrets
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import (
@@ -32,6 +32,9 @@ from app.models.memory import (
 )
 from app.schemas.memory import MemoryRead, MemoryUpdate, to_memory_read
 from app.schemas.responses import (
+    AdminBaiduAuthorizeResponse,
+    AdminBaiduCallbackRequest,
+    AdminBaiduCallbackResponse,
     AdminMemoryListResponse,
     AdminLoginRequest,
     AdminMemoryBatchUpdateRequest,
@@ -56,6 +59,15 @@ from app.services.admin_security import (
     sleep_for_login_delay,
 )
 from app.services.baidu_pan import BaiduPanClient
+from app.services.baidu_oauth import (
+    BaiduOAuthError,
+    build_baidu_authorize_url,
+    create_baidu_oauth_state,
+    exchange_baidu_code,
+    load_baidu_credentials,
+    save_baidu_credentials,
+    verify_baidu_oauth_state,
+)
 from app.services.baidu_sync import refresh_remote_entry, scan_remote_directory
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -97,10 +109,90 @@ def get_remote_config(
     _: AdminSession = Depends(require_admin_session),
 ) -> AdminRemoteConfigResponse:
     settings = get_settings()
+    credentials = load_baidu_credentials(settings)
+    oauth_configured = bool(
+        settings.baidu_oauth_client_id and settings.baidu_oauth_client_secret
+    )
+    redirect_uri = settings.baidu_oauth_redirect_uri or (
+        settings.public_base_url.rstrip("/") + "/admin/baidu/callback"
+    )
     return AdminRemoteConfigResponse(
-        configured=bool(settings.baidu_access_token),
+        configured=bool(credentials or settings.baidu_access_token),
+        oauth_configured=oauth_configured,
+        authorized=credentials is not None,
         scan_dir=settings.baidu_sync_dir,
+        redirect_uri=redirect_uri,
         docs_url="https://pan.baidu.com/union/doc/",
+        token_expires_at=credentials.expires_at if credentials else None,
+    )
+
+
+@router.get("/baidu/authorize", response_model=AdminBaiduAuthorizeResponse)
+def start_baidu_authorization(
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminBaiduAuthorizeResponse:
+    settings = get_settings()
+    if not settings.baidu_oauth_client_id or not settings.baidu_oauth_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="百度网盘 OAuth AppKey/SecretKey 未配置",
+        )
+
+    state = create_baidu_oauth_state(settings)
+    try:
+        authorize_url = build_baidu_authorize_url(settings, state=state)
+    except BaiduOAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return AdminBaiduAuthorizeResponse(
+        authorize_url=authorize_url,
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=600),
+    )
+
+
+@router.post("/baidu/callback", response_model=AdminBaiduCallbackResponse)
+def complete_baidu_authorization(
+    payload: AdminBaiduCallbackRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminBaiduCallbackResponse:
+    settings = get_settings()
+    try:
+        verify_baidu_oauth_state(settings, payload.state)
+        credentials = exchange_baidu_code(settings, payload.code)
+        save_baidu_credentials(settings, credentials)
+    except BaiduOAuthError as exc:
+        record_admin_operation(
+            db,
+            action="baidu_authorize_failed",
+            client_ip=_client_ip(request),
+            detail=str(exc),
+        )
+        db.commit()
+        status_code = (
+            status.HTTP_400_BAD_REQUEST
+            if "授权状态" in str(exc)
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+    record_admin_operation(
+        db,
+        action="baidu_authorize",
+        client_ip=_client_ip(request),
+        detail=(
+            f"scope={credentials.scope or 'unknown'};"
+            f"expires_at={credentials.expires_at.isoformat() if credentials.expires_at else 'unknown'}"
+        ),
+    )
+    db.commit()
+    return AdminBaiduCallbackResponse(
+        authorized=True,
+        expires_at=credentials.expires_at,
     )
 
 

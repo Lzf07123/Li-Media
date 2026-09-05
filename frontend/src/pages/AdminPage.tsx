@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import { LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -14,6 +15,7 @@ import {
   getAdminMemories,
   getRemoteConfig,
   getLatestRemoteScan,
+  startBaiduAuthorization,
   loginAdmin,
   logoutAdmin,
   retryRemoteEntry,
@@ -42,6 +44,7 @@ export default function AdminPage() {
   const [isRetryingRemote, setIsRetryingRemote] = useState<string | null>(null);
   const [scanTask, setScanTask] = useState<RemoteScanTask | null>(null);
   const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Memory | null>(null);
@@ -51,6 +54,7 @@ export default function AdminPage() {
   const [batchDescription, setBatchDescription] = useState("");
   const [batchLocation, setBatchLocation] = useState("");
   const [batchCapturedAt, setBatchCapturedAt] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const pushToast = (message: string, tone: Toast["tone"]) => {
     setToasts((current) => [...current, { id: Date.now(), message, tone }]);
@@ -86,6 +90,21 @@ export default function AdminPage() {
   useEffect(() => {
     void loadMemories();
   }, [loadMemories]);
+
+  useEffect(() => {
+    const authorizationResult = searchParams.get("baidu_auth");
+    if (!authorizationResult) {
+      return;
+    }
+
+    pushToast(
+      authorizationResult === "success"
+        ? brand.copy.adminRemoteCallbackSuccess
+        : brand.copy.adminRemoteCallbackFailed,
+      authorizationResult === "success" ? "success" : "error",
+    );
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (toasts.length === 0) {
@@ -210,6 +229,17 @@ export default function AdminPage() {
     }
   };
 
+  const startAuthorization = async () => {
+    setIsAuthorizing(true);
+    try {
+      const authorization = await startBaiduAuthorization();
+      window.location.href = authorization.authorize_url;
+    } catch {
+      setError(brand.copy.adminRemoteAuthorizeFailed);
+      setIsAuthorizing(false);
+    }
+  };
+
   const retryRemote = async (memory: Memory) => {
     if (!memory.primary_file) {
       return;
@@ -269,8 +299,14 @@ export default function AdminPage() {
       {remoteConfig ? (
         <BaiduSetupCard
           configured={remoteConfig.configured}
+          authorized={remoteConfig.authorized}
           docsUrl={remoteConfig.docs_url}
+          isAuthorizing={isAuthorizing}
+          oauthConfigured={remoteConfig.oauth_configured}
+          onAuthorize={() => void startAuthorization()}
+          redirectUri={remoteConfig.redirect_uri}
           scanDir={remoteConfig.scan_dir}
+          tokenExpiresAt={remoteConfig.token_expires_at}
         />
       ) : null}
 

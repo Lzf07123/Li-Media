@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.services.baidu_oauth import get_baidu_access_token
 
 
 class BaiduPanError(RuntimeError):
@@ -77,10 +78,13 @@ download_url_cache = DownloadUrlCache(
 
 class BaiduPanClient:
     def __init__(self, settings: Settings) -> None:
-        if not settings.baidu_access_token:
+        access_token = get_baidu_access_token(settings)
+        if not access_token:
             raise BaiduPanError("百度网盘访问凭证缺失")
 
-        self._settings = settings
+        self._settings = settings.model_copy(
+            update={"baidu_access_token": access_token}
+        )
         self._last_request_at: float | None = None
 
     def list_page(

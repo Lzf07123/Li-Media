@@ -82,5 +82,24 @@ class AdminMemoryExportResponse(BaseModel):
 
 class AdminRemoteConfigResponse(BaseModel):
     configured: bool
+    oauth_configured: bool
+    authorized: bool
     scan_dir: str
+    redirect_uri: str
     docs_url: str
+    token_expires_at: datetime | None
+
+
+class AdminBaiduAuthorizeResponse(BaseModel):
+    authorize_url: str
+    expires_at: datetime
+
+
+class AdminBaiduCallbackRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=2048)
+    state: str = Field(min_length=1, max_length=1024)
+
+
+class AdminBaiduCallbackResponse(BaseModel):
+    authorized: bool
+    expires_at: datetime | None
