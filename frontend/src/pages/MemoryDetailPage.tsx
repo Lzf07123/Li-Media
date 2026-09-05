@@ -7,24 +7,10 @@ import VideoPlayer from "@/components/VideoPlayer";
 import FileStatusBadge from "@/components/FileStatusBadge";
 import RemoteStateBadge from "@/components/RemoteStateBadge";
 import { brand } from "@/lib/brand";
-import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
 import { getMemoryById, resolveMediaUrl, type Memory } from "@/lib/api";
 import Breadcrumb from "@/components/ui/Breadcrumb";
 import EmptyState from "@/components/ui/EmptyState";
 import MediaSkeleton from "@/components/ui/MediaSkeleton";
-
-function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) {
-    return null;
-  }
-
-  return (
-    <div className="grid gap-1 sm:grid-cols-[140px_1fr]">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="text-sm">{value}</dd>
-    </div>
-  );
-}
 
 export default function MemoryDetailPage() {
   const { memoryId } = useParams();
@@ -74,13 +60,10 @@ export default function MemoryDetailPage() {
     return null;
   }
 
-  const capturedAt = formatDateTime(memory.captured_at);
-  const dimensions =
-    memory.width && memory.height ? `${memory.width} × ${memory.height}` : null;
-  const duration = formatDuration(memory.duration_seconds);
-  const fileSize = formatBytes(memory.primary_file?.size_bytes);
   const fileStatus = memory.primary_file?.status;
-  const modifiedAt = formatDateTime(memory.primary_file?.modified_at);
+  const remoteState = memory.primary_file?.remote_state;
+  const thumbnailState = memory.primary_file?.thumbnail_state;
+  const streamState = memory.primary_file?.stream_state;
 
   return (
     <article className="page-enter">
@@ -97,8 +80,8 @@ export default function MemoryDetailPage() {
           {memory.kind === "video" ? (
             memory.primary_file?.stream_state === "ready" ? (
               <VideoPlayer
-                dimensions={dimensions}
-                duration={duration}
+                dimensions={null}
+                duration={null}
                 poster={memory.thumbnail_url ? resolveMediaUrl(memory.thumbnail_url) : null}
                 src={resolveMediaUrl(memory.file_url)}
               />
@@ -112,7 +95,10 @@ export default function MemoryDetailPage() {
             )
           ) : (
             memory.primary_file?.thumbnail_state === "ready" && memory.thumbnail_url ? (
-              <PhotoPreview alt={memory.title} src={resolveMediaUrl(memory.thumbnail_url)} />
+              <PhotoPreview
+                alt={brand.copy.detailPreviewAlt}
+                src={resolveMediaUrl(memory.thumbnail_url)}
+              />
             ) : (
               <div
                 aria-hidden="true"
@@ -125,52 +111,29 @@ export default function MemoryDetailPage() {
         </div>
       </div>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <section aria-labelledby="memory-title">
-          <p className="text-sm text-muted">
-            {memory.kind === "video" ? brand.copy.videoKind : brand.copy.photoKind}
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold" id="memory-title">
-            {memory.title}
-          </h1>
-          <h2 className="section-title mt-8">{brand.copy.detailDescription}</h2>
-          <p className="whitespace-pre-line text-sm leading-6">
-            {memory.description || brand.copy.noDescription}
-          </p>
-        </section>
-
-        <aside className="card p-6">
-          <h2 className="text-lg font-semibold">{brand.copy.detailCapture}</h2>
-          <dl className="mt-4 space-y-3">
-            <DetailRow label={brand.copy.detailCaptureTime} value={capturedAt} />
-            <DetailRow label={brand.copy.detailLocation} value={memory.location} />
-            <DetailRow label={brand.copy.detailDimensions} value={dimensions} />
-            <DetailRow label={brand.copy.detailDuration} value={duration} />
-          </dl>
-
-          <h2 className="mt-8 text-lg font-semibold">{brand.copy.detailFile}</h2>
-          <dl className="mt-4 space-y-3">
-            <DetailRow label={brand.copy.detailFileSource} value={memory.primary_file?.source} />
-            <DetailRow label={brand.copy.detailRemotePath} value={memory.primary_file?.remote_path} />
-            <DetailRow label={brand.copy.detailFileFormat} value={memory.primary_file?.mime_type} />
-            <DetailRow label={brand.copy.detailFileSize} value={fileSize} />
-            <DetailRow label={brand.copy.detailRemoteModified} value={modifiedAt} />
-            <dt className="text-sm text-muted">{brand.copy.detailFileStatus}</dt>
-            <dd className="text-sm">{fileStatus ? <FileStatusBadge status={fileStatus} /> : null}</dd>
-            <dt className="text-sm text-muted">{brand.copy.detailRemoteState}</dt>
-            <dd className="text-sm">
-              {memory.primary_file ? (
-                <RemoteStateBadge kind="remote" state={memory.primary_file.remote_state} />
-              ) : null}
-            </dd>
-            <dt className="text-sm text-muted">{brand.copy.detailPreviewState}</dt>
-            <dd className="text-sm">
-              {memory.primary_file ? (
-                <RemoteStateBadge kind="thumbnail" state={memory.primary_file.thumbnail_state} />
-              ) : null}
-            </dd>
-          </dl>
-        </aside>
+      <div
+        aria-label={brand.copy.detailStatusLabel}
+        className="status-strip mt-4"
+        role="list"
+      >
+        <div className="flex items-center gap-2" role="listitem">
+          <span className="text-xs text-muted">{brand.copy.detailFileStatusLabel}</span>
+          {fileStatus ? <FileStatusBadge status={fileStatus} /> : null}
+        </div>
+        <div className="flex items-center gap-2" role="listitem">
+          <span className="text-xs text-muted">{brand.copy.detailRemoteState}</span>
+          {remoteState ? <RemoteStateBadge kind="remote" state={remoteState} /> : null}
+        </div>
+        <div className="flex items-center gap-2" role="listitem">
+          <span className="text-xs text-muted">{brand.copy.detailPreviewState}</span>
+          {thumbnailState ? (
+            <RemoteStateBadge kind="thumbnail" state={thumbnailState} />
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2" role="listitem">
+          <span className="text-xs text-muted">{brand.copy.detailStreamState}</span>
+          {streamState ? <RemoteStateBadge kind="stream" state={streamState} /> : null}
+        </div>
       </div>
     </article>
   );

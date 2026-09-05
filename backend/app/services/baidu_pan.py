@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -138,9 +139,13 @@ class BaiduPanClient:
         if not metadata.thumbnail_url:
             raise BaiduPanError("远程缩略图不可用")
 
+        thumbnail_url = self._with_requested_thumbnail_size(
+            metadata.thumbnail_url,
+            self._settings.baidu_thumbnail_size,
+        )
         try:
             response = httpx.get(
-                metadata.thumbnail_url,
+                thumbnail_url,
                 headers={"User-Agent": "Li&Media"},
                 follow_redirects=True,
                 timeout=30,
@@ -270,6 +275,31 @@ class BaiduPanClient:
                 "has_thumbnail": thumbnail_url is not None,
                 "has_download_link": has_download_link,
             },
+        )
+
+    @staticmethod
+    def _with_requested_thumbnail_size(url: str, size: str) -> str:
+        parsed = urlparse(url)
+        query = []
+        has_size = False
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+            if key == "size":
+                value = size
+                has_size = True
+            query.append((key, value))
+
+        if not has_size:
+            query.append(("size", size))
+
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                urlencode(query),
+                parsed.fragment,
+            )
         )
 
     @staticmethod

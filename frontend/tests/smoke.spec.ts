@@ -114,14 +114,18 @@ test("home shows memory and toggles between light and dark", async ({ page }) =>
   ).toBeVisible();
 });
 
-test("detail shows media metadata", async ({ page }) => {
+test("detail shows status strip without resource data", async ({ page }) => {
   await mockPublicMemoryRoutes(page);
   await page.goto(`/memories/${memoryId}`);
 
-  await expect(page.getByRole("heading", { name: "湖边清晨" })).toBeVisible();
-  await expect(page.getByText("2400 × 1200")).toBeVisible();
-  await expect(page.getByRole("button", { name: "打开图片查看器" })).toBeVisible();
-  await expect(page.locator("img[alt=\"湖边清晨\"]")).toBeVisible();
+  await expect(page.getByText("湖边清晨")).toHaveCount(0);
+  await expect(page.getByText("2400 × 1200")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "状态" })).toBeVisible();
+  await expect(page.getByText("文件状态")).toBeVisible();
+  await expect(page.getByText("远程状态")).toBeVisible();
+  await expect(page.getByText("预览状态")).toBeVisible();
+  await expect(page.getByText("播放状态")).toBeVisible();
+  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
 });
 
 test("admin table is visible in dark mode", async ({ page }) => {
