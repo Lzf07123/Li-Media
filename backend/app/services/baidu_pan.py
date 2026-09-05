@@ -268,14 +268,40 @@ class BaiduPanClient:
     def resolve_direct_url(self, remote_id: str) -> tuple[str, int]:
         cached = download_url_cache.get_entry(remote_id)
         if cached is not None:
-            return self._with_current_access_token(cached[0]), cached[1]
+            url, ttl = cached
+            if self._probe_direct_url(url):
+                return self._with_current_access_token(url), ttl
+
+            self.invalidate_download_url(remote_id)
 
         url = self.resolve_download_url(remote_id)
         entry = download_url_cache.get_entry(remote_id)
         ttl = entry[1] if entry else max(
             0, self._settings.baidu_download_url_ttl_seconds
         )
-        return self._with_current_access_token(url), ttl
+        direct_url = self._with_current_access_token(url)
+
+        if not self._probe_direct_url(direct_url):
+            self.invalidate_download_url(remote_id)
+            raise BaiduPanError("百度网盘媒体直链被拒绝（403）")
+
+        return direct_url, ttl
+
+    def _probe_direct_url(self, url: str) -> bool:
+        try:
+            with httpx.stream(
+                "GET",
+                url,
+                headers={
+                    "Range": "bytes=0-0",
+                    "User-Agent": "Mozilla/5.0",
+                },
+                follow_redirects=True,
+                timeout=httpx.Timeout(10, read=15),
+            ) as response:
+                return response.status_code in {200, 206}
+        except httpx.HTTPError:
+            return False
 
     def _to_remote_item(self, item: dict[str, object]) -> BaiduRemoteItem:
         remote_path = str(item["path"])

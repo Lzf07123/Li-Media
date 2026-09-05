@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.db.session import Base, get_db
+from app.db.session import Base, get_db, get_session_factory
 from app.main import app
 from app.models.admin import AdminOperationLog
 from app.models.memory import (
@@ -19,6 +19,7 @@ from app.models.memory import (
     MemoryStatus,
     RemoteFileState,
     RemoteScanStatus,
+    RemoteScanTask,
     RemoteStreamState,
 )
 from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
@@ -233,6 +234,67 @@ def test_refresh_remote_entry_marks_metadata_failure(tmp_path: Path) -> None:
         assert memory_file.sync_error == "远程元数据刷新失败"
 
 
+def test_delete_missing_policy_fully_syncs_remote_index(tmp_path: Path) -> None:
+    session_factory = create_database(tmp_path)
+    old_memory_id = uuid4()
+    with session_factory.begin() as session:
+        session.add(
+            Memory(
+                id=old_memory_id,
+                title="旧网盘资源",
+                kind=MemoryKind.PHOTO,
+                status=MemoryStatus.PUBLISHED,
+            )
+        )
+        session.add(
+            MemoryFile(
+                memory_id=old_memory_id,
+                source="baidupan",
+                remote_id="old-1",
+                remote_path="/root/old.jpg",
+                parent_path="/root",
+                filename="old.jpg",
+                mime_type="image/jpeg",
+                status=MemoryFileStatus.MATCHED,
+                remote_state=RemoteFileState.READY,
+                stream_state=RemoteStreamState.READY,
+            )
+        )
+
+    tree = {
+        "/root": [
+            remote_item("/root/new.jpg", fs_id="new-1"),
+        ]
+    }
+
+    with session_factory() as session:
+        summary = scan_remote_directory(
+            session,
+            FakeRemoteClient(tree),
+            remote_dir="/root",
+            max_depth=2,
+            max_items=100,
+            delete_missing=True,
+        )
+
+        assert summary.status == RemoteScanStatus.COMPLETED
+        assert summary.deleted == 1
+        assert session.scalar(select(MemoryFile).where(MemoryFile.remote_id == "old-1")) is None
+        assert session.get(Memory, old_memory_id) is None
+        remaining_file = session.scalar(select(MemoryFile))
+        assert remaining_file is not None
+        assert remaining_file.remote_id == "new-1"
+
+    with session_factory() as session:
+        delete_log = session.scalar(
+            select(AdminOperationLog).where(
+                AdminOperationLog.action == "remote_index_delete"
+            )
+        )
+        assert delete_log is not None
+        assert "remote_resource=unchanged" in delete_log.detail
+
+
 def test_admin_scan_is_scan_only_and_retry_logs_operation(tmp_path: Path, monkeypatch) -> None:
     tree = {
         "/apps/Li&Media": [
@@ -259,6 +321,7 @@ def test_admin_scan_is_scan_only_and_retry_logs_operation(tmp_path: Path, monkey
         yield from override_database(session_factory)
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
     try:
         with TestClient(app) as test_client:
             assert test_client.post(
@@ -268,8 +331,9 @@ def test_admin_scan_is_scan_only_and_retry_logs_operation(tmp_path: Path, monkey
             scan_response = test_client.post("/api/v1/admin/sync")
             assert scan_response.status_code == 200
             payload = scan_response.json()
-            assert payload["discovered"] == 1
-            assert payload["scan_task"]["status"] == "completed"
+            assert payload["discovered"] == 0
+            assert payload["scan_task"]["status"] == "running"
+            assert payload["scan_task"]["delete_missing"] is True
             assert "dlink" not in scan_response.text.lower()
             assert not any(media_root.rglob("*"))
 
@@ -282,6 +346,11 @@ def test_admin_scan_is_scan_only_and_retry_logs_operation(tmp_path: Path, monkey
 
         with session_factory() as session:
             actions = set(session.scalars(select(AdminOperationLog.action)).all())
-            assert {"login", "scan", "remote_retry"}.issubset(actions)
+            assert {"login", "scan_queued", "scan", "remote_retry"}.issubset(actions)
+            task = session.scalar(select(RemoteScanTask))
+            assert task is not None
+            assert task.status == RemoteScanStatus.COMPLETED
+            assert task.delete_missing is True
     finally:
         app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_session_factory, None)

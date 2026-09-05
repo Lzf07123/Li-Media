@@ -92,6 +92,23 @@ export default function AdminPage() {
   }, [loadMemories]);
 
   useEffect(() => {
+    if (scanTask?.status !== "running") {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      const nextTask = await getLatestRemoteScan();
+      setScanTask(nextTask);
+
+      if (nextTask?.status !== "running") {
+        await loadMemories();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [scanTask?.status, loadMemories]);
+
+  useEffect(() => {
     const authorizationResult = searchParams.get("baidu_auth");
     if (!authorizationResult) {
       return;
@@ -217,9 +234,14 @@ export default function AdminPage() {
   const triggerSync = async (resumeTaskId?: string) => {
     setIsSyncing(true);
     try {
-      const result = await syncMemories(undefined, resumeTaskId);
+      const result = await syncMemories(resumeTaskId);
       setError(null);
-      pushToast(brand.copy.adminSyncSuccess, "success");
+      pushToast(
+        result.scan_task.status === "running"
+          ? brand.copy.adminScanQueued
+          : brand.copy.adminSyncSuccess,
+        "success",
+      );
       setScanTask(result.scan_task);
       await loadMemories();
     } catch {

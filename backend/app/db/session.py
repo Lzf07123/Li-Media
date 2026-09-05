@@ -30,3 +30,7 @@ def get_db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+def get_session_factory() -> sessionmaker[Session]:
+    return SessionLocal

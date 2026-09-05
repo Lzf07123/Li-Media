@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import (
     Body,
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Request,
@@ -14,10 +15,10 @@ from fastapi import (
     status,
 )
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
 from app.models.admin import AdminSession
 from app.models.memory import (
     Memory,
@@ -68,7 +69,11 @@ from app.services.baidu_oauth import (
     save_baidu_credentials,
     verify_baidu_oauth_state,
 )
-from app.services.baidu_sync import refresh_remote_entry, scan_remote_directory
+from app.services.baidu_sync import (
+    create_remote_scan_task,
+    refresh_remote_entry,
+    run_remote_scan_task,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -269,9 +274,11 @@ def logout_admin(
 
 @router.post("/sync", response_model=AdminSyncResponse)
 def trigger_baidu_sync(
+    background_tasks: BackgroundTasks,
     request: Request,
     payload: AdminSyncRequest | None = Body(default=None),
     db: Session = Depends(get_db),
+    session_factory: sessionmaker[Session] = Depends(get_session_factory),
     _: AdminSession = Depends(require_admin_session),
 ) -> AdminSyncResponse:
     request_payload = payload or AdminSyncRequest()
@@ -283,40 +290,43 @@ def trigger_baidu_sync(
             detail="百度网盘访问凭证未配置",
         )
 
-    try:
-        scan_summary = scan_remote_directory(
+    if request_payload.resume_task_id:
+        task = db.get(RemoteScanTask, request_payload.resume_task_id)
+        if task is None or task.status == RemoteScanStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="扫描任务不存在或已完成",
+            )
+    else:
+        task = create_remote_scan_task(
             db,
-            BaiduPanClient(settings),
             remote_dir=settings.baidu_sync_dir,
             max_depth=request_payload.max_depth,
             max_items=request_payload.max_items,
-            resume_task_id=request_payload.resume_task_id,
+            delete_missing=request_payload.delete_missing,
         )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
 
-    failed_count = 1 if scan_summary.status == RemoteScanStatus.FAILED else 0
+    background_tasks.add_task(
+        run_remote_scan_task,
+        session_factory,
+        task.id,
+        lambda: BaiduPanClient(settings),
+    )
     record_admin_operation(
         db,
-        action="scan",
+        action="scan_queued",
         client_ip=_client_ip(request),
         detail=(
-            f"task={scan_summary.task_id};status={scan_summary.status.value};"
-            f"discovered={scan_summary.discovered};refreshed={scan_summary.refreshed};"
-            f"skipped={scan_summary.skipped};failed={failed_count}"
+            f"task={task.id};mode={'async-delete' if task.delete_missing else 'async-keep'}"
         ),
     )
 
     return AdminSyncResponse(
-        discovered=scan_summary.discovered,
-        matched=scan_summary.refreshed,
-        failed=failed_count,
-        scan_task=RemoteScanTaskRead.model_validate(
-            db.get(RemoteScanTask, scan_summary.task_id)
-        ),
+        discovered=task.discovered,
+        matched=task.refreshed,
+        deleted=0,
+        failed=0,
+        scan_task=RemoteScanTaskRead.model_validate(task),
     )
 
 

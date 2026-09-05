@@ -5,11 +5,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
+from collections.abc import Callable
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.memory import (
     Memory,
@@ -23,6 +24,7 @@ from app.models.memory import (
     RemoteStreamState,
     RemoteThumbnailState,
 )
+from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
 from app.services.memory_files import guess_mime_type, infer_memory_kind_or_none
 
@@ -51,6 +53,7 @@ class BaiduScanSummary:
     discovered: int = 0
     refreshed: int = 0
     skipped: int = 0
+    deleted: int = 0
     limit_reached: bool = False
     failure_reason: str | None = None
     cursor: str | None = None
@@ -64,6 +67,7 @@ def scan_remote_directory(
     max_depth: int = 8,
     max_items: int = 5000,
     resume_task_id: UUID | None = None,
+    delete_missing: bool = False,
 ) -> BaiduScanSummary:
     if resume_task_id is not None:
         task = db.get(RemoteScanTask, resume_task_id)
@@ -74,6 +78,7 @@ def scan_remote_directory(
             remote_dir=remote_dir,
             max_depth=max(0, max_depth),
             max_items=max(1, max_items),
+            delete_missing=delete_missing,
             cursor=json.dumps(
                 [{"path": remote_dir, "start": 0, "depth": 0}],
                 ensure_ascii=False,
@@ -158,7 +163,10 @@ def scan_remote_directory(
                 update(MemoryFile)
                 .where(
                     MemoryFile.source == "baidupan",
-                    MemoryFile.last_scan_task_id != task.id,
+                    or_(
+                        MemoryFile.last_scan_task_id != task.id,
+                        MemoryFile.last_scan_task_id.is_(None),
+                    ),
                 )
                 .values(
                     status=MemoryFileStatus.MISSING,
@@ -169,9 +177,21 @@ def scan_remote_directory(
                 )
             )
 
+            deleted_count = (
+                _delete_missing_remote_entries(db, task)
+                if task.delete_missing
+                else 0
+            )
+        else:
+            deleted_count = 0
+
         db.commit()
         db.refresh(task)
-        return _summary_from_task(task, limit_reached=limit_reached)
+        return _summary_from_task(
+            task,
+            limit_reached=limit_reached,
+            deleted=deleted_count,
+        )
     except BaiduPanError as exc:
         db.rollback()
         task = db.get(RemoteScanTask, task.id)
@@ -414,10 +434,132 @@ def _decode_cursor(cursor: str | None, remote_dir: str) -> list[dict[str, object
     return queue if isinstance(queue, list) and queue else []
 
 
+def create_remote_scan_task(
+    db: Session,
+    *,
+    remote_dir: str,
+    max_depth: int,
+    max_items: int,
+    delete_missing: bool,
+) -> RemoteScanTask:
+    running_task = db.scalar(
+        select(RemoteScanTask).where(
+            RemoteScanTask.status == RemoteScanStatus.RUNNING
+        )
+    )
+    if running_task is not None:
+        return running_task
+
+    task = RemoteScanTask(
+        remote_dir=remote_dir,
+        max_depth=max(0, max_depth),
+        max_items=max(1, max_items),
+        delete_missing=delete_missing,
+        cursor=json.dumps(
+            [{"path": remote_dir, "start": 0, "depth": 0}],
+            ensure_ascii=False,
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def run_remote_scan_task(
+    session_factory: sessionmaker[Session],
+    task_id: UUID,
+    client_factory: Callable[[], RemoteMediaClient],
+) -> None:
+    with session_factory() as db:
+        task = db.get(RemoteScanTask, task_id)
+        if task is None or task.status == RemoteScanStatus.COMPLETED:
+            return
+
+        try:
+            summary = scan_remote_directory(
+                db,
+                client_factory(),
+                remote_dir=task.remote_dir,
+                max_depth=task.max_depth,
+                max_items=task.max_items,
+                resume_task_id=task.id,
+                delete_missing=task.delete_missing,
+            )
+        except Exception:
+            # scan_remote_directory already records the failure on the task.
+            record_admin_operation(
+                db,
+                action="scan",
+                target_type="remote_scan_task",
+                detail=f"task={task.id};status=failed;mode={'async-delete' if task.delete_missing else 'async-keep'}",
+            )
+            db.commit()
+            return
+
+        record_admin_operation(
+            db,
+            action="scan",
+            target_type="remote_scan_task",
+            detail=(
+                f"task={summary.task_id};status={summary.status.value};"
+                f"discovered={summary.discovered};refreshed={summary.refreshed};"
+                f"skipped={summary.skipped};deleted={summary.deleted};"
+                f"mode={'async-delete' if task.delete_missing else 'async-keep'}"
+            ),
+        )
+        db.commit()
+
+
+def _delete_missing_remote_entries(db: Session, task: RemoteScanTask) -> int:
+    missing_files = db.scalars(
+        select(MemoryFile).where(
+            MemoryFile.source == "baidupan",
+            or_(
+                MemoryFile.last_scan_task_id != task.id,
+                MemoryFile.last_scan_task_id.is_(None),
+            ),
+        )
+    ).all()
+    memory_ids = {memory_file.memory_id for memory_file in missing_files}
+
+    for memory_file in missing_files:
+        db.delete(memory_file)
+    db.flush()
+
+    deleted_memories = 0
+    for memory_id in memory_ids:
+        if memory_id is None:
+            continue
+
+        remote_file_count = db.scalar(
+            select(func.count()).select_from(MemoryFile).where(
+                MemoryFile.memory_id == memory_id,
+                MemoryFile.source == "baidupan",
+            )
+        )
+        if remote_file_count != 0:
+            continue
+
+        memory = db.get(Memory, memory_id)
+        if memory is not None:
+            db.delete(memory)
+            deleted_memories += 1
+
+    record_admin_operation(
+        db,
+        action="remote_index_delete",
+        target_type="memory_batch",
+        detail=f"task={task.id};files={len(missing_files)};memories={deleted_memories};remote_resource=unchanged",
+    )
+    return len(missing_files)
+
+
 def _summary_from_task(
     task: RemoteScanTask,
     *,
     limit_reached: bool = False,
+    deleted: int = 0,
 ) -> BaiduScanSummary:
     return BaiduScanSummary(
         task_id=task.id,
@@ -428,6 +570,7 @@ def _summary_from_task(
         discovered=task.discovered,
         refreshed=task.refreshed,
         skipped=task.skipped,
+        deleted=deleted,
         limit_reached=limit_reached,
         failure_reason=task.failure_reason,
         cursor=task.cursor,

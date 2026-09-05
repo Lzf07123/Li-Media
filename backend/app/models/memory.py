@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, Uuid, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -67,6 +67,7 @@ class RemoteScanTask(Base):
     cursor: Mapped[str | None] = mapped_column(Text)
     max_depth: Mapped[int] = mapped_column(Integer, default=8)
     max_items: Mapped[int] = mapped_column(Integer, default=5000)
+    delete_missing: Mapped[bool] = mapped_column(Boolean, default=False)
     processed_items: Mapped[int] = mapped_column(Integer, default=0)
     scanned_files: Mapped[int] = mapped_column(Integer, default=0)
     scanned_directories: Mapped[int] = mapped_column(Integer, default=0)
