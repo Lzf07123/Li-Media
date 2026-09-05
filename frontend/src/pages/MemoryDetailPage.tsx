@@ -7,7 +7,12 @@ import VideoPlayer from "@/components/VideoPlayer";
 import FileStatusBadge from "@/components/FileStatusBadge";
 import RemoteStateBadge from "@/components/RemoteStateBadge";
 import { brand } from "@/lib/brand";
-import { getMemoryById, resolveMediaUrl, type Memory } from "@/lib/api";
+import {
+  getMediaDirectLink,
+  getMemoryById,
+  resolveMediaUrl,
+  type Memory,
+} from "@/lib/api";
 import Breadcrumb from "@/components/ui/Breadcrumb";
 import EmptyState from "@/components/ui/EmptyState";
 import MediaSkeleton from "@/components/ui/MediaSkeleton";
@@ -15,6 +20,7 @@ import MediaSkeleton from "@/components/ui/MediaSkeleton";
 export default function MemoryDetailPage() {
   const { memoryId } = useParams();
   const [memory, setMemory] = useState<Memory | null>(null);
+  const [directUrl, setDirectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,9 +31,20 @@ export default function MemoryDetailPage() {
     let active = true;
 
     getMemoryById(memoryId)
-      .then((data) => {
+      .then(async (data) => {
         if (active) {
           setMemory(data);
+        }
+
+        try {
+          const link = await getMediaDirectLink(memoryId);
+          if (active) {
+            setDirectUrl(link.direct_url);
+          }
+        } catch {
+          if (active) {
+            setDirectUrl(null);
+          }
         }
       })
       .catch(() => {
@@ -39,7 +56,7 @@ export default function MemoryDetailPage() {
     return () => {
       active = false;
     };
-  }, [memoryId]);
+    }, [memoryId]);
 
   if (error || (!memory && !error)) {
     return error ? (
@@ -64,6 +81,11 @@ export default function MemoryDetailPage() {
   const remoteState = memory.primary_file?.remote_state;
   const thumbnailState = memory.primary_file?.thumbnail_state;
   const streamState = memory.primary_file?.stream_state;
+  const fallbackMediaUrl =
+    memory.kind === "video"
+      ? memory.file_url
+      : memory.thumbnail_url;
+  const mediaSource = directUrl ?? fallbackMediaUrl;
 
   return (
     <article className="page-enter">
@@ -78,12 +100,12 @@ export default function MemoryDetailPage() {
       <div className="card overflow-hidden p-0">
         <div className="bg-surface-2">
           {memory.kind === "video" ? (
-            memory.primary_file?.stream_state === "ready" ? (
+            memory.primary_file?.stream_state === "ready" && mediaSource ? (
               <VideoPlayer
                 dimensions={null}
                 duration={null}
                 poster={memory.thumbnail_url ? resolveMediaUrl(memory.thumbnail_url) : null}
-                src={resolveMediaUrl(memory.file_url)}
+                src={resolveMediaUrl(mediaSource)}
               />
             ) : (
               <div
@@ -94,10 +116,10 @@ export default function MemoryDetailPage() {
               </div>
             )
           ) : (
-            memory.primary_file?.thumbnail_state === "ready" && memory.thumbnail_url ? (
+            mediaSource ? (
               <PhotoPreview
                 alt={brand.copy.detailPreviewAlt}
-                src={resolveMediaUrl(memory.thumbnail_url)}
+                src={resolveMediaUrl(mediaSource)}
               />
             ) : (
               <div

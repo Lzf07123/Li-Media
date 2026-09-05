@@ -14,6 +14,13 @@ class MemoryListResponse(BaseModel):
     page_size: int
 
 
+class MemoryDirectLinkResponse(BaseModel):
+    direct_url: str
+    expires_at: datetime | None
+    mime_type: str
+    size_bytes: int | None
+
+
 class AdminMemoryListResponse(BaseModel):
     items: list[MemoryRead]
     total: int

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -46,6 +46,10 @@ class DownloadUrlCache:
         self._urls: dict[str, tuple[str, float]] = {}
 
     def get(self, remote_id: str) -> str | None:
+        entry = self.get_entry(remote_id)
+        return entry[0] if entry else None
+
+    def get_entry(self, remote_id: str) -> tuple[str, int] | None:
         entry = self._urls.get(remote_id)
         if entry is None:
             return None
@@ -55,7 +59,7 @@ class DownloadUrlCache:
             self._urls.pop(remote_id, None)
             return None
 
-        return url
+        return url, max(0, int(expires_at - time.monotonic()))
 
     def set(self, remote_id: str, url: str) -> str:
         if self._ttl_seconds <= 0:
@@ -260,6 +264,18 @@ class BaiduPanClient:
 
     def invalidate_download_url(self, remote_id: str) -> None:
         download_url_cache.invalidate(remote_id)
+
+    def resolve_direct_url(self, remote_id: str) -> tuple[str, int]:
+        cached = download_url_cache.get_entry(remote_id)
+        if cached is not None:
+            return self._with_current_access_token(cached[0]), cached[1]
+
+        url = self.resolve_download_url(remote_id)
+        entry = download_url_cache.get_entry(remote_id)
+        ttl = entry[1] if entry else max(
+            0, self._settings.baidu_download_url_ttl_seconds
+        )
+        return self._with_current_access_token(url), ttl
 
     def _to_remote_item(self, item: dict[str, object]) -> BaiduRemoteItem:
         remote_path = str(item["path"])
