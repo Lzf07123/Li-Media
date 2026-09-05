@@ -102,7 +102,7 @@ export default function HomePage() {
       </h1>
       <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
 
-      <form className="list-filters mx-auto mt-6 w-full max-w-lg flex-col sm:flex-row sm:items-center" onSubmit={submitSearch}>
+      <form className="list-filters mx-auto mt-6 w-full max-w-lg flex-col justify-center sm:flex-row sm:items-center" onSubmit={submitSearch}>
         <div className="relative w-full sm:w-72">
           <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
           <input
