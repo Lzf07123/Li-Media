@@ -16,11 +16,12 @@ export default function MemoryCard({ memory }: { memory: Memory }) {
   return (
     <Link className="post-card block overflow-hidden" to={`/memories/${memory.id}`}>
       {memory.thumbnail_url && !thumbnailFailed ? (
-        <span className="post-cover-link block" style={{ ["--limedia-cover-ratio" as string]: ratio }}>
+        <span className="post-cover-link block">
           <img
             alt={memory.title}
             className="post-cover"
             loading="lazy"
+            style={{ aspectRatio: ratio }}
             onError={() => setThumbnailFailed(true)}
             src={resolveMediaUrl(memory.thumbnail_url)}
           />
