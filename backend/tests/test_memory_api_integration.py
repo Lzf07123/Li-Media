@@ -1,15 +1,30 @@
-import io
 from collections.abc import Generator
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from PIL import Image
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.db.session import Base, get_db
 from app.main import app
+from app.models.memory import (
+    Memory,
+    MemoryFile,
+    MemoryFileStatus,
+    MemoryKind,
+    MemoryStatus,
+    RemoteFileState,
+    RemoteThumbnailState,
+    RemoteStreamState,
+)
+
+
+def create_database(tmp_path: Path) -> sessionmaker[Session]:
+    engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
 def override_database(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
@@ -20,29 +35,72 @@ def override_database(session_factory: sessionmaker[Session]) -> Generator[Sessi
         session.close()
 
 
-def test_public_and_admin_memory_lifecycle(tmp_path: Path, monkeypatch) -> None:
+def add_memory(
+    session_factory: sessionmaker[Session],
+    *,
+    title: str,
+    source: str,
+    status: MemoryStatus,
+) -> str:
+    memory_id = uuid4()
+    with session_factory.begin() as session:
+        session.add(
+            Memory(
+                id=memory_id,
+                title=title,
+                kind=MemoryKind.PHOTO,
+                status=status,
+            )
+        )
+        session.add(
+            MemoryFile(
+                memory_id=memory_id,
+                source=source,
+                remote_id="remote-1" if source == "baidupan" else None,
+                remote_path="/cloud/photo.jpg" if source == "baidupan" else "photo.jpg",
+                parent_path="/cloud" if source == "baidupan" else "",
+                filename="photo.jpg",
+                mime_type="image/jpeg",
+                status=MemoryFileStatus.MATCHED,
+                remote_state=RemoteFileState.READY,
+                thumbnail_state=RemoteThumbnailState.MISSING,
+                stream_state=RemoteStreamState.READY,
+            )
+        )
+    return str(memory_id)
+
+
+def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> None:
     media_root = tmp_path / "media"
     media_root.mkdir()
     settings = Settings(
         admin_token="test-token",
         media_root=str(media_root),
+        baidu_access_token="test-access-token",
+        baidu_sync_dir="/apps/Li&Media",
         admin_login_base_delay=0,
         admin_login_max_delay=0,
     )
     monkeypatch.setattr("app.api.v1.admin.get_settings", lambda: settings)
-    monkeypatch.setattr("app.api.v1.memories.get_settings", lambda: settings)
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session_factory = create_database(tmp_path)
+    remote_id = add_memory(
+        session_factory,
+        title="网盘照片",
+        source="baidupan",
+        status=MemoryStatus.PUBLISHED,
+    )
+    local_id = add_memory(
+        session_factory,
+        title="旧本地上传",
+        source="upload",
+        status=MemoryStatus.PUBLISHED,
+    )
 
     def override_get_db() -> Generator[Session, None, None]:
         yield from override_database(session_factory)
 
     app.dependency_overrides[get_db] = override_get_db
-    image_buffer = io.BytesIO()
-    Image.new("RGB", (2400, 1200), "white").save(image_buffer, format="PNG")
-
     try:
         with TestClient(app) as client:
             assert client.post(
@@ -52,80 +110,68 @@ def test_public_and_admin_memory_lifecycle(tmp_path: Path, monkeypatch) -> None:
 
             upload = client.post(
                 "/api/v1/admin/memories",
-                files={"file": ("lake.png", image_buffer.getvalue(), "image/png")},
-                data={"description": "公开集成测试"},
+                files={"file": ("lake.png", b"not-media", "image/png")},
             )
-            assert upload.status_code == 200
-            memory = upload.json()
-            memory_id = memory["id"]
-            assert memory["status"] == "published"
-            assert memory["thumbnail_url"] == f"/api/v1/memories/{memory_id}/thumbnail"
+            assert upload.status_code == 405
 
-            duplicate_upload = client.post(
-                "/api/v1/admin/memories",
-                files={"file": ("same.png", image_buffer.getvalue(), "image/png")},
-                data={"description": "重复文件"},
-            )
-            assert duplicate_upload.status_code == 409
+            config = client.get("/api/v1/admin/remote-config")
+            assert config.status_code == 200
+            assert config.json() == {
+                "configured": True,
+                "scan_dir": "/apps/Li&Media",
+                "docs_url": "https://pan.baidu.com/union/doc/",
+            }
 
             admin_list = client.get("/api/v1/admin/memories")
             assert admin_list.status_code == 200
             assert admin_list.json()["total"] == 1
+            assert [item["id"] for item in admin_list.json()["items"]] == [remote_id]
 
             public_list = client.get("/api/v1/memories")
             assert public_list.status_code == 200
             assert public_list.json()["total"] == 1
-            assert public_list.json()["items"][0]["title"] == "lake"
+            assert public_list.json()["items"][0]["title"] == "网盘照片"
 
-            detail = client.get(f"/api/v1/memories/{memory_id}")
-            assert detail.status_code == 200
-            assert detail.json()["description"] == "公开集成测试"
+            assert client.get(f"/api/v1/memories/{local_id}").status_code == 404
+            assert client.get(f"/api/v1/memories/{local_id}/file").status_code == 404
+            assert client.get(f"/api/v1/memories/{remote_id}").status_code == 200
+            assert client.get(f"/api/v1/memories/{remote_id}/file").status_code == 502
 
-            file_response = client.get(f"/api/v1/memories/{memory_id}/file")
-            assert file_response.status_code == 200
-            assert file_response.headers["content-type"] == "image/png"
-
-            thumbnail_response = client.get(f"/api/v1/memories/{memory_id}/thumbnail")
-            assert thumbnail_response.status_code == 200
-            assert thumbnail_response.headers["content-type"] == "image/webp"
-
-            batch_hide = client.patch(
+            assert client.patch(
                 "/api/v1/admin/memories/batch",
-                json={"ids": [memory_id], "status": "hidden"},
-            )
-            assert batch_hide.status_code == 200
-            assert batch_hide.json() == {"updated": 1}
-            assert client.get("/api/v1/memories").json()["total"] == 0
-            assert client.get(f"/api/v1/memories/{memory_id}").status_code == 404
-            assert client.get(f"/api/v1/memories/{memory_id}/file").status_code == 404
-            assert client.get(
-                f"/api/v1/memories/{memory_id}/thumbnail"
+                json={"ids": [remote_id, local_id], "status": "hidden"},
             ).status_code == 404
 
-            batch_edit = client.patch(
+            assert client.patch(
                 "/api/v1/admin/memories/batch",
-                json={"ids": [memory_id], "title": "批量改名", "location": "批量地点"},
-            )
-            assert batch_edit.status_code == 200
-
-            batch_publish = client.patch(
-                "/api/v1/admin/memories/batch",
-                json={"ids": [memory_id], "status": "published"},
+                json={"ids": [remote_id], "status": "hidden"},
             ).status_code == 200
-            assert client.get("/api/v1/memories").json()["total"] == 1
-            assert client.get(f"/api/v1/memories/{memory_id}").status_code == 200
+            assert client.get("/api/v1/memories").json()["total"] == 0
+
+            assert client.patch(
+                "/api/v1/admin/memories/batch",
+                json={
+                    "ids": [remote_id],
+                    "status": "published",
+                    "title": "更新后的网盘照片",
+                    "location": "汕头",
+                },
+            ).status_code == 200
 
             export = client.post(
                 "/api/v1/admin/memories/export",
-                json={"ids": [memory_id]},
+                json={"ids": [remote_id]},
             )
             assert export.status_code == 200
-            assert export.json()["total"] == 1
-            assert export.json()["items"][0]["title"] == "批量改名"
-            assert export.json()["items"][0]["location"] == "批量地点"
+            assert export.json()["items"][0]["title"] == "更新后的网盘照片"
+            assert export.json()["items"][0]["location"] == "汕头"
 
-            assert client.delete(f"/api/v1/admin/memories/{memory_id}").status_code == 204
+            assert client.delete(
+                f"/api/v1/admin/memories/{local_id}"
+            ).status_code == 404
+            assert client.delete(
+                f"/api/v1/admin/memories/{remote_id}"
+            ).status_code == 204
             assert client.get("/api/v1/memories").json()["total"] == 0
-            assert client.get(f"/api/v1/memories/{memory_id}").status_code == 404
     finally:
         app.dependency_overrides.clear()

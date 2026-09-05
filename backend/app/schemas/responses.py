@@ -78,3 +78,9 @@ class AdminMemoryExportResponse(BaseModel):
     exported_at: datetime
     items: list[MemoryRead]
     total: int
+
+
+class AdminRemoteConfigResponse(BaseModel):
+    configured: bool
+    scan_dir: str
+    docs_url: str

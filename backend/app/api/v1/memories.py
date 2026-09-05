@@ -33,7 +33,15 @@ def list_memories(
     page_size: int = Query(default=24, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> MemoryListResponse:
-    statement = select(Memory).where(Memory.status == MemoryStatus.PUBLISHED)
+    statement = (
+        select(Memory)
+        .join(Memory.files)
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            MemoryFile.source == "baidupan",
+        )
+        .distinct()
+    )
 
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
@@ -67,7 +75,11 @@ def list_memories(
 def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
     memory = db.get(Memory, memory_id)
 
-    if memory is None or memory.status != MemoryStatus.PUBLISHED:
+    if (
+        memory is None
+        or memory.status != MemoryStatus.PUBLISHED
+        or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
@@ -84,7 +96,11 @@ def stream_memory(
 ) -> FileResponse | StreamingResponse:
     memory = db.get(Memory, memory_id)
 
-    if memory is None or memory.status != MemoryStatus.PUBLISHED:
+    if (
+        memory is None
+        or memory.status != MemoryStatus.PUBLISHED
+        or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
@@ -156,7 +172,11 @@ def get_memory_thumbnail(
 ) -> FileResponse | Response:
     memory = db.get(Memory, memory_id)
 
-    if memory is None or memory.status != MemoryStatus.PUBLISHED:
+    if (
+        memory is None
+        or memory.status != MemoryStatus.PUBLISHED
+        or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )

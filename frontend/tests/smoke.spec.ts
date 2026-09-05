@@ -19,7 +19,7 @@ const memory = {
   height: 1200,
   primary_file: {
     id: "e0c37e9a-8ec7-4b8f-8c92-2e6ee3b18cd1",
-    source: "upload",
+    source: "baidupan",
     remote_path: "lake.png",
     mime_type: "image/png",
     size_bytes: 1024,
@@ -128,6 +128,15 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await page.route("**/api/v1/admin/memories", async (route) => {
     await route.fulfill({ json: { items: [memory], total: 1 } });
   });
+  await page.route("**/api/v1/admin/remote-config", async (route) => {
+    await route.fulfill({
+      json: {
+        configured: true,
+        scan_dir: "/apps/Li&Media",
+        docs_url: "https://pan.baidu.com/union/doc/",
+      },
+    });
+  });
   await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
     await route.fulfill({ json: scanTask });
   });
@@ -135,6 +144,8 @@ test("admin table is visible in dark mode", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "回忆管理" })).toBeVisible();
   await expect(page.getByText("湖边清晨")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "百度网盘接入步骤" })).toBeVisible();
+  await expect(page.getByText("/apps/Li&Media").first()).toBeVisible();
   await expect(page.getByText("远程索引扫描")).toBeVisible();
   await expect(page.getByText("预览就绪").first()).toBeVisible();
   await page.getByRole("button", { name: "切换到深色主题" }).click();
@@ -225,6 +236,15 @@ test("admin can retry a remote entry", async ({ page }) => {
   };
   await page.route("**/api/v1/admin/memories", async (route) => {
     await route.fulfill({ json: { items: [remoteMemory], total: 1 } });
+  });
+  await page.route("**/api/v1/admin/remote-config", async (route) => {
+    await route.fulfill({
+      json: {
+        configured: true,
+        scan_dir: "/apps/Li&Media",
+        docs_url: "https://pan.baidu.com/union/doc/",
+      },
+    });
   });
   await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
     await route.fulfill({ json: scanTask });

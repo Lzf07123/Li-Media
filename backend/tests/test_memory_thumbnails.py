@@ -77,7 +77,7 @@ def test_photo_thumbnail_is_downscaled_and_served(tmp_path: Path, monkeypatch) -
         session.add(
             MemoryFile(
                 memory_id=memory.id,
-                source="upload",
+                source="baidupan",
                 remote_path="photo.png",
                 source_path="photos/photo.png",
                 mime_type="image/png",

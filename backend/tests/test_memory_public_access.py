@@ -40,7 +40,7 @@ def test_published_memory_is_visible_and_hidden_memory_is_not(tmp_path: Path) ->
             session.add(
                 MemoryFile(
                     memory_id=published.id,
-                    source="upload",
+                    source="baidupan",
                     remote_path="published.jpg",
                     source_path="photos/published.jpg",
                     mime_type="image/jpeg",

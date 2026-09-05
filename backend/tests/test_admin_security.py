@@ -1,6 +1,6 @@
-import io
 from collections.abc import Generator
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -11,6 +11,16 @@ from app.core.config import Settings
 from app.db.session import Base, get_db
 from app.main import app
 from app.models.admin import AdminOperationLog, AdminSession
+from app.models.memory import (
+    Memory,
+    MemoryFile,
+    MemoryFileStatus,
+    MemoryKind,
+    MemoryStatus,
+    RemoteFileState,
+    RemoteThumbnailState,
+    RemoteStreamState,
+)
 from app.services.admin_security import AdminLoginLimitError, AdminLoginRateLimiter
 
 
@@ -80,10 +90,33 @@ def test_admin_session_is_http_only_and_revokes_on_logout(tmp_path: Path, monkey
         app.dependency_overrides.clear()
 
 
-def test_admin_operation_log_covers_upload_and_lifecycle(tmp_path: Path, monkeypatch) -> None:
+def test_admin_operation_log_covers_remote_lifecycle(tmp_path: Path, monkeypatch) -> None:
     session_factory = configure_admin_app(tmp_path, monkeypatch)
-    image_buffer = io.BytesIO()
-    Image.new("RGB", (8, 8), "white").save(image_buffer, format="PNG")
+    memory_id = uuid4()
+    with session_factory.begin() as session:
+        session.add(
+            Memory(
+                id=memory_id,
+                title="网盘回忆",
+                kind=MemoryKind.PHOTO,
+                status=MemoryStatus.PUBLISHED,
+            )
+        )
+        session.add(
+            MemoryFile(
+                memory_id=memory_id,
+                source="baidupan",
+                remote_id="remote-1",
+                remote_path="/cloud/photo.jpg",
+                parent_path="/cloud",
+                filename="photo.jpg",
+                mime_type="image/jpeg",
+                status=MemoryFileStatus.MATCHED,
+                remote_state=RemoteFileState.READY,
+                thumbnail_state=RemoteThumbnailState.MISSING,
+                stream_state=RemoteStreamState.READY,
+            )
+        )
 
     try:
         with TestClient(app) as client:
@@ -92,20 +125,7 @@ def test_admin_operation_log_covers_upload_and_lifecycle(tmp_path: Path, monkeyp
                 json={"token": "test-token"},
             ).status_code == 204
 
-            upload_response = client.post(
-                "/api/v1/admin/memories",
-                files={
-                    "file": (
-                        "photo.png",
-                        image_buffer.getvalue(),
-                        "image/png",
-                    )
-                },
-                data={"description": "测试描述"},
-            )
-            assert upload_response.status_code == 200
-            memory_id = upload_response.json()["id"]
-
+            assert client.post("/api/v1/admin/memories").status_code == 405
             assert client.patch(
                 f"/api/v1/admin/memories/{memory_id}",
                 json={"status": "hidden"},
@@ -119,8 +139,8 @@ def test_admin_operation_log_covers_upload_and_lifecycle(tmp_path: Path, monkeyp
         with session_factory() as session:
             actions = session.scalars(select(AdminOperationLog.action)).all()
 
-        assert set(actions) == {"login", "upload", "hide", "publish", "delete"}
-        assert len(actions) == 5
+        assert set(actions) == {"login", "hide", "publish", "delete"}
+        assert len(actions) == 4
     finally:
         app.dependency_overrides.clear()
 
