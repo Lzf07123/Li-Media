@@ -6,6 +6,7 @@
 - 视觉令牌：`frontend/src/index.css`
 - 设计方案：`design-system/limedia/BRAND.md` 与 `design-system/limedia/MASTER.md`
 - 设计模板：`packages/li-design`
+- 设计边界：`packages/li-design` 仅做首次设计参考；前端不 import 或复制其他 Li& 项目文件。
 
 ## 技术约定
 
@@ -16,12 +17,24 @@
 - 后端公开数据只返回 `published` 状态的回忆内容。
 - 百度网盘地址必须由服务端短期解析，前端不得长期保存直链。
 - 新增接口先落在 `/api/v1`，公开接口和后台接口分目录维护。
+- 视觉令牌只写在 `frontend/src/index.css`；品牌与界面文案只写在 `frontend/src/lib/brand.ts`。
+- 组件不硬编码颜色和品牌文案；动效尊重 `prefers-reduced-motion`，正文对比度达到 AA。
 
 ## 常用验证
 
 ```bash
 cd backend
 pytest
+
+cd ..
+python3 - <<'PY'
+from pathlib import Path
+for path in Path('frontend/src').rglob('*'):
+    if path.suffix in {'.tsx', '.ts'} and path.name != 'brand.ts':
+        text = path.read_text()
+        if '#257' in text or '#7fd' in text or 'rgba(' in text:
+            raise SystemExit(f'hardcoded color found: {path}')
+PY
 
 cd frontend
 npm run typecheck

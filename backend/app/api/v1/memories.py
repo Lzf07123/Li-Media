@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.memory import Memory, MemoryFile, MemoryKind, MemoryStatus
-from app.schemas.memory import MemoryRead
+from app.schemas.memory import MemoryRead, to_memory_read
 from app.schemas.responses import MemoryListResponse
 
 router = APIRouter(prefix="/memories", tags=["memories"])
@@ -46,7 +46,10 @@ def list_memories(
     ).all()
 
     return MemoryListResponse(
-        items=memories, total=total, page=page, page_size=page_size
+        items=[to_memory_read(memory) for memory in memories],
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -59,7 +62,7 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    return memory
+    return to_memory_read(memory)
 
 
 @router.get("/{memory_id}/file")
