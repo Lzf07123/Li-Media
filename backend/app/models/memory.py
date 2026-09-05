@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -29,6 +29,61 @@ class MemoryFileStatus(StrEnum):
     MISSING = "missing"
     REMOVED = "removed"
     FAILED = "failed"
+
+
+class RemoteFileState(StrEnum):
+    UNVERIFIED = "unverified"
+    READY = "ready"
+    MISSING = "missing"
+    FAILED = "failed"
+
+
+class RemoteThumbnailState(StrEnum):
+    MISSING = "missing"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class RemoteStreamState(StrEnum):
+    UNAVAILABLE = "unavailable"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class RemoteScanStatus(StrEnum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class RemoteScanTask(Base):
+    __tablename__ = "remote_scan_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    remote_dir: Mapped[str] = mapped_column(String(1024))
+    status: Mapped[RemoteScanStatus] = mapped_column(
+        String(32), default=RemoteScanStatus.RUNNING, index=True
+    )
+    cursor: Mapped[str | None] = mapped_column(Text)
+    max_depth: Mapped[int] = mapped_column(Integer, default=8)
+    max_items: Mapped[int] = mapped_column(Integer, default=5000)
+    processed_items: Mapped[int] = mapped_column(Integer, default=0)
+    scanned_files: Mapped[int] = mapped_column(Integer, default=0)
+    scanned_directories: Mapped[int] = mapped_column(Integer, default=0)
+    discovered: Mapped[int] = mapped_column(Integer, default=0)
+    refreshed: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Memory(Base):
@@ -67,9 +122,27 @@ class MemoryFile(Base):
     source: Mapped[str] = mapped_column(String(32), default="baidupan")
     remote_path: Mapped[str] = mapped_column(String(1024), index=True)
     remote_id: Mapped[str | None] = mapped_column(String(128))
-    source_path: Mapped[str] = mapped_column(String(1024))
+    source_path: Mapped[str] = mapped_column(String(1024), default="")
     mime_type: Mapped[str] = mapped_column(String(128))
     size_bytes: Mapped[int | None]
+    remote_md5: Mapped[str | None] = mapped_column(String(64), index=True)
+    parent_path: Mapped[str] = mapped_column(String(1024), default="")
+    filename: Mapped[str] = mapped_column(String(512), default="")
+    extension: Mapped[str | None] = mapped_column(String(64))
+    modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    remote_state: Mapped[RemoteFileState] = mapped_column(
+        String(32), default=RemoteFileState.UNVERIFIED, index=True
+    )
+    thumbnail_state: Mapped[RemoteThumbnailState] = mapped_column(
+        String(32), default=RemoteThumbnailState.MISSING, index=True
+    )
+    stream_state: Mapped[RemoteStreamState] = mapped_column(
+        String(32), default=RemoteStreamState.UNAVAILABLE, index=True
+    )
+    raw_metadata_summary: Mapped[dict[str, object]] = mapped_column(
+        JSON, default=dict
+    )
+    last_scan_task_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     status: Mapped[MemoryFileStatus] = mapped_column(
         String(32), default=MemoryFileStatus.PENDING, index=True

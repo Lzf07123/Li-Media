@@ -6,19 +6,23 @@ import { Link } from "react-router-dom";
 import AdminLoginCard from "@/components/AdminLoginCard";
 import FileStatusBadge from "@/components/FileStatusBadge";
 import MemoryUploadForm from "@/components/MemoryUploadForm";
+import RemoteStateBadge from "@/components/RemoteStateBadge";
 import StatusBadge from "@/components/StatusBadge";
 import { brand } from "@/lib/brand";
 import {
   createMemory,
   deleteMemory,
   getAdminMemories,
+  getLatestRemoteScan,
   loginAdmin,
   logoutAdmin,
+  retryRemoteEntry,
   syncMemories,
   updateMemory,
   batchUpdateMemories,
   exportMemories,
   type Memory,
+  type RemoteScanTask,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import Button from "@/components/ui/Button";
@@ -26,6 +30,7 @@ import Modal from "@/components/ui/Modal";
 import Notice from "@/components/ui/Notice";
 import { ToastViewport, type Toast } from "@/components/ui/Toast";
 import { Input, TextArea } from "@/components/ui/Input";
+import ProgressBar from "@/components/ui/ProgressBar";
 
 type UploadStatus = "pending" | "uploading" | "success" | "failed";
 
@@ -43,6 +48,8 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRetryingRemote, setIsRetryingRemote] = useState<string | null>(null);
+  const [scanTask, setScanTask] = useState<RemoteScanTask | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -119,6 +126,8 @@ export default function AdminPage() {
       const data = await getAdminMemories();
       setMemories(data.items);
       setIsAdmin(true);
+      const scan = await getLatestRemoteScan();
+      setScanTask(scan);
       setError(null);
     } catch (loadError) {
       setIsAdmin(false);
@@ -285,17 +294,35 @@ export default function AdminPage() {
     }
   };
 
-  const triggerSync = async () => {
+  const triggerSync = async (resumeTaskId?: string) => {
     setIsSyncing(true);
     try {
-      await syncMemories();
+      const result = await syncMemories(undefined, resumeTaskId);
       setError(null);
       pushToast(brand.copy.adminSyncSuccess, "success");
+      setScanTask(result.scan_task);
       await loadMemories();
     } catch {
       setError(brand.copy.adminSyncFailed);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const retryRemote = async (memory: Memory) => {
+    if (!memory.primary_file) {
+      return;
+    }
+
+    setIsRetryingRemote(memory.id);
+    try {
+      await retryRemoteEntry(memory.primary_file.id);
+      setError(null);
+      await loadMemories();
+    } catch {
+      setError(brand.copy.adminStreamFailed);
+    } finally {
+      setIsRetryingRemote(null);
     }
   };
 
@@ -416,6 +443,71 @@ export default function AdminPage() {
         </Button>
       </h2>
 
+      {scanTask ? (
+        <div className="card mt-4 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">{brand.copy.adminRemoteScanTitle}</h3>
+              <p className="mt-1 text-xs text-muted">{scanTask.remote_dir}</p>
+            </div>
+            {scanTask.status === "failed" ? (
+              <Button
+                disabled={isSyncing}
+                onClick={() => void triggerSync(scanTask.id)}
+                variant="secondary"
+              >
+                {brand.copy.adminResumeScan}
+              </Button>
+            ) : null}
+          </div>
+          <ProgressBar
+            label={brand.copy.adminScanProgress}
+            tone={scanTask.status === "failed" ? "danger" : "primary"}
+            value={(scanTask.processed_items / scanTask.max_items) * 100}
+          />
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
+              <dd className="text-sm">
+                {scanTask.status === "running"
+                  ? brand.copy.adminScanRunning
+                  : scanTask.status === "completed"
+                    ? brand.copy.adminScanCompleted
+                    : brand.copy.adminScanFailed}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
+              <dd className="text-sm">
+                {scanTask.processed_items} / {scanTask.max_items}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanFiles}</dt>
+              <dd className="text-sm">{scanTask.scanned_files}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanDirectories}</dt>
+              <dd className="text-sm">{scanTask.scanned_directories}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanDiscovered}</dt>
+              <dd className="text-sm">{scanTask.discovered}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanSkipped}</dt>
+              <dd className="text-sm">{scanTask.skipped}</dd>
+            </div>
+          </dl>
+          {scanTask.failure_reason ? (
+            <p className="mt-3 text-sm text-muted">
+              <span className="font-medium">{brand.copy.adminScanFailure}: </span>
+              {scanTask.failure_reason}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {selectedIds.length > 0 ? (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="mr-auto text-sm text-muted">
@@ -468,6 +560,9 @@ export default function AdminPage() {
                 <th scope="col">{brand.copy.adminKindHeader}</th>
                 <th scope="col">{brand.copy.adminStatusHeader}</th>
                 <th scope="col">{brand.copy.adminSyncStatusHeader}</th>
+                <th scope="col">{brand.copy.adminRemoteStateHeader}</th>
+                <th scope="col">{brand.copy.adminPreviewStateHeader}</th>
+                <th scope="col">{brand.copy.adminStreamStateHeader}</th>
                 <th scope="col">{brand.copy.adminLastSyncedHeader}</th>
                 <th scope="col">{brand.copy.adminActionsHeader}</th>
               </tr>
@@ -501,6 +596,27 @@ export default function AdminPage() {
                     )}
                   </td>
                   <td>
+                    {memory.primary_file ? (
+                      <RemoteStateBadge
+                        kind="remote"
+                        state={memory.primary_file.remote_state}
+                      />
+                    ) : null}
+                  </td>
+                  <td>
+                    {memory.primary_file ? (
+                      <RemoteStateBadge
+                        kind="thumbnail"
+                        state={memory.primary_file.thumbnail_state}
+                      />
+                    ) : null}
+                  </td>
+                  <td>
+                    {memory.primary_file ? (
+                      <RemoteStateBadge kind="stream" state={memory.primary_file.stream_state} />
+                    ) : null}
+                  </td>
+                  <td>
                     <p className="text-sm">
                       {memory.primary_file?.last_synced_at
                         ? formatDateTime(memory.primary_file.last_synced_at)
@@ -526,6 +642,15 @@ export default function AdminPage() {
                           {brand.copy.adminHide}
                         </Button>
                       )}
+                      {memory.primary_file?.source === "baidupan" ? (
+                        <Button
+                          disabled={isRetryingRemote === memory.id}
+                          onClick={() => void retryRemote(memory)}
+                          variant="secondary"
+                        >
+                          {brand.copy.adminRetryRemote}
+                        </Button>
+                      ) : null}
                       <Button onClick={() => setPendingDelete(memory)} variant="danger">
                         {brand.copy.adminDelete}
                       </Button>

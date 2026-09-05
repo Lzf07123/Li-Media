@@ -24,11 +24,38 @@ const memory = {
     mime_type: "image/png",
     size_bytes: 1024,
     status: "matched",
+    remote_state: "ready",
+    thumbnail_state: "ready",
+    stream_state: "ready",
+    remote_id: "123456",
+    remote_md5: null,
+    parent_path: "/cloud",
+    filename: "lake.png",
+    extension: "png",
+    modified_at: null,
     last_synced_at: null,
     sync_error: null,
   },
   created_at: "2026-01-01T08:35:00Z",
   updated_at: "2026-01-01T08:35:00Z",
+};
+
+const scanTask = {
+  id: "7f0e1e58-47b8-42b7-8cc2-77a84006c47a",
+  remote_dir: "/apps/Li&Media",
+  status: "completed",
+  max_depth: 8,
+  max_items: 5000,
+  processed_items: 1,
+  scanned_files: 1,
+  scanned_directories: 0,
+  discovered: 1,
+  refreshed: 0,
+  skipped: 0,
+  limit_reached: false,
+  failure_reason: null,
+  started_at: "2026-01-01T08:30:00Z",
+  completed_at: "2026-01-01T08:31:00Z",
 };
 
 const memoryList = {
@@ -101,13 +128,114 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await page.route("**/api/v1/admin/memories", async (route) => {
     await route.fulfill({ json: { items: [memory], total: 1 } });
   });
+  await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
+    await route.fulfill({ json: scanTask });
+  });
   await page.goto("/admin");
 
   await expect(page.getByRole("heading", { name: "回忆管理" })).toBeVisible();
   await expect(page.getByText("湖边清晨")).toBeVisible();
+  await expect(page.getByText("远程索引扫描")).toBeVisible();
+  await expect(page.getByText("预览就绪").first()).toBeVisible();
   await page.getByRole("button", { name: "切换到深色主题" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(
     page.getByRole("button", { name: "切换到浅色主题" }),
   ).toBeVisible();
+});
+
+test("remote photo without preview uses placeholder", async ({ page }) => {
+  const remoteMemory = {
+    ...memory,
+    thumbnail_url: null,
+    primary_file: {
+      ...memory.primary_file,
+      source: "baidupan",
+      thumbnail_state: "missing",
+    },
+  };
+
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      await route.fulfill({ json: { items: [remoteMemory], total: 1, page: 1, page_size: 24 } });
+      return;
+    }
+    await route.fulfill({ json: remoteMemory });
+  });
+  await page.goto("/");
+
+  await expect(page.getByText("湖边清晨")).toBeVisible();
+  await expect(page.locator("img[alt=\"湖边清晨\"]")).toHaveCount(0);
+});
+
+test("detail load failure shows a recovery state", async ({ page }) => {
+  await page.route("**/api/v1/memories/**", async (route) => {
+    await route.fulfill({ status: 500, json: { detail: "服务暂时不可用" } });
+  });
+  await page.goto(`/memories/${memoryId}`);
+
+  await expect(page.getByText("页面不存在")).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回首页" })).toBeVisible();
+});
+
+test("remote video playback failure can be retried", async ({ page }) => {
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === `/api/v1/memories/${memoryId}/file`) {
+      await route.abort();
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}`) {
+      await route.fulfill({
+        json: {
+          ...memory,
+          kind: "video",
+          primary_file: {
+            ...memory.primary_file,
+            mime_type: "video/mp4",
+            stream_state: "ready",
+          },
+        },
+      });
+      return;
+    }
+    await route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 24 } });
+  });
+
+  await page.goto(`/memories/${memoryId}`);
+  await expect(page.getByText("视频播放失败")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重试" })).toBeVisible();
+});
+
+test("admin can retry a remote entry", async ({ page }) => {
+  const remoteMemory = {
+    ...memory,
+    primary_file: {
+      ...memory.primary_file,
+      source: "baidupan",
+    },
+  };
+  await page.route("**/api/v1/admin/memories", async (route) => {
+    await route.fulfill({ json: { items: [remoteMemory], total: 1 } });
+  });
+  await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
+    await route.fulfill({ json: scanTask });
+  });
+  let retried = false;
+  await page.route("**/api/v1/admin/remote-entries/*/retry", async (route) => {
+    retried = true;
+    await route.fulfill({ json: memory });
+  });
+
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "重试远程" }).click();
+  await expect.poll(() => retried).toBe(true);
 });

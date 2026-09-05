@@ -22,7 +22,17 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.admin import AdminSession
-from app.models.memory import Memory, MemoryFile, MemoryFileStatus, MemoryStatus
+from app.models.memory import (
+    Memory,
+    MemoryFile,
+    MemoryFileStatus,
+    MemoryStatus,
+    RemoteScanStatus,
+    RemoteScanTask,
+    RemoteFileState,
+    RemoteThumbnailState,
+    RemoteStreamState,
+)
 from app.schemas.memory import MemoryRead, MemoryUpdate, to_memory_read
 from app.schemas.responses import (
     AdminMemoryListResponse,
@@ -33,6 +43,7 @@ from app.schemas.responses import (
     AdminMemoryExportResponse,
     AdminSyncRequest,
     AdminSyncResponse,
+    RemoteScanTaskRead,
 )
 from app.services.memory_files import (
     guess_mime_type,
@@ -54,8 +65,8 @@ from app.services.admin_security import (
     revoke_admin_session,
     sleep_for_login_delay,
 )
-from app.services.baidu_pan import BaiduPanClient, BaiduPanError
-from app.services.baidu_sync import sync_baidu_files
+from app.services.baidu_pan import BaiduPanClient
+from app.services.baidu_sync import refresh_remote_entry, scan_remote_directory
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -169,32 +180,111 @@ def trigger_baidu_sync(
         )
 
     try:
-        summary = sync_baidu_files(
+        scan_summary = scan_remote_directory(
             db,
             BaiduPanClient(settings),
-            Path(settings.media_root),
             remote_dir=settings.baidu_sync_dir,
-            max_files=request_payload.max_files,
-            max_bytes=settings.baidu_sync_max_bytes,
+            max_depth=request_payload.max_depth,
+            max_items=request_payload.max_items,
+            resume_task_id=request_payload.resume_task_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    failed_count = 1 if scan_summary.status == RemoteScanStatus.FAILED else 0
+    record_admin_operation(
+        db,
+        action="scan",
+        client_ip=_client_ip(request),
+        detail=(
+            f"task={scan_summary.task_id};status={scan_summary.status.value};"
+            f"discovered={scan_summary.discovered};refreshed={scan_summary.refreshed};"
+            f"skipped={scan_summary.skipped};failed={failed_count}"
+        ),
+    )
+
+    return AdminSyncResponse(
+        discovered=scan_summary.discovered,
+        matched=scan_summary.refreshed,
+        failed=failed_count,
+        scan_task=RemoteScanTaskRead.model_validate(
+            db.get(RemoteScanTask, scan_summary.task_id)
+        ),
+    )
+
+
+@router.get("/remote-scan/latest", response_model=RemoteScanTaskRead | None)
+def get_latest_remote_scan(
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> RemoteScanTaskRead | None:
+    task = db.scalar(
+        select(RemoteScanTask).order_by(RemoteScanTask.started_at.desc())
+    )
+    return RemoteScanTaskRead.model_validate(task) if task else None
+
+
+@router.post("/remote-entries/{memory_file_id}/retry", response_model=MemoryRead)
+def retry_remote_entry(
+    memory_file_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> Memory:
+    memory_file = db.get(MemoryFile, memory_file_id)
+    if memory_file is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="远程条目不存在",
+        )
+
+    if memory_file.source != "baidupan":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只有网盘条目可以刷新远程状态",
+        )
+
+    settings = get_settings()
+    try:
+        memory_file = refresh_remote_entry(
+            db,
+            BaiduPanClient(settings),
+            memory_file,
         )
     except BaiduPanError as exc:
+        record_admin_operation(
+            db,
+            action="remote_retry_failed",
+            target_type="memory_file",
+            target_id=memory_file.id,
+            client_ip=_client_ip(request),
+            detail=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
 
+    memory = memory_file.memory or db.get(Memory, memory_file.memory_id)
+    if memory is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="回忆不存在",
+        )
+
     record_admin_operation(
         db,
-        action="sync",
+        action="remote_retry",
+        target_type="memory_file",
+        target_id=memory_file.id,
         client_ip=_client_ip(request),
-        detail=f"discovered={summary.discovered};matched={summary.matched};failed={summary.failed}",
+        detail=memory.title,
     )
 
-    return AdminSyncResponse(
-        discovered=summary.discovered,
-        matched=summary.matched,
-        failed=summary.failed,
-    )
+    return to_memory_read(memory)
 
 
 @router.get("/memories", response_model=AdminMemoryListResponse)
@@ -243,6 +333,13 @@ def create_memory(
     fallback_title = Path(file.filename or target_path.name).stem.strip()[:255]
     final_title = (title or metadata.title or fallback_title).strip()[:255]
     memory_id = uuid.uuid4()
+    thumbnail_path = create_memory_thumbnail(
+        target_path,
+        media_root,
+        kind=kind,
+        memory_id=memory_id,
+        duration_seconds=metadata.duration_seconds,
+    )
 
     memory = Memory(
         id=memory_id,
@@ -255,23 +352,25 @@ def create_memory(
         width=metadata.width,
         height=metadata.height,
         duration_seconds=metadata.duration_seconds,
-        thumbnail_path=create_memory_thumbnail(
-            target_path,
-            media_root,
-            kind=kind,
-            memory_id=memory_id,
-            duration_seconds=metadata.duration_seconds,
-        ),
+        thumbnail_path=thumbnail_path,
     )
     memory_file = MemoryFile(
         memory_id=memory_id,
         source="upload",
+        filename=file.filename or target_path.name,
         remote_path=file.filename or target_path.name,
+        parent_path="",
+        extension=Path(target_path.name).suffix.lstrip(".").lower() or None,
         source_path=relative_path,
         mime_type=guess_mime_type(target_path.name, file.content_type),
         size_bytes=size_bytes,
         content_hash=content_hash,
         status=MemoryFileStatus.MATCHED,
+        remote_state=RemoteFileState.READY,
+        thumbnail_state=(
+            RemoteThumbnailState.READY if thumbnail_path else RemoteThumbnailState.MISSING
+        ),
+        stream_state=RemoteStreamState.READY,
     )
 
     db.add(memory)

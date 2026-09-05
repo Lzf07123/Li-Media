@@ -14,10 +14,19 @@ export type Memory = {
   primary_file: {
     id: string;
     source: string;
+    remote_id: string | null;
     remote_path: string;
+    parent_path: string;
+    filename: string;
+    extension: string | null;
+    remote_md5: string | null;
     mime_type: string;
     size_bytes: number | null;
+    modified_at: string | null;
     status: "discovered" | "pending" | "syncing" | "matched" | "missing" | "removed" | "failed";
+    remote_state: "unverified" | "ready" | "missing" | "failed";
+    thumbnail_state: "missing" | "ready" | "failed";
+    stream_state: "unavailable" | "ready" | "failed";
     last_synced_at: string | null;
     sync_error: string | null;
   } | null;
@@ -41,6 +50,25 @@ export type MemorySyncResponse = {
   discovered: number;
   matched: number;
   failed: number;
+  scan_task: RemoteScanTask;
+};
+
+export type RemoteScanTask = {
+  id: string;
+  remote_dir: string;
+  status: "running" | "completed" | "failed";
+  max_depth: number;
+  max_items: number;
+  processed_items: number;
+  scanned_files: number;
+  scanned_directories: number;
+  discovered: number;
+  refreshed: number;
+  skipped: number;
+  limit_reached: boolean;
+  failure_reason: string | null;
+  started_at: string;
+  completed_at: string | null;
 };
 
 export type MemoryBatchUpdatePayload = {
@@ -177,7 +205,8 @@ export async function logoutAdmin(): Promise<void> {
 }
 
 export async function syncMemories(
-  maxFiles = 5,
+  maxItems?: number,
+  resumeTaskId?: string,
 ): Promise<MemorySyncResponse> {
   return request<MemorySyncResponse>("/admin/sync", {
     method: "POST",
@@ -185,7 +214,20 @@ export async function syncMemories(
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ max_files: maxFiles }),
+    body: JSON.stringify({
+      max_items: maxItems ?? 5000,
+      resume_task_id: resumeTaskId,
+    }),
+  });
+}
+
+export async function getLatestRemoteScan(): Promise<RemoteScanTask | null> {
+  return request<RemoteScanTask | null>("/admin/remote-scan/latest");
+}
+
+export async function retryRemoteEntry(memoryFileId: string): Promise<Memory> {
+  return request<Memory>(`/admin/remote-entries/${memoryFileId}/retry`, {
+    method: "POST",
   });
 }
 
