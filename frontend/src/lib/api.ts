@@ -86,6 +86,12 @@ export type MemoryExportReport = {
   total: number;
 };
 
+export type RemoteConfig = {
+  configured: boolean;
+  scan_dir: string;
+  docs_url: string;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export function resolveMediaUrl(path: string): string {
@@ -231,38 +237,8 @@ export async function retryRemoteEntry(memoryFileId: string): Promise<Memory> {
   });
 }
 
-export async function createMemory(
-  payload: {
-    file: File;
-    title?: string;
-    description: string;
-    location?: string;
-    captured_at?: string;
-  },
-): Promise<Memory> {
-  const form = new FormData();
-  form.set("file", payload.file);
-  form.set("description", payload.description);
-
-  if (payload.title) {
-    form.set("title", payload.title);
-  }
-
-  if (payload.location) {
-    form.set("location", payload.location);
-  }
-
-  if (payload.captured_at) {
-    form.set("captured_at", payload.captured_at);
-  }
-
-  return request<Memory>("/admin/memories", {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-    },
-    body: form,
-  });
+export async function getRemoteConfig(): Promise<RemoteConfig> {
+  return request<RemoteConfig>("/admin/remote-config");
 }
 
 export async function updateMemory(

@@ -4,15 +4,15 @@ import { LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import AdminLoginCard from "@/components/AdminLoginCard";
+import BaiduSetupCard from "@/components/BaiduSetupCard";
 import FileStatusBadge from "@/components/FileStatusBadge";
-import MemoryUploadForm from "@/components/MemoryUploadForm";
 import RemoteStateBadge from "@/components/RemoteStateBadge";
 import StatusBadge from "@/components/StatusBadge";
 import { brand } from "@/lib/brand";
 import {
-  createMemory,
   deleteMemory,
   getAdminMemories,
+  getRemoteConfig,
   getLatestRemoteScan,
   loginAdmin,
   logoutAdmin,
@@ -22,6 +22,7 @@ import {
   batchUpdateMemories,
   exportMemories,
   type Memory,
+  type RemoteConfig,
   type RemoteScanTask,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
@@ -32,31 +33,16 @@ import { ToastViewport, type Toast } from "@/components/ui/Toast";
 import { Input, TextArea } from "@/components/ui/Input";
 import ProgressBar from "@/components/ui/ProgressBar";
 
-type UploadStatus = "pending" | "uploading" | "success" | "failed";
-
-type UploadQueueItem = {
-  key: string;
-  file: File;
-  status: UploadStatus;
-  error?: string;
-};
-
 export default function AdminPage() {
   const [tokenInput, setTokenInput] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRetryingRemote, setIsRetryingRemote] = useState<string | null>(null);
   const [scanTask, setScanTask] = useState<RemoteScanTask | null>(null);
+  const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [capturedAt, setCapturedAt] = useState("");
-  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
-  const [formResetKey, setFormResetKey] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Memory | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -65,52 +51,6 @@ export default function AdminPage() {
   const [batchDescription, setBatchDescription] = useState("");
   const [batchLocation, setBatchLocation] = useState("");
   const [batchCapturedAt, setBatchCapturedAt] = useState("");
-
-  const uploadKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
-
-  const uploadQueueItem = async (item: UploadQueueItem) => {
-    setUploadQueue((current) =>
-      current.map((entry) =>
-        entry.key === item.key
-          ? { ...entry, status: "uploading", error: undefined }
-          : entry,
-      ),
-    );
-
-    try {
-      await createMemory({
-        file: item.file,
-        title,
-        description,
-        location: location || undefined,
-        captured_at: capturedAt || undefined,
-      });
-      setUploadQueue((current) =>
-        current.map((entry) =>
-          entry.key === item.key
-            ? { ...entry, status: "success", error: undefined }
-            : entry,
-        ),
-      );
-      return true;
-    } catch (uploadError) {
-      setUploadQueue((current) =>
-        current.map((entry) =>
-          entry.key === item.key
-            ? {
-                ...entry,
-                status: "failed",
-                error:
-                  uploadError instanceof Error
-                    ? uploadError.message
-                    : brand.copy.adminUploadFailed,
-              }
-            : entry,
-        ),
-      );
-      return false;
-    }
-  };
 
   const pushToast = (message: string, tone: Toast["tone"]) => {
     setToasts((current) => [...current, { id: Date.now(), message, tone }]);
@@ -128,6 +68,8 @@ export default function AdminPage() {
       setIsAdmin(true);
       const scan = await getLatestRemoteScan();
       setScanTask(scan);
+      const config = await getRemoteConfig();
+      setRemoteConfig(config);
       setError(null);
     } catch (loadError) {
       setIsAdmin(false);
@@ -167,47 +109,6 @@ export default function AdminPage() {
       setIsAdmin(false);
       setError(brand.copy.adminLoginFailed);
     }
-  };
-
-  const submitMemory = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (uploadQueue.length === 0) {
-      setError(brand.copy.adminSelectFile);
-      return;
-    }
-
-    setIsUploading(true);
-    let hasFailure = false;
-    for (const item of uploadQueue) {
-      const succeeded = await uploadQueueItem(item);
-      if (!succeeded) {
-        hasFailure = true;
-      }
-    }
-    setError(hasFailure ? brand.copy.adminUploadFailed : null);
-    await loadMemories();
-    setIsUploading(false);
-  };
-
-  const retryUpload = async (item: UploadQueueItem) => {
-    setIsUploading(true);
-    const succeeded = await uploadQueueItem(item);
-    setError(succeeded ? null : brand.copy.adminUploadFailed);
-    await loadMemories();
-    setIsUploading(false);
-  };
-
-  const clearUploadQueue = () => {
-    if (isUploading) {
-      return;
-    }
-    setUploadQueue([]);
-    setTitle("");
-    setDescription("");
-    setLocation("");
-    setCapturedAt("");
-    setFormResetKey((current) => current + 1);
   };
 
   const changeStatus = async (memory: Memory, status: Memory["status"]) => {
@@ -365,74 +266,12 @@ export default function AdminPage() {
         </Notice>
       ) : null}
 
-      <MemoryUploadForm
-        capturedAt={capturedAt}
-        description={description}
-        files={uploadQueue.map((item) => item.file)}
-        isUploading={isUploading}
-        key={formResetKey}
-        location={location}
-        title={title}
-        onCapturedAtChange={setCapturedAt}
-        onDescriptionChange={setDescription}
-        onFilesChange={(files) =>
-          setUploadQueue(
-            files.map((file) => ({
-              key: uploadKey(file),
-              file,
-              status: "pending",
-            })),
-          )
-        }
-        onLocationChange={setLocation}
-        onTitleChange={setTitle}
-        onSubmit={submitMemory}
-      />
-
-      {uploadQueue.length > 0 ? (
-        <div className="card mt-4 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold">{brand.copy.adminUploadQueue}</h3>
-            <Button onClick={clearUploadQueue} variant="ghost">
-              {brand.copy.adminCancel}
-            </Button>
-          </div>
-          <ul className="mt-3 space-y-2">
-            {uploadQueue.map((item) => (
-              <li
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3"
-                key={item.key}
-              >
-                <span className="min-w-0 text-sm">
-                  <span className="block truncate">{item.file.name}</span>
-                  <span className="text-xs text-muted">
-                    {item.status === "pending"
-                      ? brand.copy.adminUploadPending
-                      : item.status === "uploading"
-                        ? brand.copy.adminUploadUploading
-                        : item.status === "success"
-                          ? brand.copy.adminUploadSuccessItem
-                          : brand.copy.adminUploadFailedItem}
-                  </span>
-                </span>
-                {item.error ? (
-                  <span className="max-w-full truncate text-xs text-muted" title={item.error}>
-                    {item.error}
-                  </span>
-                ) : null}
-                {item.status === "failed" ? (
-                  <Button
-                    disabled={isUploading}
-                    onClick={() => void retryUpload(item)}
-                    variant="secondary"
-                  >
-                    {brand.copy.adminRetryUpload}
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {remoteConfig ? (
+        <BaiduSetupCard
+          configured={remoteConfig.configured}
+          docsUrl={remoteConfig.docs_url}
+          scanDir={remoteConfig.scan_dir}
+        />
       ) : null}
 
       <h2 className="section-title mt-12 flex flex-wrap items-center justify-between gap-3">

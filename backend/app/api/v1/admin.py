@@ -8,10 +8,7 @@ from fastapi import (
     Body,
     APIRouter,
     Depends,
-    File,
-    Form,
     HTTPException,
-    UploadFile,
     Request,
     Response,
     status,
@@ -41,19 +38,12 @@ from app.schemas.responses import (
     AdminMemoryBatchUpdateResponse,
     AdminMemoryExportRequest,
     AdminMemoryExportResponse,
+    AdminRemoteConfigResponse,
     AdminSyncRequest,
     AdminSyncResponse,
     RemoteScanTaskRead,
 )
-from app.services.memory_files import (
-    guess_mime_type,
-    hash_file,
-    infer_memory_kind,
-    save_upload,
-)
-from app.services.memory_metadata import extract_memory_metadata
 from app.services.memory_thumbnails import (
-    create_memory_thumbnail,
     remove_media_file,
 )
 from app.services.admin_logs import record_admin_operation
@@ -90,6 +80,28 @@ def require_admin_session(
 
 def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+def _ensure_remote_memory(memory: Memory) -> Memory:
+    if not any(memory_file.source == "baidupan" for memory_file in memory.files):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="回忆不存在",
+        )
+
+    return memory
+
+
+@router.get("/remote-config", response_model=AdminRemoteConfigResponse)
+def get_remote_config(
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminRemoteConfigResponse:
+    settings = get_settings()
+    return AdminRemoteConfigResponse(
+        configured=bool(settings.baidu_access_token),
+        scan_dir=settings.baidu_sync_dir,
+        docs_url="https://pan.baidu.com/union/doc/",
+    )
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
@@ -292,100 +304,18 @@ def list_admin_memories(
     db: Session = Depends(get_db),
     _: AdminSession = Depends(require_admin_session),
 ) -> AdminMemoryListResponse:
-    total = db.scalar(select(func.count()).select_from(Memory)) or 0
-    memories = db.scalars(
-        select(Memory).order_by(Memory.created_at.desc())
-    ).all()
+    statement = (
+        select(Memory)
+        .join(Memory.files)
+        .where(MemoryFile.source == "baidupan")
+        .distinct()
+    )
+    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    memories = db.scalars(statement.order_by(Memory.created_at.desc())).all()
 
     return AdminMemoryListResponse(
         items=[to_memory_read(memory) for memory in memories], total=total
     )
-
-
-@router.post("/memories", response_model=MemoryRead)
-def create_memory(
-    request: Request,
-    title: str | None = Form(default=None, max_length=255),
-    description: str = Form(default=""),
-    location: str | None = Form(default=None, max_length=255),
-    captured_at: datetime | None = Form(default=None),
-    file: UploadFile = File(),
-    db: Session = Depends(get_db),
-    _: AdminSession = Depends(require_admin_session),
-) -> Memory:
-    settings = get_settings()
-    kind = infer_memory_kind(file.filename or "", file.content_type)
-    media_root = Path(settings.media_root)
-    target_path, size_bytes, relative_path = save_upload(
-        file, media_root, kind=kind
-    )
-    content_hash = hash_file(target_path)
-    duplicate_file = db.scalar(
-        select(MemoryFile).where(MemoryFile.content_hash == content_hash)
-    )
-    if duplicate_file is not None:
-        target_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="文件内容已存在",
-        )
-    metadata = extract_memory_metadata(target_path, kind)
-    fallback_title = Path(file.filename or target_path.name).stem.strip()[:255]
-    final_title = (title or metadata.title or fallback_title).strip()[:255]
-    memory_id = uuid.uuid4()
-    thumbnail_path = create_memory_thumbnail(
-        target_path,
-        media_root,
-        kind=kind,
-        memory_id=memory_id,
-        duration_seconds=metadata.duration_seconds,
-    )
-
-    memory = Memory(
-        id=memory_id,
-        title=final_title or "未命名回忆",
-        description=description or metadata.description or "",
-        kind=kind,
-        status="published",
-        captured_at=captured_at or metadata.captured_at,
-        location=location or metadata.location,
-        width=metadata.width,
-        height=metadata.height,
-        duration_seconds=metadata.duration_seconds,
-        thumbnail_path=thumbnail_path,
-    )
-    memory_file = MemoryFile(
-        memory_id=memory_id,
-        source="upload",
-        filename=file.filename or target_path.name,
-        remote_path=file.filename or target_path.name,
-        parent_path="",
-        extension=Path(target_path.name).suffix.lstrip(".").lower() or None,
-        source_path=relative_path,
-        mime_type=guess_mime_type(target_path.name, file.content_type),
-        size_bytes=size_bytes,
-        content_hash=content_hash,
-        status=MemoryFileStatus.MATCHED,
-        remote_state=RemoteFileState.READY,
-        thumbnail_state=(
-            RemoteThumbnailState.READY if thumbnail_path else RemoteThumbnailState.MISSING
-        ),
-        stream_state=RemoteStreamState.READY,
-    )
-
-    db.add(memory)
-    db.add(memory_file)
-    db.commit()
-    db.refresh(memory)
-    record_admin_operation(
-        db,
-        action="upload",
-        target_type="memory",
-        target_id=memory.id,
-        client_ip=_client_ip(request),
-        detail=memory.title,
-    )
-    return to_memory_read(memory)
 
 
 @router.patch("/memories/batch", response_model=AdminMemoryBatchUpdateResponse)
@@ -410,6 +340,9 @@ def batch_update_memories(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="部分回忆不存在",
         )
+
+    for memory in memories:
+        _ensure_remote_memory(memory)
 
     for memory in memories:
         for key, value in changes.items():
@@ -448,6 +381,9 @@ def export_memories(
             detail="部分回忆不存在",
         )
 
+    for memory in memories:
+        _ensure_remote_memory(memory)
+
     return AdminMemoryExportResponse(
         exported_at=datetime.now(timezone.utc),
         items=[to_memory_read(memory) for memory in memories],
@@ -469,6 +405,8 @@ def update_memory(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="回忆不存在"
         )
+
+    _ensure_remote_memory(memory)
 
     previous_status = memory.status
     changed_fields = sorted(payload.model_dump(exclude_unset=True).keys())
@@ -505,6 +443,8 @@ def delete_memory(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="回忆不存在"
         )
+
+    _ensure_remote_memory(memory)
 
     record_admin_operation(
         db,
