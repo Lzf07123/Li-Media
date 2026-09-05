@@ -88,8 +88,17 @@ export type MemoryExportReport = {
 
 export type RemoteConfig = {
   configured: boolean;
+  oauth_configured: boolean;
+  authorized: boolean;
   scan_dir: string;
+  redirect_uri: string;
   docs_url: string;
+  token_expires_at: string | null;
+};
+
+export type BaiduAuthorizeResponse = {
+  authorize_url: string;
+  expires_at: string;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
@@ -239,6 +248,27 @@ export async function retryRemoteEntry(memoryFileId: string): Promise<Memory> {
 
 export async function getRemoteConfig(): Promise<RemoteConfig> {
   return request<RemoteConfig>("/admin/remote-config");
+}
+
+export async function startBaiduAuthorization(): Promise<BaiduAuthorizeResponse> {
+  return request<BaiduAuthorizeResponse>("/admin/baidu/authorize");
+}
+
+export async function completeBaiduAuthorization(payload: {
+  code: string;
+  state: string;
+}): Promise<{ authorized: boolean; expires_at: string | null }> {
+  return request<{ authorized: boolean; expires_at: string | null }>(
+    "/admin/baidu/callback",
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function updateMemory(
