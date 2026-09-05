@@ -86,11 +86,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       Accept: "application/json",
     },
+    credentials: "include",
     ...init,
   });
 
   if (!response.ok) {
     throw new ApiError(await readApiErrorMessage(response), response.status);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return (await response.json()) as T;
@@ -130,18 +135,33 @@ export function getMemoryById(memoryId: string): Promise<Memory> {
 }
 
 export async function getAdminMemories(
-  token: string,
 ): Promise<MemoryAdminListResponse> {
   return request<MemoryAdminListResponse>("/admin/memories", {
     headers: {
       Accept: "application/json",
-      "X-Admin-Token": token,
     },
   });
 }
 
+export async function loginAdmin(token: string): Promise<void> {
+  await request<void>(
+    "/admin/login",
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ token }),
+    },
+  );
+}
+
+export async function logoutAdmin(): Promise<void> {
+  await request<void>("/admin/logout", { method: "POST" });
+}
+
 export async function syncMemories(
-  token: string,
   maxFiles = 5,
 ): Promise<MemorySyncResponse> {
   return request<MemorySyncResponse>("/admin/sync", {
@@ -149,14 +169,12 @@ export async function syncMemories(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "X-Admin-Token": token,
     },
     body: JSON.stringify({ max_files: maxFiles }),
   });
 }
 
 export async function createMemory(
-  token: string,
   payload: {
     file: File;
     title?: string;
@@ -184,14 +202,13 @@ export async function createMemory(
   return request<Memory>("/admin/memories", {
     method: "POST",
     headers: {
-      "X-Admin-Token": token,
+      Accept: "application/json",
     },
     body: form,
   });
 }
 
 export async function updateMemory(
-  token: string,
   memoryId: string,
   payload: Partial<Pick<Memory, "title" | "description" | "location" | "status">>,
 ): Promise<Memory> {
@@ -200,18 +217,18 @@ export async function updateMemory(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "X-Admin-Token": token,
     },
     body: JSON.stringify(payload),
   });
 }
 
-export async function deleteMemory(token: string, memoryId: string): Promise<void> {
+export async function deleteMemory(memoryId: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/admin/memories/${memoryId}`, {
     method: "DELETE",
     headers: {
-      "X-Admin-Token": token,
+      Accept: "application/json",
     },
+    credentials: "include",
   });
 
   if (!response.ok) {

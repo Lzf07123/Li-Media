@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { RefreshCw } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import AdminLoginCard from "@/components/AdminLoginCard";
@@ -11,6 +12,8 @@ import {
   createMemory,
   deleteMemory,
   getAdminMemories,
+  loginAdmin,
+  logoutAdmin,
   syncMemories,
   updateMemory,
   type Memory,
@@ -21,10 +24,7 @@ import Modal from "@/components/ui/Modal";
 import Notice from "@/components/ui/Notice";
 import { ToastViewport, type Toast } from "@/components/ui/Toast";
 
-const TOKEN_STORAGE_KEY = "limedia-admin-token";
-
 export default function AdminPage() {
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_STORAGE_KEY) ?? "");
   const [tokenInput, setTokenInput] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -49,28 +49,28 @@ export default function AdminPage() {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   };
 
-  const loadMemories = useCallback(async (currentToken: string) => {
-    if (!currentToken) {
-      return;
-    }
-
+  const loadMemories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await getAdminMemories(currentToken);
+      const data = await getAdminMemories();
       setMemories(data.items);
       setIsAdmin(true);
       setError(null);
-    } catch {
+    } catch (loadError) {
       setIsAdmin(false);
-      setError(brand.copy.adminLoginFailed);
+      setError(
+        loadError instanceof Error && loadError.message.includes("401")
+          ? null
+          : brand.copy.adminLoginFailed,
+      );
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadMemories(token);
-  }, [loadMemories, token]);
+    void loadMemories();
+  }, [loadMemories]);
 
   useEffect(() => {
     if (toasts.length === 0) {
@@ -86,9 +86,14 @@ export default function AdminPage() {
 
   const submitToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setToken(tokenInput);
-    localStorage.setItem(TOKEN_STORAGE_KEY, tokenInput);
-    await loadMemories(tokenInput);
+    try {
+      await loginAdmin(tokenInput);
+      setTokenInput("");
+      await loadMemories();
+    } catch {
+      setIsAdmin(false);
+      setError(brand.copy.adminLoginFailed);
+    }
   };
 
   const submitMemory = async (event: FormEvent<HTMLFormElement>) => {
@@ -101,7 +106,7 @@ export default function AdminPage() {
 
     setIsUploading(true);
     try {
-      await createMemory(token, {
+      await createMemory({
         file,
         title,
         description,
@@ -116,7 +121,7 @@ export default function AdminPage() {
       setFormResetKey((current) => current + 1);
       setError(null);
       pushToast(brand.copy.adminUploadSuccess, "success");
-      await loadMemories(token);
+      await loadMemories();
     } catch (uploadError) {
       setError(
         uploadError instanceof Error ? uploadError.message : brand.copy.adminUploadFailed,
@@ -128,8 +133,8 @@ export default function AdminPage() {
 
   const changeStatus = async (memory: Memory, status: Memory["status"]) => {
     try {
-      await updateMemory(token, memory.id, { status });
-      await loadMemories(token);
+      await updateMemory(memory.id, { status });
+      await loadMemories();
     } catch {
       setError(brand.copy.adminStatusUpdateFailed);
     }
@@ -137,9 +142,9 @@ export default function AdminPage() {
 
   const removeMemory = async (memory: Memory) => {
     try {
-      await deleteMemory(token, memory.id);
+      await deleteMemory(memory.id);
       setPendingDelete(null);
-      await loadMemories(token);
+      await loadMemories();
     } catch {
       setError(brand.copy.adminDeleteFailed);
     }
@@ -148,10 +153,10 @@ export default function AdminPage() {
   const triggerSync = async () => {
     setIsSyncing(true);
     try {
-      await syncMemories(token);
+      await syncMemories();
       setError(null);
       pushToast(brand.copy.adminSyncSuccess, "success");
-      await loadMemories(token);
+      await loadMemories();
     } catch {
       setError(brand.copy.adminSyncFailed);
     } finally {
@@ -172,10 +177,25 @@ export default function AdminPage() {
 
   return (
     <section aria-labelledby="admin-title">
-      <h1 className="text-3xl font-semibold" id="admin-title">
-        {brand.copy.adminTitle}
-      </h1>
-      <p className="mt-2 text-sm text-muted">{brand.copy.adminDescription}</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold" id="admin-title">
+            {brand.copy.adminTitle}
+          </h1>
+          <p className="mt-2 text-sm text-muted">{brand.copy.adminDescription}</p>
+        </div>
+        <Button
+          onClick={() => void logoutAdmin().then(() => {
+            setIsAdmin(false);
+            setMemories([]);
+            setError(null);
+          })}
+          variant="secondary"
+        >
+          <LogOut aria-hidden="true" className="size-4" />
+          {brand.copy.adminLogout}
+        </Button>
+      </div>
 
       {error ? (
         <Notice className="mt-4" tone="error">

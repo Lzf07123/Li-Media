@@ -226,9 +226,14 @@ def test_admin_sync_endpoint_uses_worker(tmp_path: Path, monkeypatch) -> None:
     app.dependency_overrides[get_db] = override_get_db
     try:
         with TestClient(app) as client:
+            login_response = client.post(
+                "/api/v1/admin/login",
+                json={"token": "test-token"},
+            )
+            assert login_response.status_code == 204
+
             response = client.post(
                 "/api/v1/admin/sync",
-                headers={"X-Admin-Token": "test-token"},
             )
 
         assert response.status_code == 200
