@@ -67,6 +67,10 @@ class FakeProxyClient:
             raise BaiduPanError("远程缩略图不可用")
         return b"thumb", "image/webp"
 
+    def resolve_direct_url(self, remote_id: str) -> tuple[str, int]:
+        assert remote_id == "remote-1"
+        return "https://baidu.invalid/private-download?access_token=test-token", 300
+
 
 def create_database(tmp_path: Path) -> sessionmaker[Session]:
     engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
@@ -187,5 +191,33 @@ def test_remote_thumbnail_failure_is_logged_and_hidden_is_not_served(
         with session_factory() as session:
             memory_file = session.scalar(select(MemoryFile))
             assert memory_file.thumbnail_state == RemoteThumbnailState.FAILED
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_direct_media_url_is_returned_for_published_memory_only(
+    tmp_path: Path, monkeypatch
+) -> None:
+    session_factory = configure_app(tmp_path, monkeypatch)
+    published_id = add_remote_memory(session_factory)
+    hidden_id = add_remote_memory(session_factory, published=False)
+
+    try:
+        with TestClient(app) as client:
+            hidden_response = client.get(
+                f"/api/v1/memories/{hidden_id}/direct-url"
+            )
+            assert hidden_response.status_code == 404
+
+            response = client.get(
+                f"/api/v1/memories/{published_id}/direct-url"
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["direct_url"].startswith("https://baidu.invalid/")
+            assert payload["mime_type"] == "video/mp4"
+            assert payload["size_bytes"] == 3
+            assert payload["expires_at"] is not None
+            assert response.headers["cache-control"] == "no-store"
     finally:
         app.dependency_overrides.clear()

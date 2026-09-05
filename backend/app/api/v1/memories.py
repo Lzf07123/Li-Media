@@ -1,5 +1,6 @@
 import mimetypes
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -17,7 +18,7 @@ from app.models.memory import (
     RemoteThumbnailState,
 )
 from app.schemas.memory import MemoryRead, to_memory_read
-from app.schemas.responses import MemoryListResponse
+from app.schemas.responses import MemoryDirectLinkResponse, MemoryListResponse
 from app.services.memory_thumbnails import resolve_media_path
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
@@ -85,6 +86,65 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
         )
 
     return to_memory_read(memory)
+
+
+@router.get("/{memory_id}/direct-url", response_model=MemoryDirectLinkResponse)
+def get_memory_direct_url(
+    memory_id: uuid.UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> MemoryDirectLinkResponse:
+    memory = db.get(Memory, memory_id)
+
+    if (
+        memory is None
+        or memory.status != MemoryStatus.PUBLISHED
+        or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
+        )
+
+    memory_file = db.scalar(
+        select(MemoryFile).where(MemoryFile.memory_id == memory_id)
+    )
+
+    if memory_file is None or not memory_file.remote_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory file not found"
+        )
+
+    settings = get_settings()
+    try:
+        direct_url, ttl_seconds = BaiduPanClient(settings).resolve_direct_url(
+            memory_file.remote_id
+        )
+    except BaiduPanError as exc:
+        record_admin_operation(
+            db,
+            action="direct_url_failed",
+            target_type="memory",
+            target_id=memory.id,
+            detail=str(exc),
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc) or "远程媒体直链暂时不可用",
+        ) from exc
+
+    # Direct URLs are short-lived and must not be persisted by browsers.
+    response.headers["Cache-Control"] = "no-store"
+    return MemoryDirectLinkResponse(
+        direct_url=direct_url,
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+            if ttl_seconds > 0
+            else None
+        ),
+        mime_type=memory_file.mime_type,
+        size_bytes=memory_file.size_bytes,
+    )
 
 
 @router.api_route("/{memory_id}/file", methods=["GET"], response_model=None)

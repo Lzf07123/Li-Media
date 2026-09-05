@@ -101,9 +101,20 @@ export type BaiduAuthorizeResponse = {
   expires_at: string;
 };
 
+export type MediaDirectLink = {
+  direct_url: string;
+  expires_at: string | null;
+  mime_type: string;
+  size_bytes: number | null;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export function resolveMediaUrl(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+
   if (!path.startsWith("/") || !API_BASE_URL.startsWith("http")) {
     return path;
   }
@@ -190,6 +201,16 @@ export async function getMemories(params: {
 
 export function getMemoryById(memoryId: string): Promise<Memory> {
   return request<Memory>(`/memories/${memoryId}`);
+}
+
+export async function getMediaDirectLink(
+  memoryId: string,
+): Promise<MediaDirectLink> {
+  return request<MediaDirectLink>(`/memories/${memoryId}/direct-url`, {
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 export async function getAdminMemories(
