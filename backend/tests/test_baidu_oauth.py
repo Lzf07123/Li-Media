@@ -41,7 +41,10 @@ def test_oauth_state_is_signed_and_checked(tmp_path: Path) -> None:
     verify_baidu_oauth_state(settings, state)
 
     with pytest.raises(BaiduOAuthError, match="百度网盘授权状态无效"):
-        verify_baidu_oauth_state(settings, state[:-1] + ("A" if state[-1] != "A" else "B"))
+        verify_baidu_oauth_state(
+            settings,
+            "tampered-payload." + state.rsplit(".", 1)[1],
+        )
 
 
 def test_exchange_code_returns_credentials(tmp_path: Path, monkeypatch) -> None:

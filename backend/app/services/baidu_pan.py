@@ -141,11 +141,7 @@ class BaiduPanClient:
         try:
             response = httpx.get(
                 metadata.thumbnail_url,
-                params={"access_token": self._settings.baidu_access_token},
-                headers={
-                    "Authorization": f"bearer {self._settings.baidu_access_token}",
-                    "User-Agent": "Li&Media",
-                },
+                headers={"User-Agent": "Li&Media"},
                 follow_redirects=True,
                 timeout=30,
             )
