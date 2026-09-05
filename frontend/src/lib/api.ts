@@ -43,6 +43,21 @@ export type MemorySyncResponse = {
   failed: number;
 };
 
+export type MemoryBatchUpdatePayload = {
+  ids: string[];
+  title?: string;
+  description?: string;
+  location?: string;
+  captured_at?: string;
+  status?: Memory["status"];
+};
+
+export type MemoryExportReport = {
+  exported_at: string;
+  items: Memory[];
+  total: number;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export function resolveMediaUrl(path: string): string {
@@ -234,4 +249,30 @@ export async function deleteMemory(memoryId: string): Promise<void> {
   if (!response.ok) {
     throw new ApiError(await readApiErrorMessage(response), response.status);
   }
+}
+
+export async function batchUpdateMemories(
+  payload: MemoryBatchUpdatePayload,
+): Promise<{ updated: number }> {
+  return request<{ updated: number }>("/admin/memories/batch", {
+    method: "PATCH",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function exportMemories(
+  ids: string[],
+): Promise<MemoryExportReport> {
+  return request<MemoryExportReport>("/admin/memories/export", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ids }),
+  });
 }

@@ -70,6 +70,7 @@ class MemoryFile(Base):
     source_path: Mapped[str] = mapped_column(String(1024))
     mime_type: Mapped[str] = mapped_column(String(128))
     size_bytes: Mapped[int | None]
+    content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     status: Mapped[MemoryFileStatus] = mapped_column(
         String(32), default=MemoryFileStatus.PENDING, index=True
     )

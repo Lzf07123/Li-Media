@@ -1,7 +1,7 @@
 import secrets
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import (
@@ -27,11 +27,16 @@ from app.schemas.memory import MemoryRead, MemoryUpdate, to_memory_read
 from app.schemas.responses import (
     AdminMemoryListResponse,
     AdminLoginRequest,
+    AdminMemoryBatchUpdateRequest,
+    AdminMemoryBatchUpdateResponse,
+    AdminMemoryExportRequest,
+    AdminMemoryExportResponse,
     AdminSyncRequest,
     AdminSyncResponse,
 )
 from app.services.memory_files import (
     guess_mime_type,
+    hash_file,
     infer_memory_kind,
     save_upload,
 )
@@ -224,6 +229,16 @@ def create_memory(
     target_path, size_bytes, relative_path = save_upload(
         file, media_root, kind=kind
     )
+    content_hash = hash_file(target_path)
+    duplicate_file = db.scalar(
+        select(MemoryFile).where(MemoryFile.content_hash == content_hash)
+    )
+    if duplicate_file is not None:
+        target_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="文件内容已存在",
+        )
     metadata = extract_memory_metadata(target_path, kind)
     fallback_title = Path(file.filename or target_path.name).stem.strip()[:255]
     final_title = (title or metadata.title or fallback_title).strip()[:255]
@@ -255,6 +270,7 @@ def create_memory(
         source_path=relative_path,
         mime_type=guess_mime_type(target_path.name, file.content_type),
         size_bytes=size_bytes,
+        content_hash=content_hash,
         status=MemoryFileStatus.MATCHED,
     )
 
@@ -271,6 +287,73 @@ def create_memory(
         detail=memory.title,
     )
     return to_memory_read(memory)
+
+
+@router.patch("/memories/batch", response_model=AdminMemoryBatchUpdateResponse)
+def batch_update_memories(
+    payload: AdminMemoryBatchUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminMemoryBatchUpdateResponse:
+    changes = payload.model_dump(exclude={"ids"}, exclude_unset=True)
+    if not changes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="至少选择一个要修改的字段",
+        )
+
+    memories = db.scalars(
+        select(Memory).where(Memory.id.in_(payload.ids))
+    ).all()
+    if len(memories) != len(set(payload.ids)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="部分回忆不存在",
+        )
+
+    for memory in memories:
+        for key, value in changes.items():
+            setattr(memory, key, value)
+
+    db.commit()
+    status_value = changes.get("status")
+    action = "batch_update"
+    if status_value == MemoryStatus.PUBLISHED:
+        action = "batch_publish"
+    elif status_value == MemoryStatus.HIDDEN:
+        action = "batch_hide"
+
+    record_admin_operation(
+        db,
+        action=action,
+        target_type="memory_batch",
+        client_ip=_client_ip(request),
+        detail=", ".join(sorted(changes)),
+    )
+    return AdminMemoryBatchUpdateResponse(updated=len(memories))
+
+
+@router.post("/memories/export", response_model=AdminMemoryExportResponse)
+def export_memories(
+    payload: AdminMemoryExportRequest,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminMemoryExportResponse:
+    memories = db.scalars(
+        select(Memory).where(Memory.id.in_(payload.ids))
+    ).all()
+    if len(memories) != len(set(payload.ids)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="部分回忆不存在",
+        )
+
+    return AdminMemoryExportResponse(
+        exported_at=datetime.now(timezone.utc),
+        items=[to_memory_read(memory) for memory in memories],
+        total=len(memories),
+    )
 
 
 @router.patch("/memories/{memory_id}", response_model=MemoryRead)

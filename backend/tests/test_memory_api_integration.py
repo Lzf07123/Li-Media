@@ -61,6 +61,13 @@ def test_public_and_admin_memory_lifecycle(tmp_path: Path, monkeypatch) -> None:
             assert memory["status"] == "published"
             assert memory["thumbnail_url"] == f"/api/v1/memories/{memory_id}/thumbnail"
 
+            duplicate_upload = client.post(
+                "/api/v1/admin/memories",
+                files={"file": ("same.png", image_buffer.getvalue(), "image/png")},
+                data={"description": "重复文件"},
+            )
+            assert duplicate_upload.status_code == 409
+
             admin_list = client.get("/api/v1/admin/memories")
             assert admin_list.status_code == 200
             assert admin_list.json()["total"] == 1
@@ -82,10 +89,12 @@ def test_public_and_admin_memory_lifecycle(tmp_path: Path, monkeypatch) -> None:
             assert thumbnail_response.status_code == 200
             assert thumbnail_response.headers["content-type"] == "image/webp"
 
-            assert client.patch(
-                f"/api/v1/admin/memories/{memory_id}",
-                json={"status": "hidden"},
-            ).status_code == 200
+            batch_hide = client.patch(
+                "/api/v1/admin/memories/batch",
+                json={"ids": [memory_id], "status": "hidden"},
+            )
+            assert batch_hide.status_code == 200
+            assert batch_hide.json() == {"updated": 1}
             assert client.get("/api/v1/memories").json()["total"] == 0
             assert client.get(f"/api/v1/memories/{memory_id}").status_code == 404
             assert client.get(f"/api/v1/memories/{memory_id}/file").status_code == 404
@@ -93,12 +102,27 @@ def test_public_and_admin_memory_lifecycle(tmp_path: Path, monkeypatch) -> None:
                 f"/api/v1/memories/{memory_id}/thumbnail"
             ).status_code == 404
 
-            assert client.patch(
-                f"/api/v1/admin/memories/{memory_id}",
-                json={"status": "published"},
+            batch_edit = client.patch(
+                "/api/v1/admin/memories/batch",
+                json={"ids": [memory_id], "title": "批量改名", "location": "批量地点"},
+            )
+            assert batch_edit.status_code == 200
+
+            batch_publish = client.patch(
+                "/api/v1/admin/memories/batch",
+                json={"ids": [memory_id], "status": "published"},
             ).status_code == 200
             assert client.get("/api/v1/memories").json()["total"] == 1
             assert client.get(f"/api/v1/memories/{memory_id}").status_code == 200
+
+            export = client.post(
+                "/api/v1/admin/memories/export",
+                json={"ids": [memory_id]},
+            )
+            assert export.status_code == 200
+            assert export.json()["total"] == 1
+            assert export.json()["items"][0]["title"] == "批量改名"
+            assert export.json()["items"][0]["location"] == "批量地点"
 
             assert client.delete(f"/api/v1/admin/memories/{memory_id}").status_code == 204
             assert client.get("/api/v1/memories").json()["total"] == 0
