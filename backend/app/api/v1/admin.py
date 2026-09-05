@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.memory import Memory, MemoryFile, MemoryFileStatus
-from app.schemas.memory import MemoryRead, MemoryUpdate
+from app.schemas.memory import MemoryRead, MemoryUpdate, to_memory_read
 from app.schemas.responses import AdminMemoryListResponse
 from app.services.memory_files import (
     guess_mime_type,
@@ -64,7 +64,9 @@ def list_admin_memories(
         select(Memory).order_by(Memory.created_at.desc())
     ).all()
 
-    return AdminMemoryListResponse(items=memories, total=total)
+    return AdminMemoryListResponse(
+        items=[to_memory_read(memory) for memory in memories], total=total
+    )
 
 
 @router.post("/memories", response_model=MemoryRead)
@@ -114,7 +116,7 @@ def create_memory(
     db.add(memory_file)
     db.commit()
     db.refresh(memory)
-    return memory
+    return to_memory_read(memory)
 
 
 @router.patch("/memories/{memory_id}", response_model=MemoryRead)
@@ -136,7 +138,7 @@ def update_memory(
 
     db.commit()
     db.refresh(memory)
-    return memory
+    return to_memory_read(memory)
 
 
 @router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)

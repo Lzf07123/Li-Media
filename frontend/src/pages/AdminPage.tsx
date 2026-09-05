@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
+import AdminLoginCard from "@/components/AdminLoginCard";
+import FileStatusBadge from "@/components/FileStatusBadge";
+import MemoryUploadForm from "@/components/MemoryUploadForm";
+import StatusBadge from "@/components/StatusBadge";
+import { brand } from "@/lib/brand";
 import {
   createMemory,
   deleteMemory,
@@ -8,13 +13,15 @@ import {
   updateMemory,
   type Memory,
 } from "@/lib/api";
+import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
+import Notice from "@/components/ui/Notice";
+import { ToastViewport, type Toast } from "@/components/ui/Toast";
 
 const TOKEN_STORAGE_KEY = "limedia-admin-token";
 
 export default function AdminPage() {
-  const [token, setToken] = useState(
-    () => localStorage.getItem(TOKEN_STORAGE_KEY) ?? "",
-  );
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_STORAGE_KEY) ?? "");
   const [tokenInput, setTokenInput] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -26,45 +33,65 @@ export default function AdminPage() {
   const [location, setLocation] = useState("");
   const [capturedAt, setCapturedAt] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [formResetKey, setFormResetKey] = useState(0);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<Memory | null>(null);
 
-  const loadMemories = useCallback(
-    async (currentToken: string) => {
-      if (!currentToken) {
-        return;
-      }
+  const pushToast = (message: string, tone: Toast["tone"]) => {
+    setToasts((current) => [...current, { id: Date.now(), message, tone }]);
+  };
 
-      setIsLoading(true);
-      try {
-        const data = await getAdminMemories(currentToken);
-        setMemories(data.items);
-        setIsAdmin(true);
-        setError(null);
-      } catch {
-        setIsAdmin(false);
-        setError("管理令牌不正确，或服务暂时不可用");
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [],
-  );
+  const dismissToast = (id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  };
+
+  const loadMemories = useCallback(async (currentToken: string) => {
+    if (!currentToken) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const data = await getAdminMemories(currentToken);
+      setMemories(data.items);
+      setIsAdmin(true);
+      setError(null);
+    } catch {
+      setIsAdmin(false);
+      setError(brand.copy.adminLoginFailed);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadMemories(token);
   }, [loadMemories, token]);
 
-  const submitToken = async (event: FormEvent) => {
+  useEffect(() => {
+    if (toasts.length === 0) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setToasts((current) => current.slice(1));
+    }, 3600);
+
+    return () => window.clearTimeout(timer);
+  }, [toasts]);
+
+  const submitToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setToken(tokenInput);
     localStorage.setItem(TOKEN_STORAGE_KEY, tokenInput);
     await loadMemories(tokenInput);
   };
 
-  const submitMemory = async (event: FormEvent) => {
+  const submitMemory = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!file) {
-      setError("请选择要上传的照片或视频文件");
+      setError(brand.copy.adminSelectFile);
       return;
     }
 
@@ -82,10 +109,14 @@ export default function AdminPage() {
       setLocation("");
       setCapturedAt("");
       setFile(null);
+      setFormResetKey((current) => current + 1);
       setError(null);
+      pushToast(brand.copy.adminUploadSuccess, "success");
       await loadMemories(token);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "上传失败，请稍后重试");
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error ? uploadError.message : brand.copy.adminUploadFailed,
+      );
     } finally {
       setIsUploading(false);
     }
@@ -96,177 +127,138 @@ export default function AdminPage() {
       await updateMemory(token, memory.id, { status });
       await loadMemories(token);
     } catch {
-      setError("状态更新失败");
+      setError(brand.copy.adminStatusUpdateFailed);
     }
   };
 
   const removeMemory = async (memory: Memory) => {
     try {
       await deleteMemory(token, memory.id);
+      setPendingDelete(null);
       await loadMemories(token);
     } catch {
-      setError("删除失败");
+      setError(brand.copy.adminDeleteFailed);
     }
   };
 
   if (!isAdmin) {
     return (
-      <section className="mx-auto max-w-md rounded-lg border border-border bg-surface p-6">
-        <h1 className="text-xl font-semibold">管理登录</h1>
-        <p className="mt-2 text-sm text-muted">请输入管理令牌以继续操作。</p>
-
-        <form className="mt-6 flex flex-col gap-3" onSubmit={submitToken}>
-          <label className="text-sm" htmlFor="admin-token">
-            管理令牌
-          </label>
-          <input
-            id="admin-token"
-            type="password"
-            value={tokenInput}
-            onChange={(event) => setTokenInput(event.target.value)}
-            className="min-h-11 rounded-md border border-border bg-surface px-3"
-            required
-          />
-          <button
-            type="submit"
-            className="min-h-11 rounded-md border border-primary bg-primary-soft px-4 font-medium text-primary"
-          >
-            进入管理
-          </button>
-        </form>
-
-        {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
-      </section>
+      <AdminLoginCard
+        error={error}
+        onTokenChange={setTokenInput}
+        onSubmit={submitToken}
+        token={tokenInput}
+      />
     );
   }
 
   return (
     <section aria-labelledby="admin-title">
-      <h1 id="admin-title" className="text-2xl font-semibold">
-        回忆管理
+      <h1 className="text-3xl font-semibold" id="admin-title">
+        {brand.copy.adminTitle}
       </h1>
-      <p className="mt-2 text-sm text-muted">
-        上传照片或视频，确认后即可在公开页面展示。
-      </p>
+      <p className="mt-2 text-sm text-muted">{brand.copy.adminDescription}</p>
 
-      {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <Notice className="mt-4" tone="error">
+          {error}
+        </Notice>
+      ) : null}
 
-      <form
-        className="mt-6 grid gap-4 rounded-lg border border-border bg-surface p-6 lg:grid-cols-2"
+      <MemoryUploadForm
+        capturedAt={capturedAt}
+        description={description}
+        file={file}
+        isUploading={isUploading}
+        key={formResetKey}
+        location={location}
+        title={title}
+        onCapturedAtChange={setCapturedAt}
+        onDescriptionChange={setDescription}
+        onFileChange={setFile}
+        onLocationChange={setLocation}
+        onTitleChange={setTitle}
         onSubmit={submitMemory}
-      >
-        <label className="flex flex-col gap-2 text-sm">
-          标题（可留空，自动读取文件名或元数据）
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            className="min-h-11 rounded-md border border-border bg-surface px-3"
-          />
-        </label>
+      />
 
-        <label className="flex flex-col gap-2 text-sm">
-          拍摄时间
-          <input
-            type="datetime-local"
-            value={capturedAt}
-            onChange={(event) => setCapturedAt(event.target.value)}
-            className="min-h-11 rounded-md border border-border bg-surface px-3"
-          />
-        </label>
-
-        <label className="flex flex-col gap-2 text-sm">
-          地点
-          <input
-            value={location}
-            onChange={(event) => setLocation(event.target.value)}
-            className="min-h-11 rounded-md border border-border bg-surface px-3"
-          />
-        </label>
-
-        <label className="flex flex-col gap-2 text-sm">
-          文件
-          <input
-            type="file"
-            accept="image/*,video/*"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            className="min-h-11 rounded-md border border-border bg-surface px-3 py-2"
-            required
-          />
-        </label>
-
-        <label className="flex flex-col gap-2 text-sm lg:col-span-2">
-          描述
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            className="min-h-28 rounded-md border border-border bg-surface px-3 py-2"
-          />
-        </label>
-
-        <button
-          className="min-h-11 rounded-md border border-primary bg-primary-soft px-4 font-medium text-primary lg:col-span-2"
-          disabled={isUploading}
-          type="submit"
-        >
-          {isUploading ? "上传中..." : "上传并发布"}
-        </button>
-      </form>
-
-      <h2 className="mt-8 text-lg font-semibold">全部回忆</h2>
+      <h2 className="section-title mt-12">{brand.copy.adminAllMemories}</h2>
 
       {isLoading ? (
-        <div className="mt-4 h-24 rounded-lg bg-surface-2" />
+        <div className="shimmer mt-4 h-24 rounded-xl" />
       ) : memories.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">还没有上传内容。</p>
+        <p className="mt-4 text-sm text-muted">{brand.copy.adminEmpty}</p>
       ) : (
-        <ul className="mt-4 grid gap-3">
-          {memories.map((memory) => (
-            <li
-              key={memory.id}
-              className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface p-4"
-            >
-              <div className="flex-1">
-                <p className="text-sm font-medium">{memory.title}</p>
-                <p className="mt-1 text-xs text-muted">
-                  {memory.kind === "video" ? "视频" : "照片"} · {memory.status}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {memory.status !== "published" ? (
-                  <button
-                    className="min-h-11 rounded-md border border-border px-3 text-sm"
-                    onClick={() => changeStatus(memory, "published")}
-                    type="button"
-                  >
-                    发布
-                  </button>
-                ) : (
-                  <button
-                    className="min-h-11 rounded-md border border-border px-3 text-sm"
-                    onClick={() => changeStatus(memory, "hidden")}
-                    type="button"
-                  >
-                    下架
-                  </button>
-                )}
-
-                <button
-                  className="min-h-11 rounded-md border border-border px-3 text-sm text-destructive"
-                  onClick={() => removeMemory(memory)}
-                  type="button"
-                >
-                  删除
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="table-shell mt-4">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{brand.copy.adminFileHeader}</th>
+                <th scope="col">{brand.copy.adminKindHeader}</th>
+                <th scope="col">{brand.copy.adminStatusHeader}</th>
+                <th scope="col">{brand.copy.adminFileStatusHeader}</th>
+                <th scope="col">{brand.copy.adminActionsHeader}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {memories.map((memory) => (
+                <tr key={memory.id}>
+                  <td>
+                    <p className="font-medium">{memory.title}</p>
+                    <p className="mt-1 text-xs text-muted">{memory.primary_file?.remote_path}</p>
+                  </td>
+                  <td>
+                    {memory.kind === "video" ? brand.copy.videoKind : brand.copy.photoKind}
+                  </td>
+                  <td>
+                    <StatusBadge status={memory.status} />
+                  </td>
+                  <td>
+                    {memory.primary_file ? (
+                      <FileStatusBadge status={memory.primary_file.status} />
+                    ) : (
+                      brand.copy.fileMissing
+                    )}
+                  </td>
+                  <td>
+                    <div className="flex flex-wrap gap-2">
+                      {memory.status !== "published" ? (
+                        <Button onClick={() => void changeStatus(memory, "published")}>
+                          {brand.copy.adminPublish}
+                        </Button>
+                      ) : (
+                        <Button onClick={() => void changeStatus(memory, "hidden")} variant="secondary">
+                          {brand.copy.adminHide}
+                        </Button>
+                      )}
+                      <Button onClick={() => setPendingDelete(memory)} variant="danger">
+                        {brand.copy.adminDelete}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <Link className="mt-8 inline-flex min-h-11 items-center text-primary" to="/">
-        返回首页
+        {brand.copy.backHome}
       </Link>
+
+      <Modal onClose={() => setPendingDelete(null)} open={pendingDelete !== null} title={brand.copy.adminDeleteConfirmTitle} tone="danger">
+        <p className="mt-3 text-sm text-muted">{brand.copy.adminDeleteConfirmText}</p>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button onClick={() => setPendingDelete(null)} variant="secondary">
+            {brand.copy.adminCancel}
+          </Button>
+          <Button onClick={() => pendingDelete && void removeMemory(pendingDelete)} variant="danger">
+            {brand.copy.adminConfirmDelete}
+          </Button>
+        </div>
+      </Modal>
+
+      <ToastViewport onDismiss={dismissToast} toasts={toasts} />
     </section>
   );
 }

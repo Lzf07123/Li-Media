@@ -45,10 +45,11 @@ def infer_memory_kind(filename: str, content_type: str | None) -> MemoryKind:
 
 
 def guess_mime_type(filename: str, content_type: str | None) -> str:
+    media_type = (content_type or "").split(";", 1)[0].strip()
     guessed_type = mimetypes.guess_type(filename)[0]
-    return (content_type or guessed_type or "application/octet-stream").split(
-        ";", 1
-    )[0].strip()
+    if media_type == "application/octet-stream" and guessed_type:
+        return guessed_type
+    return media_type or guessed_type or "application/octet-stream"
 
 
 def save_upload(

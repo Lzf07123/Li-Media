@@ -11,6 +11,14 @@ export type Memory = {
   duration_seconds: number | null;
   width: number | null;
   height: number | null;
+  primary_file: {
+    id: string;
+    source: string;
+    remote_path: string;
+    mime_type: string;
+    size_bytes: number | null;
+    status: "discovered" | "matched" | "missing" | "removed";
+  } | null;
   created_at: string;
   updated_at: string;
 };
@@ -28,6 +36,18 @@ export type MemoryAdminListResponse = {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+
+export function resolveMediaUrl(path: string): string {
+  if (!path.startsWith("/") || !API_BASE_URL.startsWith("http")) {
+    return path;
+  }
+
+  try {
+    return `${new URL(API_BASE_URL).origin}${path}`;
+  } catch {
+    return path;
+  }
+}
 
 class ApiError extends Error {
   constructor(

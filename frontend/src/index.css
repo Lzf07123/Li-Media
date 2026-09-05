@@ -156,22 +156,22 @@
   --limedia-aurora-4: rgba(169, 204, 143, 0.24);
 
   /* 弥散阴影（水绿 tint，透明度总和 < 0.1，三层叠加） */
-  --shadow-sm: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
+  --limedia-shadow-sm: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
     0px 2.4px 7.2px rgba(24, 58, 51, 0.05);
-  --shadow-md: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
+  --limedia-shadow-md: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
     0px 2.4px 7.2px rgba(24, 58, 51, 0.05),
     0px 8px 24px rgba(24, 58, 51, 0.08);
-  --shadow-lg: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
+  --limedia-shadow-lg: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
     0px 2.4px 7.2px rgba(24, 58, 51, 0.05),
     0px 8px 32px rgba(24, 58, 51, 0.1);
 
   /* 缓动曲线与时长 */
-  --ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ease-in: cubic-bezier(0.55, 0.06, 0.68, 0.19);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --motion-fast: 150ms;
-  --motion-base: 250ms;
-  --motion-slow: 350ms;
+  --limedia-ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --limedia-ease-in: cubic-bezier(0.55, 0.06, 0.68, 0.19);
+  --limedia-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --limedia-motion-fast: 150ms;
+  --limedia-motion-base: 250ms;
+  --limedia-motion-slow: 350ms;
 
   color-scheme: light;
 }
@@ -266,6 +266,19 @@
     @apply bg-background font-sans text-foreground antialiased;
   }
 
+  .sr-only,
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
   ::selection {
     @apply bg-primary/20 text-foreground;
   }
@@ -295,13 +308,13 @@
   .card {
     @apply rounded-2xl border border-border bg-surface shadow-sm;
     transition:
-      transform var(--motion-base) var(--ease-out),
-      box-shadow var(--motion-base) var(--ease-out);
+      transform var(--limedia-motion-base) var(--limedia-ease-out),
+      box-shadow var(--limedia-motion-base) var(--limedia-ease-out);
     will-change: transform;
   }
   .card:hover {
     transform: translateY(-1px);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--limedia-shadow-lg);
   }
 
   /* 认证卡签名描边：海玻璃粉彩渐变沿边框缓慢流动（9s），替换静态边框。
@@ -394,11 +407,11 @@
   .btn {
     @apply relative inline-flex cursor-pointer select-none items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-lg px-4 py-3 text-sm font-medium leading-none disabled:pointer-events-none disabled:opacity-50;
     transition:
-      color var(--motion-fast) var(--ease-out),
-      background-color var(--motion-fast) var(--ease-out),
-      border-color var(--motion-fast) var(--ease-out),
-      box-shadow var(--motion-fast) var(--ease-out),
-      transform var(--motion-base) var(--ease-spring);
+      color var(--limedia-motion-fast) var(--limedia-ease-out),
+      background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      box-shadow var(--limedia-motion-fast) var(--limedia-ease-out),
+      transform var(--limedia-motion-base) var(--limedia-ease-spring);
     will-change: transform;
   }
   .btn:not(:disabled):hover {
@@ -426,7 +439,7 @@
       transparent 58%
     );
     transform: translateX(-130%);
-    animation: btn-sheen 4s var(--ease-out) 1s infinite;
+    animation: btn-sheen 4s var(--limedia-ease-out) 1s infinite;
     pointer-events: none;
   }
   .btn-primary:disabled::after {
@@ -434,7 +447,7 @@
   }
   .btn-primary:not(:disabled):hover {
     background-color: var(--limedia-btn-primary-bg-hover);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--limedia-shadow-md);
   }
   .btn-secondary {
     @apply border border-border bg-surface text-foreground hover:bg-surface-2;
@@ -457,16 +470,16 @@
     opacity: 0.18;
     transform: scale(0);
     pointer-events: none;
-    animation: ripple-expand 500ms var(--ease-out) forwards;
+    animation: ripple-expand 500ms var(--limedia-ease-out) forwards;
   }
 
   /* 图标按钮：44px 触控热区，移动端不缩小 */
   .icon-btn {
     @apply inline-flex h-11 w-11 shrink-0 cursor-pointer select-none items-center justify-center rounded-lg border border-border bg-surface text-foreground transition-colors hover:bg-surface-2;
     transition:
-      background-color var(--motion-fast) var(--ease-out),
-      color var(--motion-fast) var(--ease-out),
-      transform var(--motion-base) var(--ease-spring);
+      background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      color var(--limedia-motion-fast) var(--limedia-ease-out),
+      transform var(--limedia-motion-base) var(--limedia-ease-spring);
   }
   .icon-btn:active {
     transform: scale(0.95);
@@ -483,16 +496,16 @@
   .input {
     @apply w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-foreground shadow-sm placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
     transition:
-      border-color var(--motion-fast) var(--ease-out),
-      box-shadow var(--motion-fast) var(--ease-out),
-      background-color var(--motion-fast) var(--ease-out);
+      border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      box-shadow var(--limedia-motion-fast) var(--limedia-ease-out),
+      background-color var(--limedia-motion-fast) var(--limedia-ease-out);
   }
   .input-sm {
     @apply w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
     transition:
-      border-color var(--motion-fast) var(--ease-out),
-      box-shadow var(--motion-fast) var(--ease-out),
-      background-color var(--motion-fast) var(--ease-out);
+      border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      box-shadow var(--limedia-motion-fast) var(--limedia-ease-out),
+      background-color var(--limedia-motion-fast) var(--limedia-ease-out);
   }
 
   /* 徽章：深色下带文字组件回退到实色粉彩底 + 深字（soft-solid / soft-fg） */
@@ -555,7 +568,7 @@
   /* 页面内持久提示条（与 Toast 同一视觉语言） */
   .notice {
     @apply flex items-start gap-2.5 rounded-xl border p-3.5 text-sm;
-    animation: page-fade-up var(--motion-base) var(--ease-out) both;
+    animation: page-fade-up var(--limedia-motion-base) var(--limedia-ease-out) both;
   }
   .notice-icon {
     @apply mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full;
@@ -657,14 +670,14 @@
     @apply bg-primary/50;
   }
   .toast-enter {
-    animation: toast-in 320ms var(--ease-spring) both;
-    animation-delay: calc(var(--toast-index, 0) * 40ms);
+    animation: toast-in 320ms var(--limedia-ease-spring) both;
+    animation-delay: calc(var(--limedia-toast-index, 0) * 40ms);
   }
   .toast-leave {
-    animation: toast-out 220ms var(--ease-in) both;
+    animation: toast-out 220ms var(--limedia-ease-in) both;
   }
   .toast-icon-pop {
-    animation: toast-icon-pop 180ms var(--ease-spring) both;
+    animation: toast-icon-pop 180ms var(--limedia-ease-spring) both;
   }
 
   /* ========== Modal 弹窗（z-70） ========== */
@@ -672,10 +685,10 @@
     @apply fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm;
   }
   .modal-backdrop-in {
-    animation: modal-backdrop-in 200ms var(--ease-out) both;
+    animation: modal-backdrop-in 200ms var(--limedia-ease-out) both;
   }
   .modal-backdrop-out {
-    animation: modal-backdrop-out 180ms var(--ease-in) both;
+    animation: modal-backdrop-out 180ms var(--limedia-ease-in) both;
   }
   .modal-panel {
     @apply relative w-full overflow-hidden rounded-2xl border border-border bg-surface text-left;
@@ -685,10 +698,10 @@
     outline: none;
   }
   .modal-panel-in {
-    animation: modal-panel-in 260ms var(--ease-spring) both;
+    animation: modal-panel-in 260ms var(--limedia-ease-spring) both;
   }
   .modal-panel-out {
-    animation: modal-panel-out 180ms var(--ease-in) both;
+    animation: modal-panel-out 180ms var(--limedia-ease-in) both;
   }
   .modal-accent {
     @apply h-1 w-full;
@@ -804,9 +817,9 @@
       5px 5px;
     background-repeat: no-repeat;
     transition:
-      border-color var(--motion-fast) var(--ease-out),
-      box-shadow var(--motion-fast) var(--ease-out),
-      background-color var(--motion-fast) var(--ease-out);
+      border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      box-shadow var(--limedia-motion-fast) var(--limedia-ease-out),
+      background-color var(--limedia-motion-fast) var(--limedia-ease-out);
   }
   .select-sm {
     @apply w-full appearance-none rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
@@ -822,9 +835,9 @@
       5px 5px;
     background-repeat: no-repeat;
     transition:
-      border-color var(--motion-fast) var(--ease-out),
-      box-shadow var(--motion-fast) var(--ease-out),
-      background-color var(--motion-fast) var(--ease-out);
+      border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      box-shadow var(--limedia-motion-fast) var(--limedia-ease-out),
+      background-color var(--limedia-motion-fast) var(--limedia-ease-out);
   }
   .select option {
     color: var(--limedia-fg);
@@ -863,7 +876,7 @@
     color: var(--limedia-fg);
     font: inherit;
     font-size: 0.85rem;
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--limedia-shadow-sm);
     cursor: pointer;
   }
   .custom-select-trigger:hover {
@@ -883,7 +896,7 @@
     width: 14px;
     height: 14px;
     color: var(--limedia-muted);
-    transition: transform var(--motion-fast) var(--ease-out);
+    transition: transform var(--limedia-motion-fast) var(--limedia-ease-out);
   }
   .custom-select.is-open .custom-select-chevron {
     transform: rotate(180deg);
@@ -902,7 +915,7 @@
     border: 1px solid var(--limedia-border);
     border-radius: 8px;
     background: var(--limedia-surface);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--limedia-shadow-md);
   }
   .custom-select-option {
     display: block;
@@ -947,7 +960,7 @@
     background: var(--limedia-surface);
     border: 1px solid var(--limedia-border);
     border-radius: 16px;
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--limedia-shadow-lg);
     z-index: 30;
     display: flex;
     flex-direction: column;
@@ -1007,7 +1020,7 @@
     border: 1px solid var(--limedia-border);
     border-radius: 10px;
     background: var(--limedia-surface);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--limedia-shadow-md);
   }
   .suggest-menu[hidden] {
     display: none;
@@ -1082,9 +1095,9 @@
     font-size: 0.85rem;
     cursor: pointer;
     transition:
-      background-color var(--motion-fast) var(--ease-out),
-      color var(--motion-fast) var(--ease-out),
-      border-color var(--motion-fast) var(--ease-out);
+      background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+      color var(--limedia-motion-fast) var(--limedia-ease-out),
+      border-color var(--limedia-motion-fast) var(--limedia-ease-out);
   }
   input[type="file"]::file-selector-button:hover {
     background: var(--limedia-primary-soft);
@@ -1151,7 +1164,7 @@
     width: 0;
     border-radius: inherit;
     background: var(--limedia-primary);
-    transition: width var(--motion-fast) linear;
+    transition: width var(--limedia-motion-fast) linear;
   }
   .progress.is-success .progress-bar {
     background: var(--limedia-success);
@@ -1249,7 +1262,7 @@
   }
 
   .page-enter {
-    animation: page-fade-up var(--motion-slow) var(--ease-out) both;
+    animation: page-fade-up var(--limedia-motion-slow) var(--limedia-ease-out) both;
   }
 
   /* 骨架扫光（background-position 动画，不触发重排） */
@@ -1290,15 +1303,15 @@
     }
   }
 
-  /* 文字浮现：词级 blur+位移入场（零依赖；JS 按词拆 span 并设 --blur-index） */
+  /* 文字浮现：词级 blur+位移入场（零依赖；JS 按词拆 span 并设 --limedia-blur-index） */
   .blur-unit {
     display: inline-block;
     opacity: 0;
     transform: translateY(6px);
     filter: blur(8px);
     will-change: transform, opacity, filter;
-    animation: blur-in 450ms var(--ease-out) both;
-    animation-delay: calc(var(--blur-index, 0) * 35ms);
+    animation: blur-in 450ms var(--limedia-ease-out) both;
+    animation-delay: calc(var(--limedia-blur-index, 0) * 35ms);
   }
 
   @keyframes blur-in {
@@ -1467,7 +1480,7 @@
   border-radius: 50%;
   opacity: 0.9;
   will-change: transform;
-  animation: aurora-drift-1 24s var(--ease-out) infinite alternate;
+  animation: aurora-drift-1 24s var(--limedia-ease-out) infinite alternate;
 }
 
 .aurora-blob:nth-child(1) {
@@ -1603,7 +1616,7 @@
   );
   transform: translateX(-150%) skewX(-16deg);
   opacity: 0;
-  animation: tech-beam-sweep 10s var(--ease-out) 0.8s infinite;
+  animation: tech-beam-sweep 10s var(--limedia-ease-out) 0.8s infinite;
   will-change: transform, opacity;
   pointer-events: none;
 }
@@ -1650,13 +1663,13 @@
 }
 
 /* 呼吸光点：7px 圆点 + 辉光；颜色默认 secondary，可经
-   --tech-dot-color 覆盖（Blog 用六强调色做实体→色相稳定哈希） */
+   --limedia-tech-dot-color 覆盖（Blog 用六强调色做实体→色相稳定哈希） */
 .tech-dot {
   position: absolute;
   width: 7px;
   height: 7px;
   border-radius: 9999px;
-  background: var(--tech-dot-color, var(--limedia-secondary));
+  background: var(--limedia-tech-dot-color, var(--limedia-secondary));
   box-shadow: 0 0 14px 3px var(--limedia-tech-dot-glow);
   opacity: 0.55;
   animation: tech-dot-pulse 6s ease-in-out infinite;
@@ -1700,5 +1713,509 @@
   }
   .aurora-blob {
     animation-duration: 52s;
+  }
+}
+
+/* =============================================================
+   Li&Media 视觉刷新模块（从 Li&Design 首次实例化）
+   响应式覆盖必须位于 @layer components 之外
+============================================================= */
+
+html {
+  scroll-behavior: smooth;
+}
+
+:root {
+  --limedia-glass-bg: rgba(255, 255, 255, 0.58);
+  --limedia-glass-bg-strong: rgba(255, 255, 255, 0.78);
+  --limedia-glass-border: rgba(255, 255, 255, 0.74);
+  --limedia-glass-border-soft: rgba(225, 236, 232, 0.66);
+  --limedia-glass-highlight: rgba(255, 255, 255, 0.82);
+  --limedia-glass-shine: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.72),
+    rgba(255, 255, 255, 0) 46%
+  );
+  --limedia-glass-blur: 18px;
+  --limedia-glass-saturate: 150%;
+}
+
+.dark {
+  --limedia-glass-bg: rgba(67, 73, 80, 0.56);
+  --limedia-glass-bg-strong: rgba(67, 73, 80, 0.76);
+  --limedia-glass-border: rgba(240, 242, 244, 0.18);
+  --limedia-glass-border-soft: rgba(84, 92, 100, 0.68);
+  --limedia-glass-highlight: rgba(240, 242, 244, 0.14);
+  --limedia-glass-shine: linear-gradient(
+    135deg,
+    rgba(240, 242, 244, 0.16),
+    rgba(240, 242, 244, 0) 46%
+  );
+}
+
+.page-shell {
+  padding: 0 0 96px;
+}
+.page-shell > *:first-child {
+  margin-top: 32px;
+}
+.section {
+  margin-top: 72px;
+}
+.section-title {
+  font-size: 1.25rem;
+  text-align: center;
+  margin-bottom: 20px;
+}
+.section-title::after {
+  content: "";
+  display: block;
+  width: 48px;
+  height: 3px;
+  margin: 10px auto 0;
+  border-radius: 2px;
+  background: var(--limedia-primary);
+}
+.page-title {
+  text-align: center;
+}
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+.project-card,
+.post-card {
+  padding: 24px 28px;
+}
+
+.masonry {
+  column-width: 288px;
+  column-count: 3;
+  column-gap: 24px;
+  margin-top: 28px;
+}
+.masonry > * {
+  break-inside: avoid;
+  margin: 0 0 24px !important;
+}
+.post-cover-link {
+  display: block;
+  margin: -24px -28px 16px;
+  border-radius: 20px 20px 0 0;
+  overflow: hidden;
+  transition: opacity var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.post-cover-link:hover {
+  opacity: 0.92;
+}
+.post-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--limedia-cover-ratio, 16 / 9);
+  height: auto;
+  object-fit: cover;
+  background: transparent;
+  transition: transform var(--limedia-motion-slow) var(--limedia-ease-out);
+}
+
+.project-card,
+.post-card {
+  position: relative;
+  border: 1px solid var(--limedia-glass-border-soft);
+  border-radius: 20px;
+  background:
+    var(--limedia-glass-shine),
+    var(--limedia-glass-bg);
+  -webkit-backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
+  backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
+  box-shadow: var(--limedia-shadow-sm),
+    inset 0 1px 0 var(--limedia-glass-highlight);
+  transition:
+    transform var(--limedia-motion-base) var(--limedia-ease-out),
+    box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
+    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .project-card,
+  .post-card {
+    background:
+      var(--limedia-glass-shine),
+      var(--limedia-glass-bg-strong);
+  }
+}
+.project-card:hover,
+.post-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--limedia-shadow-md),
+    inset 0 1px 0 var(--limedia-glass-highlight);
+}
+.post-card::before,
+.project-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--limedia-primary);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform var(--limedia-motion-slow) var(--limedia-ease-out);
+  pointer-events: none;
+}
+.post-card:hover::before,
+.post-card:focus-within::before,
+.project-card:hover::before,
+.project-card:focus-within::before {
+  transform: scaleX(1);
+}
+.card-grid > .post-card:hover,
+.card-grid > .post-card:focus-within,
+.card-grid > .project-card:hover,
+.card-grid > .project-card:focus-within,
+.masonry > .post-card:hover,
+.masonry > .post-card:focus-within,
+.masonry > .project-card:hover,
+.masonry > .project-card:focus-within {
+  transform: translateY(-5px) scale(1.006);
+  box-shadow: var(--limedia-shadow-lg),
+    inset 0 1px 0 var(--limedia-glass-highlight);
+  border-color: var(--limedia-primary);
+  transition:
+    transform var(--limedia-motion-base) var(--limedia-ease-spring),
+    box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
+    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.post-card:hover .post-cover,
+.post-card:focus-within .post-cover {
+  transform: scale(1.03);
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-grid:has(> .post-card:hover, > .post-card:focus-within, > .project-card:hover, > .project-card:focus-within) > :not(:hover, :focus-within),
+  .masonry:has(> .post-card:hover, > .post-card:focus-within, > .project-card:hover, > .project-card:focus-within) > :not(:hover, :focus-within) {
+    opacity: 0.55;
+    transform: scale(0.985);
+  }
+}
+
+.mobile-nav-primary {
+  display: none;
+}
+.mobile-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--limedia-muted);
+  font: inherit;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.mobile-nav-link:hover,
+.mobile-nav-link:focus-visible {
+  background: var(--limedia-surface-2);
+  color: var(--limedia-fg);
+}
+.mobile-nav-link[aria-current="page"] {
+  color: var(--limedia-primary);
+  font-weight: 600;
+}
+.mobile-menu {
+  display: none;
+  position: relative;
+  margin-left: auto;
+}
+.site-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--limedia-muted);
+  font: inherit;
+  cursor: pointer;
+  list-style: none;
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.site-menu-trigger::-webkit-details-marker {
+  display: none;
+}
+.site-menu-trigger:hover,
+.site-menu[open] > .site-menu-trigger {
+  background: var(--limedia-surface-2);
+  color: var(--limedia-fg);
+}
+.site-menu-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.site-menu-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.site-menu-icon-close {
+  display: none;
+}
+.site-menu[open] .site-menu-icon-open {
+  display: none;
+}
+.site-menu[open] .site-menu-icon-close {
+  display: inline-grid;
+}
+.site-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  min-width: 176px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--limedia-border);
+  border-radius: 14px;
+  background: var(--limedia-surface);
+  box-shadow: var(--limedia-shadow-lg);
+  transform-origin: top right;
+}
+.site-menu[open] > .site-menu-panel {
+  animation: limedia-mobile-menu-in var(--limedia-motion-fast) var(--limedia-ease-out) both;
+}
+.site-menu-item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--limedia-muted);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.site-menu-item:hover,
+.site-menu-item:focus-visible {
+  background: var(--limedia-surface-2);
+  color: var(--limedia-fg);
+}
+.site-menu-item[aria-current="page"] {
+  color: var(--limedia-primary);
+  font-weight: 600;
+}
+@keyframes limedia-mobile-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.back-to-top {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--limedia-glass-border-soft);
+  border-radius: 14px;
+  background:
+    var(--limedia-glass-shine),
+    var(--limedia-glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
+  backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
+  color: var(--limedia-muted);
+  box-shadow: var(--limedia-shadow-md),
+    inset 0 1px 0 var(--limedia-glass-highlight);
+  text-decoration: none;
+  transition:
+    color var(--limedia-motion-fast) var(--limedia-ease-out),
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
+    transform var(--limedia-motion-base) var(--limedia-ease-spring);
+}
+.back-to-top svg {
+  width: 20px;
+  height: 20px;
+}
+.back-to-top:hover,
+.back-to-top:focus-visible {
+  color: var(--limedia-primary-hover);
+  background: var(--limedia-glass-bg-strong);
+  box-shadow: var(--limedia-shadow-lg),
+    inset 0 1px 0 var(--limedia-glass-highlight);
+  transform: translateY(-2px);
+}
+
+.search-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px;
+}
+.search-skeleton[hidden] {
+  display: none;
+}
+.search-skeleton-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 10px;
+  border-radius: 12px;
+}
+.search-skeleton-item + .search-skeleton-item {
+  border-top: 1px solid var(--limedia-border);
+}
+.search-skeleton-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--limedia-surface-2) 20%,
+    var(--limedia-glass-highlight) 48%,
+    var(--limedia-surface-2) 76%
+  );
+  background-size: 220% 100%;
+  animation: limedia-skeleton-shimmer 1.35s var(--limedia-ease-out) infinite;
+}
+.search-skeleton-bar:first-child {
+  width: 58%;
+}
+.search-skeleton-bar:nth-child(2) {
+  width: 88%;
+}
+.search-skeleton-bar:last-child {
+  width: 34%;
+}
+@keyframes limedia-skeleton-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 24px;
+  border: 1px dashed var(--limedia-glass-border-soft);
+  border-radius: 22px;
+  background:
+    var(--limedia-glass-shine),
+    var(--limedia-glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
+  backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
+  box-shadow: inset 0 1px 0 var(--limedia-glass-highlight);
+  text-align: center;
+}
+.empty-state-art {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 28px;
+  background: var(--limedia-primary-soft);
+  color: var(--limedia-primary);
+  box-shadow: inset 0 1px 0 var(--limedia-glass-highlight);
+}
+.empty-state-art svg {
+  width: 42px;
+  height: 42px;
+}
+.empty-state-text {
+  max-width: 360px;
+  margin: 0;
+  color: var(--limedia-muted);
+}
+.empty-state-action {
+  font-weight: 600;
+}
+
+@media (max-width: 1024px) {
+  .masonry {
+    column-width: 240px;
+    column-gap: 20px;
+  }
+}
+@media (max-width: 768px) {
+  .site-nav {
+    display: none;
+  }
+  .mobile-nav-primary {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .mobile-menu {
+    display: block;
+    margin-left: 0;
+  }
+  .mobile-nav-link {
+    min-height: 44px;
+    padding: 0 9px;
+  }
+  .masonry {
+    column-count: 2;
+    column-width: auto;
+    column-gap: 16px;
+  }
+  .masonry > * {
+    margin-bottom: 16px !important;
+  }
+}
+@media (max-width: 360px) {
+  .site-header .brand-name-text {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .masonry {
+    column-count: 1;
+    column-gap: 0;
+  }
+  .back-to-top {
+    right: 14px;
+    bottom: 16px;
+  }
+}
+@media print {
+  .back-to-top {
+    display: none !important;
   }
 }

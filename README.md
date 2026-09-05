@@ -1,12 +1,12 @@
 # Li&Media
 
-> 基于百度网盘存储的公开回忆库，用于展示照片和视频等内容。当前仓库是生产基础框架，包含 FastAPI 后端、React 前端、数据库迁移和 Docker Compose 编排。
+> 基于百度网盘存储的公开回忆库，用于展示照片和视频回忆。当前仓库包含 FastAPI 后端、React 前端、项目级设计系统、数据库迁移和 Docker Compose 编排。
 
 ## 技术栈
 
 - 后端：FastAPI + SQLAlchemy + Alembic + PostgreSQL + Redis
 - 前端：React 19 + TypeScript + Vite + Tailwind CSS 4
-- 设计：[Li&Design](packages/li-design/README.md) 模板实例化为 [design-system/limedia](design-system/limedia/BRAND.md)
+- 设计：首次设计以 [Li&Design](packages/li-design/README.md) 为参考，实例化为项目内 [design-system/limedia](design-system/limedia/BRAND.md)；运行时只使用 `frontend/src/index.css` 与 `frontend/src/lib/brand.ts`，不依赖模板仓库。
 - 部署：Docker Compose + Nginx
 
 ## 本地启动
@@ -66,6 +66,7 @@ packages/li-design/    设计模板子模块
 ## 当前进度
 
 - 已完成：生产基础框架、本地上传、管理令牌、公开列表/详情接口、照片/视频详情展示、Docker Compose。
+- 已完成：液态玻璃令牌、通用组件、回忆瀑布流、分页搜索、后台表格与删除确认、文件状态输出、明暗主题与 404 空态。
 - 待完成：百度网盘同步、文件识别、后台审核、播放代理、认证与权限。
 
 ## 管理入口
