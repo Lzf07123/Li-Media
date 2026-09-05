@@ -1,3 +1,4 @@
+import hashlib
 import mimetypes
 from pathlib import Path
 from uuid import uuid4
@@ -61,6 +62,14 @@ def guess_mime_type(filename: str, content_type: str | None) -> str:
     if media_type == "application/octet-stream" and guessed_type:
         return guessed_type
     return media_type or guessed_type or "application/octet-stream"
+
+
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source_file:
+        while chunk := source_file.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def save_upload(

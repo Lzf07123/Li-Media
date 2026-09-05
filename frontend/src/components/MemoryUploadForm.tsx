@@ -7,13 +7,13 @@ import { Input, TextArea } from "@/components/ui/Input";
 type MemoryUploadFormProps = {
   capturedAt: string;
   description: string;
-  file: File | null;
+  files: File[];
   isUploading: boolean;
   location: string;
   title: string;
   onCapturedAtChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
-  onFileChange: (file: File | null) => void;
+  onFilesChange: (files: File[]) => void;
   onLocationChange: (value: string) => void;
   onTitleChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -22,19 +22,19 @@ type MemoryUploadFormProps = {
 export default function MemoryUploadForm({
   capturedAt,
   description,
-  file,
+  files,
   isUploading,
   location,
   title,
   onCapturedAtChange,
   onDescriptionChange,
-  onFileChange,
+  onFilesChange,
   onLocationChange,
   onTitleChange,
   onSubmit,
 }: MemoryUploadFormProps) {
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onFileChange(event.target.files?.[0] ?? null);
+  const handleFilesChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onFilesChange(Array.from(event.target.files ?? []));
   };
 
   return (
@@ -62,8 +62,9 @@ export default function MemoryUploadForm({
         accept="image/*,video/*"
         id="memory-file"
         label={brand.copy.adminFileLabel}
-        onChange={handleFileChange}
+        onChange={handleFilesChange}
         required
+        multiple
         type="file"
       />
       <TextArea
@@ -73,7 +74,7 @@ export default function MemoryUploadForm({
         onChange={(event) => onDescriptionChange(event.target.value)}
         value={description}
       />
-      <Button className="lg:col-span-2" disabled={isUploading || !file} type="submit">
+      <Button className="lg:col-span-2" disabled={isUploading || files.length === 0} type="submit">
         {isUploading ? brand.copy.adminUploading : brand.copy.adminUpload}
       </Button>
     </form>

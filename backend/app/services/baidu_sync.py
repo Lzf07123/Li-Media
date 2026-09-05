@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.models.memory import Memory, MemoryFile, MemoryFileStatus, MemoryKind, MemoryStatus
 from app.services.baidu_pan import BaiduPanError, BaiduRemoteFile
-from app.services.memory_files import guess_mime_type, infer_memory_kind_or_none
+from app.services.memory_files import (
+    guess_mime_type,
+    hash_file,
+    infer_memory_kind_or_none,
+)
 from app.services.memory_metadata import extract_memory_metadata
 from app.services.memory_thumbnails import create_memory_thumbnail
 
@@ -183,6 +187,16 @@ def sync_pending_remote_files(
                 max_bytes=max_bytes,
             )
             kind = MemoryKind(memory.kind)
+            content_hash = hash_file(target_path)
+            duplicate_file = db.scalar(
+                select(MemoryFile).where(
+                    MemoryFile.content_hash == content_hash,
+                    MemoryFile.id != memory_file.id,
+                )
+            )
+            if duplicate_file is not None:
+                raise RuntimeError("duplicate content")
+
             metadata = extract_memory_metadata(target_path, kind)
             thumbnail_path = create_memory_thumbnail(
                 target_path,
@@ -212,6 +226,7 @@ def sync_pending_remote_files(
 
             memory_file.source_path = target_path.relative_to(media_root).as_posix()
             memory_file.size_bytes = downloaded_size or memory_file.size_bytes
+            memory_file.content_hash = content_hash
             memory.thumbnail_path = thumbnail_path
             memory_file.status = MemoryFileStatus.MATCHED
             memory_file.sync_error = None
