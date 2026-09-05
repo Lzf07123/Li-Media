@@ -28,7 +28,10 @@ VIDEO_EXTENSIONS = {
 }
 
 
-def infer_memory_kind(filename: str, content_type: str | None) -> MemoryKind:
+def infer_memory_kind_or_none(
+    filename: str,
+    content_type: str | None,
+) -> MemoryKind | None:
     suffix = Path(filename).suffix.lower()
     media_type = (content_type or "").split(";", 1)[0].strip().lower()
 
@@ -38,10 +41,18 @@ def infer_memory_kind(filename: str, content_type: str | None) -> MemoryKind:
     if media_type.startswith("video/") or suffix in VIDEO_EXTENSIONS:
         return MemoryKind.VIDEO
 
-    raise HTTPException(
-        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-        detail="只支持照片或视频文件",
-    )
+    return None
+
+
+def infer_memory_kind(filename: str, content_type: str | None) -> MemoryKind:
+    kind = infer_memory_kind_or_none(filename, content_type)
+    if kind is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="只支持照片或视频文件",
+        )
+
+    return kind
 
 
 def guess_mime_type(filename: str, content_type: str | None) -> str:

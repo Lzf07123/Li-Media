@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import AdminLoginCard from "@/components/AdminLoginCard";
@@ -10,9 +11,11 @@ import {
   createMemory,
   deleteMemory,
   getAdminMemories,
+  syncMemories,
   updateMemory,
   type Memory,
 } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import Notice from "@/components/ui/Notice";
@@ -27,6 +30,7 @@ export default function AdminPage() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -141,6 +145,20 @@ export default function AdminPage() {
     }
   };
 
+  const triggerSync = async () => {
+    setIsSyncing(true);
+    try {
+      await syncMemories(token);
+      setError(null);
+      pushToast(brand.copy.adminSyncSuccess, "success");
+      await loadMemories(token);
+    } catch {
+      setError(brand.copy.adminSyncFailed);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   if (!isAdmin) {
     return (
       <AdminLoginCard
@@ -181,7 +199,13 @@ export default function AdminPage() {
         onSubmit={submitMemory}
       />
 
-      <h2 className="section-title mt-12">{brand.copy.adminAllMemories}</h2>
+      <h2 className="section-title mt-12 flex flex-wrap items-center justify-between gap-3">
+        <span>{brand.copy.adminAllMemories}</span>
+        <Button disabled={isSyncing} onClick={() => void triggerSync()}>
+          <RefreshCw aria-hidden="true" className={`size-4 ${isSyncing ? "animate-spin" : ""}`} />
+          {isSyncing ? brand.copy.adminSyncing : brand.copy.adminSync}
+        </Button>
+      </h2>
 
       {isLoading ? (
         <div className="shimmer mt-4 h-24 rounded-xl" />
@@ -195,7 +219,8 @@ export default function AdminPage() {
                 <th scope="col">{brand.copy.adminFileHeader}</th>
                 <th scope="col">{brand.copy.adminKindHeader}</th>
                 <th scope="col">{brand.copy.adminStatusHeader}</th>
-                <th scope="col">{brand.copy.adminFileStatusHeader}</th>
+                <th scope="col">{brand.copy.adminSyncStatusHeader}</th>
+                <th scope="col">{brand.copy.adminLastSyncedHeader}</th>
                 <th scope="col">{brand.copy.adminActionsHeader}</th>
               </tr>
             </thead>
@@ -218,6 +243,21 @@ export default function AdminPage() {
                     ) : (
                       brand.copy.fileMissing
                     )}
+                  </td>
+                  <td>
+                    <p className="text-sm">
+                      {memory.primary_file?.last_synced_at
+                        ? formatDateTime(memory.primary_file.last_synced_at)
+                        : brand.copy.adminNeverSynced}
+                    </p>
+                    {memory.primary_file?.sync_error ? (
+                      <p
+                        className="mt-1 max-w-64 truncate text-xs text-muted"
+                        title={memory.primary_file.sync_error}
+                      >
+                        {memory.primary_file.sync_error}
+                      </p>
+                    ) : null}
                   </td>
                   <td>
                     <div className="flex flex-wrap gap-2">

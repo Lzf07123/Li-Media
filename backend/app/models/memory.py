@@ -23,9 +23,12 @@ class MemoryStatus(StrEnum):
 
 class MemoryFileStatus(StrEnum):
     DISCOVERED = "discovered"
+    PENDING = "pending"
+    SYNCING = "syncing"
     MATCHED = "matched"
     MISSING = "missing"
     REMOVED = "removed"
+    FAILED = "failed"
 
 
 class Memory(Base):
@@ -68,8 +71,10 @@ class MemoryFile(Base):
     mime_type: Mapped[str] = mapped_column(String(128))
     size_bytes: Mapped[int | None]
     status: Mapped[MemoryFileStatus] = mapped_column(
-        String(32), default=MemoryFileStatus.DISCOVERED, index=True
+        String(32), default=MemoryFileStatus.PENDING, index=True
     )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sync_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

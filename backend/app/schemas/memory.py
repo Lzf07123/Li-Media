@@ -14,6 +14,8 @@ class MemoryFileRead(BaseModel):
     mime_type: str
     size_bytes: int | None
     status: MemoryFileStatus
+    last_synced_at: datetime | None
+    sync_error: str | None
 
 
 class MemoryRead(BaseModel):

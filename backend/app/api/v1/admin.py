@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import (
+    Body,
     APIRouter,
     Depends,
     File,
@@ -20,7 +21,11 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.memory import Memory, MemoryFile, MemoryFileStatus
 from app.schemas.memory import MemoryRead, MemoryUpdate, to_memory_read
-from app.schemas.responses import AdminMemoryListResponse
+from app.schemas.responses import (
+    AdminMemoryListResponse,
+    AdminSyncRequest,
+    AdminSyncResponse,
+)
 from app.services.memory_files import (
     guess_mime_type,
     infer_memory_kind,
@@ -31,6 +36,8 @@ from app.services.memory_thumbnails import (
     create_memory_thumbnail,
     remove_media_file,
 )
+from app.services.baidu_pan import BaiduPanClient, BaiduPanError
+from app.services.baidu_sync import sync_baidu_files
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -56,6 +63,43 @@ def require_admin_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="管理令牌缺失或不正确",
         )
+
+
+@router.post("/sync", response_model=AdminSyncResponse)
+def trigger_baidu_sync(
+    payload: AdminSyncRequest | None = Body(default=None),
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin_token),
+) -> AdminSyncResponse:
+    request_payload = payload or AdminSyncRequest()
+    settings = get_settings()
+
+    if not settings.baidu_access_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="百度网盘访问凭证未配置",
+        )
+
+    try:
+        summary = sync_baidu_files(
+            db,
+            BaiduPanClient(settings),
+            Path(settings.media_root),
+            remote_dir=settings.baidu_sync_dir,
+            max_files=request_payload.max_files,
+            max_bytes=settings.baidu_sync_max_bytes,
+        )
+    except BaiduPanError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return AdminSyncResponse(
+        discovered=summary.discovered,
+        matched=summary.matched,
+        failed=summary.failed,
+    )
 
 
 @router.get("/memories", response_model=AdminMemoryListResponse)

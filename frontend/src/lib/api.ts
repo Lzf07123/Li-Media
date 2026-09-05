@@ -17,7 +17,9 @@ export type Memory = {
     remote_path: string;
     mime_type: string;
     size_bytes: number | null;
-    status: "discovered" | "matched" | "missing" | "removed";
+    status: "discovered" | "pending" | "syncing" | "matched" | "missing" | "removed" | "failed";
+    last_synced_at: string | null;
+    sync_error: string | null;
   } | null;
   created_at: string;
   updated_at: string;
@@ -33,6 +35,12 @@ export type MemoryListResponse = {
 export type MemoryAdminListResponse = {
   items: Memory[];
   total: number;
+};
+
+export type MemorySyncResponse = {
+  discovered: number;
+  matched: number;
+  failed: number;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
@@ -129,6 +137,21 @@ export async function getAdminMemories(
       Accept: "application/json",
       "X-Admin-Token": token,
     },
+  });
+}
+
+export async function syncMemories(
+  token: string,
+  maxFiles = 5,
+): Promise<MemorySyncResponse> {
+  return request<MemorySyncResponse>("/admin/sync", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Admin-Token": token,
+    },
+    body: JSON.stringify({ max_files: maxFiles }),
   });
 }
 
