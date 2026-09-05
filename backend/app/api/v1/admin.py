@@ -538,13 +538,14 @@ def delete_memory(
 
     _ensure_remote_memory(memory)
 
+    # Remote-first deletion removes the local index only; Baidu files stay intact.
     record_admin_operation(
         db,
         action="delete",
         target_type="memory",
         target_id=memory.id,
         client_ip=_client_ip(request),
-        detail=memory.title,
+        detail=f"{memory.title};remote_resource=unchanged",
     )
 
     settings = get_settings()

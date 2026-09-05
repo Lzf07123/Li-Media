@@ -3,12 +3,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.db.session import Base, get_db
 from app.main import app
+from app.models.admin import AdminOperationLog
 from app.models.memory import (
     Memory,
     MemoryFile,
@@ -77,6 +78,9 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
         admin_token="test-token",
         media_root=str(media_root),
         baidu_access_token="test-access-token",
+        baidu_oauth_client_id="test-client-id",
+        baidu_oauth_client_secret="test-client-secret",
+        baidu_credentials_path=str(tmp_path / "baidu-token.json"),
         baidu_sync_dir="/apps/Li&Media",
         admin_login_base_delay=0,
         admin_login_max_delay=0,
@@ -100,7 +104,14 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
     def override_get_db() -> Generator[Session, None, None]:
         yield from override_database(session_factory)
 
+    baidu_client_calls: list[object] = []
+
+    class GuardedBaiduClient:
+        def __init__(self, settings: Settings) -> None:
+            baidu_client_calls.append(settings)
+
     app.dependency_overrides[get_db] = override_get_db
+    monkeypatch.setattr("app.api.v1.admin.BaiduPanClient", GuardedBaiduClient)
     try:
         with TestClient(app) as client:
             assert client.post(
@@ -119,7 +130,7 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
             assert config.json() == {
                 "configured": True,
                 "authorized": False,
-                "oauth_configured": False,
+                "oauth_configured": True,
                 "scan_dir": "/apps/Li&Media",
                 "redirect_uri": "http://127.0.0.1:8080/admin/baidu/callback",
                 "docs_url": "https://pan.baidu.com/union/doc/",
@@ -177,5 +188,17 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
                 f"/api/v1/admin/memories/{remote_id}"
             ).status_code == 204
             assert client.get("/api/v1/memories").json()["total"] == 0
+
+            with session_factory() as session:
+                delete_log = session.scalar(
+                    select(AdminOperationLog)
+                    .where(AdminOperationLog.action == "delete")
+                    .order_by(AdminOperationLog.created_at.desc())
+                    .limit(1)
+                )
+                assert delete_log is not None
+                assert "remote_resource=unchanged" in (delete_log.detail or "")
+
+            assert baidu_client_calls == []
     finally:
         app.dependency_overrides.clear()
