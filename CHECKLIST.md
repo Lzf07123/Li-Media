@@ -100,11 +100,11 @@ Snapshot -> Verify invariants -> Pick highest P0/P1 gap -> One reversible change
 | 远程索引文件 | 65 | `baidupan` 来源。 |
 | 索引总大小 | 5.45 GiB | 最大单文件约 0.94 GiB。 |
 | 派生状态 | 25 ready / 40 failed | 其中 photo failed 26、video failed 14；必须先区分可重试失败与格式不支持。 |
-| backend 内存 | 256m 硬上限 | 近期实验曾出现 `Killed` 后 Nginx 502，继续以 cgroup 峰值为准。 |
+| backend 内存 | 256m 硬上限 | 2026-09-07 重建后 cgroup peak 129.8m；此前实验曾出现 `Killed` 后 Nginx 502，仍需真实负载复验。 |
 | 派生并发 / 队列 | 1 / 32 | 保护 256m 上限；不能因 429 直接提高并发。 |
 | 前端图像并发 | 2 | 首页可见卡片排队请求 240px，查看器高优先级。 |
 | 已知格式风险 | MOV | 16 MiB 截断会缺 `moov atom`；视频首帧需要更大的临时源或专用探针。 |
-| 存储审计 | P0 违规 | `/app/data/media/photos` 存在 3 个 PNG 和 1 个 ICO 历史遗留文件；`tmp` 为 0。必须分类后清理并加入启动审计。 |
+| 存储审计 | 通过 | 2026-09-07：`photos/videos/tmp=0`，`thumbnails=58`，Source Zero 启动审计 `compliant=true`。 |
 
 ## 4. 观测与诊断
 
@@ -246,6 +246,7 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 | I3 | 管理页在 N 增长时是否稳定？ | 模拟 1k 记录，测量当前管理列表接口和页面渲染。 | 响应与 DOM 不随 N 无界增长。 | 待实验。 | 待定 |
 | I4 | 低尺寸降级是否可以接受？ | 用已存在 240px 派生图临时服务更高请求，并做视觉验收。 | 失败卡减少且画质可接受。 | 待实验。 | 待定 |
 | I5 | 服务端是否残留源资源？ | 审计 DB `source_path`、`media/photos`、源媒体扩展名和 BLOB。 | Source Zero = 2 分；无 PNG/JPG/MOV/MP4 源文件。 | 2026-09-07：DB 65 条 `baidupan` 且 `source_path=0`；但 `media/photos` 发现 3 PNG + 1 ICO 历史遗留。 | 清理遗留文件，并把 Source Zero 审计加入每轮闭环。 |
+| I6 | 清理后能否由启动审计和测试门禁持续证明 Source Zero？ | 确认 65 条记录 `source_path=0`；删除 4 个历史遗留文件；新增 DB/文件/Pydantic/API 审计并接入启动日志与 pytest；重建 backend 后走真实 Nginx 链路。 | `photos/videos/tmp=0`、源媒体文件与 BLOB 为 0、DB `source_path=0`；四容器 healthy；真实浏览器无播放前视频请求。 | 2026-09-07：`source_zero.compliant=true`；文件计数 `photos=0,videos=0,tmp=0,thumbnails=58`；cgroup peak 129.8m，OOM=0；健康/列表/详情/240 WebP/直链 `no-store` 通过；真实 Chrome 打开视频查看器且 `direct-url`、`file` 请求均为 0。 | 采纳；G0 当前轮=2。后续快照必须携带 `source_zero`，下一实验转向 I1 失败分类。 |
 
 ## 11. 当前优先级
 
@@ -253,4 +254,4 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 2. 再实现首页优先的可恢复预热，验证能否把首屏失败率降到可接受区间。
 3. 同步补齐管理页分页与资源盘点摘要，为 `N` 超过当前 65 条做准备。
 4. 只有当以上数据证明需要跨进程治理时，才迁移到独立 worker 或外部队列。
-5. 立即处理 `/app/data/media/photos` 历史遗留文件：先确认无 DB 引用，再删除；随后把 Source Zero 审计纳入启动/门禁。
+5. 每轮快照继续携带 Source Zero 审计；若出现新的源文件或 `source_path`，先回到本项再继续性能实验。
