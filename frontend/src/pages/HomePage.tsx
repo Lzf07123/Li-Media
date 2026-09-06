@@ -236,6 +236,14 @@ export default function HomePage() {
   };
 
   const activeMemory = memories.find((memory) => memory.id === viewerId) ?? directMemory;
+  const activeMemoryIndex = activeMemory
+    ? memories.findIndex((memory) => memory.id === activeMemory.id)
+    : -1;
+  const previousMemory = activeMemoryIndex > 0 ? memories[activeMemoryIndex - 1] : null;
+  const nextMemory =
+    activeMemoryIndex >= 0 && activeMemoryIndex < memories.length - 1
+      ? memories[activeMemoryIndex + 1]
+      : null;
 
   return (
     <section aria-labelledby="library-title">
@@ -355,7 +363,12 @@ export default function HomePage() {
         </Notice>
       ) : null}
       {activeMemory ? (
-        <MediaViewer memory={activeMemory} onClose={closeViewer} />
+        <MediaViewer
+          memory={activeMemory}
+          onClose={closeViewer}
+          onNext={nextMemory ? () => openViewer(nextMemory.id) : undefined}
+          onPrev={previousMemory ? () => openViewer(previousMemory.id) : undefined}
+        />
       ) : null}
     </section>
   );

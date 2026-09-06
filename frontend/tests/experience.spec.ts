@@ -114,6 +114,54 @@ test("photo viewer supports keyboard zoom and restores scroll lock", async ({ pa
   await expect(viewer).toHaveCount(0);
 });
 
+test("large viewer navigates with arrows and keyboard", async ({ page }) => {
+  const items = ["第一张", "第二张", "第三张"].map((title, index) => ({
+    ...memory,
+    id: `0e1c6c1d-34a4-459b-8f85-e7ac76b1fbd${index}`,
+    title,
+  }));
+
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      await route.fulfill({
+        json: {
+          items,
+          total: items.length,
+          page: 1,
+          page_size: 24,
+          counts: { photo: items.length, video: 0 },
+        },
+      });
+      return;
+    }
+
+    if (url.pathname.endsWith("/thumbnail")) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, json: { detail: "not found" } });
+  });
+
+  await page.goto("/");
+  await page.locator(".masonry .post-card").first().click();
+  const viewer = page.locator(".photo-viewer");
+  await expect(viewer).toBeVisible();
+
+  await page.getByRole("button", { name: "下一张" }).click();
+  await expect(viewer).toHaveAttribute("aria-label", "第二张");
+  await page.keyboard.press("ArrowRight");
+  await expect(viewer).toHaveAttribute("aria-label", "第三张");
+  await page.getByRole("button", { name: "上一张" }).click();
+  await expect(viewer).toHaveAttribute("aria-label", "第二张");
+  await page.keyboard.press("ArrowLeft");
+  await expect(viewer).toHaveAttribute("aria-label", "第一张");
+});
+
 test("video direct link refreshes after playback failure", async ({ page }) => {
   let directRequests = 0;
   const recoveredDirectUrl = `${directUrl}&v=2`;
