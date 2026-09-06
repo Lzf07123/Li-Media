@@ -23,16 +23,18 @@ cp .env.example .env
 docker compose up --build
 ```
 
-3. 打开站点：
+3. 打开唯一 Nginx 入口：
 
 ```text
 http://localhost:8080
 ```
 
-后端 API 文档在：
+默认部署中只有 Nginx 暴露宿主端口；backend、PostgreSQL 和 Redis 只在 Compose 网络内访问。API 文档默认由 Nginx 关闭；如需调试，可在 backend 容器内访问 `http://127.0.0.1:8000/api/docs`。
+
+生产环境 TLS 仍由同一 Nginx 终止。可提供证书挂载和覆盖文件后启用：
 
 ```text
-http://127.0.0.1:8000/api/docs
+HTTPS_PORT=443
 ```
 
 ## 常用命令
@@ -57,6 +59,12 @@ alembic upgrade head
 
 ```bash
 python3 scripts/check.py
+```
+
+在提交或部署前校验单入口端口边界：
+
+```bash
+docker compose config
 ```
 
 临时跳过浏览器测试时使用：
@@ -87,6 +95,7 @@ CHECKLIST.md          下一阶段待办清单
 
 ## 当前进度
 
+- 单网关传输：同一域名和端口提供 SPA、API、健康检查和公开派生图；Nginx 不缓存短时直链或带凭证响应。
 - Remote-First：百度网盘只作为存储源；服务端保存扫描任务、远程索引和可观测状态，不保存媒体本体。
 - 已完成：递归分页扫描、增量去重、扫描检查点、限流退避、元数据回填、远程缩略图代理、按需媒体流转发和 Range 播放。
 - 已完成：生产基础框架、Remote-Only 公开列表/详情接口、照片/视频详情展示、Docker Compose。

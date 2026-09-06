@@ -87,6 +87,8 @@ def main() -> None:
     run([*python_command, "-m", "pytest", "-q"], cwd=backend)
     run(["npm", "run", "typecheck"], cwd=ROOT / "frontend")
     run(["npm", "run", "build"], cwd=ROOT / "frontend")
+    run(["docker", "compose", "config", "--quiet"], cwd=ROOT)
+    run(["git", "diff", "--check"], cwd=ROOT)
 
     print("\n[check] design tokens and brand source")
     check_frontend_sources()

@@ -103,7 +103,7 @@ test("photo viewer supports keyboard zoom and restores scroll lock", async ({ pa
   const viewer = page.locator(".photo-viewer");
   await expect(viewer).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
-  await expect(viewer.locator(".photo-viewer-image")).toHaveAttribute("src", /size=large/);
+  await expect(viewer.locator(".photo-viewer-image")).toHaveAttribute("src", /size=1280/);
   await expect
     .poll(() =>
       page.evaluate(() => document.querySelector(".photo-viewer")?.parentElement === document.body),
@@ -380,7 +380,7 @@ test("24 media page stays within load, transfer and layout-shift budgets", async
   expect(metrics.layoutShift).toBeLessThan(0.1);
 });
 
-test("photo viewer requests 480px first and 1280px only after opening", async ({ page }) => {
+test("photo viewer selects card and viewer sizes by viewport", async ({ page }) => {
   const thumbnailSizes: string[] = [];
   await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories/**/thumbnail**", async (route) => {
@@ -390,12 +390,28 @@ test("photo viewer requests 480px first and 1280px only after opening", async ({
 
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await expect.poll(() => thumbnailSizes).toContain("small");
-  expect(thumbnailSizes).not.toContain("large");
+  await expect.poll(() => thumbnailSizes).toContain("240");
+  expect(thumbnailSizes).not.toContain("1280");
 
   await page.locator(".masonry .post-card").click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
-  await expect.poll(() => thumbnailSizes).toContain("large");
+  await expect.poll(() => thumbnailSizes).toContain("1280");
+});
+
+test("mobile viewer uses 480px poster instead of desktop large image", async ({ page }) => {
+  const thumbnailSizes: string[] = [];
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/**/thumbnail**", async (route) => {
+    thumbnailSizes.push(new URL(route.request().url()).searchParams.get("size") ?? "");
+    await route.fallback();
+  });
+
+  await page.setViewportSize({ width: 360, height: 700 });
+  await page.goto("/");
+  await page.locator(".masonry .post-card").click();
+  await expect(page.locator(".photo-viewer")).toBeVisible();
+  await expect.poll(() => thumbnailSizes).toContain("480");
+  expect(thumbnailSizes).not.toContain("1280");
 });
 
 test("video does not request playback until play and can use server fallback", async ({ page }) => {

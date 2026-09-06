@@ -505,7 +505,7 @@ export default function AdminPage() {
       </div>
 
       {cleanupResult ? (
-        <dl className="card mt-4 grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+        <dl className="card mt-4 grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">
           <div>
             <dt className="text-xs text-muted">{brand.copy.adminCleanupMemories}</dt>
             <dd className="text-sm">{cleanupResult.stats.memories}</dd>
@@ -517,6 +517,10 @@ export default function AdminPage() {
           <div>
             <dt className="text-xs text-muted">{brand.copy.adminCleanupThumbnails}</dt>
             <dd className="text-sm">{cleanupResult.stats.thumbnail_files}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupNginxCache}</dt>
+            <dd className="text-sm">{cleanupResult.stats.nginx_cache_files}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted">{brand.copy.adminCleanupBytes}</dt>

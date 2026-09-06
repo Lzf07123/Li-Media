@@ -202,6 +202,7 @@ export const brand = {
     adminCleanupRemoteIndexes: "远程文件索引",
     adminCleanupScanTasks: "扫描任务",
     adminCleanupThumbnails: "派生图与临时文件",
+    adminCleanupNginxCache: "Nginx 缓存文件",
     adminCleanupBytes: "预计释放空间",
     adminCleanupSuccess: "本地清理完成，网盘资源未变化。",
     adminCleanupFailed: "本地索引清理失败，数据库已回滚。",

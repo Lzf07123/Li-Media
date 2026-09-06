@@ -22,12 +22,12 @@ import {
   getMediaDirectLink,
   resolveMediaUrl,
   resolveThumbnailUrl,
-  type Memory,
+  type MemorySummary,
 } from "@/lib/api";
 import { brand } from "@/lib/brand";
 
 type MediaViewerProps = {
-  memory: Memory;
+  memory: MemorySummary;
   onClose: () => void;
   onNext?: () => void;
   onPrev?: () => void;
@@ -67,9 +67,12 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
   const [directLinkFailed, setDirectLinkFailed] = useState(false);
 
   const [downloadState, setDownloadState] = useState<"idle" | "loading" | "error">("idle");
+  const [posterSize, setPosterSize] = useState<"480" | "1280">(() => {
+    return window.matchMedia("(max-width: 767px)").matches ? "480" : "1280";
+  });
 
-  const smallSrc = resolveThumbnailUrl(memory.thumbnail_url, "small");
-  const largeSrc = resolveThumbnailUrl(memory.thumbnail_url, "large");
+  const smallSrc = resolveThumbnailUrl(memory.thumbnail_url, "480");
+  const largeSrc = resolveThumbnailUrl(memory.thumbnail_url, posterSize);
   const isVideo = memory.kind === "video";
   const aspectRatio = memory.width && memory.height
     ? memory.width / memory.height
@@ -99,6 +102,17 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
 
   const clampZoom = useCallback((value: number) => {
     return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+  }, []);
+
+  useEffect(() => {
+    const posterQuery = window.matchMedia("(max-width: 767px)");
+    const updatePosterSize = () => {
+      setPosterSize(posterQuery.matches ? "480" : "1280");
+    };
+
+    updatePosterSize();
+    posterQuery.addEventListener("change", updatePosterSize);
+    return () => posterQuery.removeEventListener("change", updatePosterSize);
   }, []);
 
   useEffect(() => {

@@ -2,10 +2,10 @@ import { Image as ImageIcon, Play, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
-import { resolveThumbnailUrl, type Memory } from "@/lib/api";
+import { resolveThumbnailSrcSet, resolveThumbnailUrl, type MemorySummary } from "@/lib/api";
 
 type MemoryCardProps = {
-  memory: Memory;
+  memory: MemorySummary;
   priority?: boolean;
   onOpen: (memoryId: string) => void;
 };
@@ -15,7 +15,8 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "small");
+  const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "240");
+  const thumbnailSrcSet = resolveThumbnailSrcSet(memory.thumbnail_url);
   const knownSize = memory.width && memory.height
     ? { width: memory.width, height: memory.height }
     : null;
@@ -70,6 +71,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
             src={thumbnailUrl}
+            srcSet={thumbnailSrcSet ?? undefined}
             ref={imageRef}
             width={memory.width ?? undefined}
           />
