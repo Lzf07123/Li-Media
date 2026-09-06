@@ -1,8 +1,20 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from anyio import to_thread
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    settings = get_settings()
+    to_thread.current_default_thread_limiter().total_tokens = (
+        settings.task_thread_pool_size
+    )
+    yield
 
 
 def create_app() -> FastAPI:
@@ -12,6 +24,7 @@ def create_app() -> FastAPI:
         version=settings.version,
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
 
     origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
@@ -29,4 +42,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

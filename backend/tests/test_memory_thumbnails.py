@@ -118,7 +118,9 @@ def test_video_poster_uses_ffmpeg_and_scales_long_edge(tmp_path: Path, monkeypat
     def run_ffmpeg(command, **kwargs):
         assert command[0] == "ffmpeg"
         assert "-ss" in command
-        assert "1.00" in command
+        assert "0.00" in command
+        assert "-nostdin" in command
+        assert command[command.index("-threads") + 1] == "1"
         assert str(source_path) in command
         assert (
             "scale='if(gt(iw,ih),min(1280,iw),-2)':"

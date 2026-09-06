@@ -14,7 +14,13 @@ if settings.database_url.startswith("sqlite:///"):
     if sqlite_path and sqlite_path != ":memory:":
         Path(sqlite_path).parent.mkdir(parents=True, exist_ok=True)
 
-engine = create_engine(settings.database_url, pool_pre_ping=True)
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    pool_size=settings.database_pool_size,
+    max_overflow=settings.database_pool_max_overflow,
+    pool_timeout=settings.database_pool_timeout_seconds,
+)
 
 
 class Base(DeclarativeBase):

@@ -54,6 +54,7 @@ from app.schemas.responses import (
 from app.services.memory_thumbnails import (
     remove_media_file,
 )
+from app.services.resource_metrics import collect_resource_metrics
 from app.services.admin_logs import record_admin_operation
 from app.services.admin_security import (
     AdminLoginLimitError,
@@ -79,6 +80,7 @@ from app.services.baidu_sync import (
     refresh_remote_entry,
     run_remote_scan_task,
 )
+from app.services.task_limits import is_temporary_path_active, task_limiter, task_metrics
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -154,6 +156,29 @@ def _collect_cleanup_stats(db: Session, media_root: Path) -> AdminCleanupStats:
     )
 
 
+def _remove_tree_except_active(directory: Path) -> int:
+    removed_files = 0
+    for path in directory.iterdir():
+        active_children = (
+            any(is_temporary_path_active(item) for item in path.rglob("*"))
+            if path.is_dir()
+            else is_temporary_path_active(path)
+        )
+        if active_children:
+            continue
+
+        if path.is_dir():
+            removed_files += sum(
+                1 for item in path.rglob("*") if item.is_file()
+            )
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.is_file():
+            removed_files += 1
+            path.unlink(missing_ok=True)
+
+    return removed_files
+
+
 def _remove_derived_media(media_root: Path) -> tuple[int, int, str | None]:
     removed_files = 0
     removed_nginx_cache_files = 0
@@ -163,11 +188,7 @@ def _remove_derived_media(media_root: Path) -> tuple[int, int, str | None]:
             continue
 
         try:
-            for path in directory.rglob("*"):
-                if path.is_file():
-                    removed_files += 1
-            shutil.rmtree(directory)
-            directory.mkdir(parents=True, exist_ok=True)
+            removed_files += _remove_tree_except_active(directory)
         except OSError as exc:
             return removed_files, removed_nginx_cache_files, str(exc)
 
@@ -470,6 +491,19 @@ def get_latest_remote_scan(
         select(RemoteScanTask).order_by(RemoteScanTask.started_at.desc())
     )
     return RemoteScanTaskRead.model_validate(task) if task else None
+
+
+@router.get("/tasks/metrics", response_model=None)
+def get_task_metrics(
+    _: AdminSession = Depends(require_admin_session),
+) -> dict[str, object]:
+    """Operational metrics for task queues and process/container resources."""
+
+    return {
+        "tasks": task_limiter.stats(),
+        "metrics": task_metrics.snapshot(),
+        "resources": collect_resource_metrics(Path(get_settings().media_root)),
+    }
 
 
 @router.post("/remote-entries/{memory_file_id}/retry", response_model=MemoryRead)

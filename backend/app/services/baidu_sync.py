@@ -27,6 +27,7 @@ from app.models.memory import (
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
 from app.services.memory_files import guess_mime_type, infer_memory_kind_or_none
+from app.services.task_limits import TaskRejected, TaskType, task_limiter, task_metrics
 
 
 class RemoteMediaClient(Protocol):
@@ -477,16 +478,21 @@ def run_remote_scan_task(
             return
 
         try:
-            summary = scan_remote_directory(
-                db,
-                client_factory(),
-                remote_dir=task.remote_dir,
-                max_depth=task.max_depth,
-                max_items=task.max_items,
-                resume_task_id=task.id,
-                delete_missing=task.delete_missing,
-            )
+            with task_limiter.slot(TaskType.SCAN):
+                summary = scan_remote_directory(
+                    db,
+                    client_factory(),
+                    remote_dir=task.remote_dir,
+                    max_depth=task.max_depth,
+                    max_items=task.max_items,
+                    resume_task_id=task.id,
+                    delete_missing=task.delete_missing,
+                )
+        except TaskRejected:
+            task_metrics.record_rejected(TaskType.SCAN)
+            return
         except Exception:
+            task_metrics.record_failed(TaskType.SCAN)
             # scan_remote_directory already records the failure on the task.
             record_admin_operation(
                 db,
@@ -497,6 +503,7 @@ def run_remote_scan_task(
             db.commit()
             return
 
+        task_metrics.record_completed(TaskType.SCAN)
         record_admin_operation(
             db,
             action="scan",

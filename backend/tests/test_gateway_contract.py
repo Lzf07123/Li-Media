@@ -18,6 +18,21 @@ def test_compose_keeps_only_nginx_on_host_network() -> None:
     assert "nginx_cache:/app/data/nginx_cache" in backend_section
 
 
+def test_compose_sets_hard_resource_limits_and_log_rotation() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "mem_limit: 256m" in compose
+    assert "mem_limit: 384m" in compose
+    assert "mem_limit: 128m" in compose
+    assert compose.count("cpus:") == 4
+    assert compose.count("pids_limit:") == 4
+    assert compose.count("max-size: 5m") == 4
+    assert compose.count('max-file: "3"') == 4
+    assert "ulimits:" not in compose
+    assert "RLIMIT_AS" not in compose
+    assert "shared_buffers=64MB" in compose
+    assert "max_connections=20" in compose
+
+
 def test_nginx_excludes_private_media_from_cache() -> None:
     nginx = (ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
     security_headers = (ROOT / "frontend" / "security-headers.conf").read_text(
