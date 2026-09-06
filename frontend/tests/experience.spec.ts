@@ -104,6 +104,17 @@ test("photo viewer supports keyboard zoom and restores scroll lock", async ({ pa
   await expect(viewer).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
   await expect(viewer.locator(".photo-viewer-image")).toHaveAttribute("src", /size=large/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.querySelector(".photo-viewer")?.parentElement === document.body),
+    )
+    .toBe(true);
+  const edgeHits = await page.evaluate(() =>
+    [8, window.innerHeight - 8].map(
+      (y) => document.elementFromPoint(window.innerWidth / 2, y)?.closest(".photo-viewer") !== null,
+    ),
+  );
+  expect(edgeHits).toEqual([true, true]);
   await page.keyboard.press("+");
   await expect(viewer.locator(".photo-viewer-image")).toHaveAttribute(
     "style",
