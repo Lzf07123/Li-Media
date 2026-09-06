@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from threading import Lock
 
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -33,8 +34,70 @@ from app.services.memory_thumbnails import (
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.remote_thumbnails import create_remote_thumbnail
+from app.services.task_limits import (
+    TaskRejected,
+    TaskType,
+    derivative_key,
+    in_flight_derivatives,
+    make_cancel_event,
+    task_limiter,
+    task_metrics,
+)
 
 router = APIRouter(prefix="/memories", tags=["memories"])
+_stream_users: dict[str, int] = {}
+_stream_users_lock = Lock()
+
+
+def _task_http_error(exc: TaskRejected) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=str(exc),
+        headers={"Retry-After": str(max(1, int(exc.retry_after)))},
+    )
+
+
+def _derivative_priority(max_size: int) -> int:
+    return {240: 0, 480: 1, 768: 2, 1280: 3}.get(max_size, 50)
+
+
+def _run_remote_derivative(
+    client: BaiduPanClient,
+    memory_file: MemoryFile,
+    memory: Memory,
+    media_root: Path,
+    *,
+    max_size: int,
+) -> str | None:
+    settings = get_settings()
+    key = derivative_key(
+        memory.id,
+        settings.media_derivative_version,
+        max_size,
+    )
+
+    def operation() -> str | None:
+        with task_limiter.slot(
+            TaskType.DERIVATIVE,
+            priority=_derivative_priority(max_size),
+        ):
+            return create_remote_thumbnail(
+                client,
+                memory_file.remote_id or "",
+                media_root,
+                kind=memory.kind,
+                memory_id=memory.id,
+                max_size=max_size,
+                duration_seconds=memory.duration_seconds,
+                cancel_event=make_cancel_event(),
+            )
+
+    return in_flight_derivatives.run(
+        key,
+        operation,
+        task_type=TaskType.DERIVATIVE,
+        wait_timeout=settings.derivative_wait_timeout_seconds,
+    )
 
 
 @router.get("/recommend", response_model=list[MemorySummaryRead])
@@ -177,10 +240,16 @@ def get_memory_direct_url(
 
     settings = get_settings()
     try:
-        direct_url, ttl_seconds = BaiduPanClient(settings).resolve_direct_url(
-            memory_file.remote_id
-        )
+        with task_limiter.slot(TaskType.DIRECT_PROBE):
+            direct_url, ttl_seconds = BaiduPanClient(settings).resolve_direct_url(
+                memory_file.remote_id
+            )
+    except TaskRejected as exc:
+        raise _task_http_error(exc) from exc
     except BaiduPanError as exc:
+        if str(exc) == "百度网盘接口限流，请稍后重试":
+            task_metrics.record_rate_limited(TaskType.DIRECT_PROBE)
+        task_metrics.record_failed(TaskType.DIRECT_PROBE)
         record_admin_operation(
             db,
             action="direct_url_failed",
@@ -193,6 +262,8 @@ def get_memory_direct_url(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc) or "远程媒体直链暂时不可用",
         ) from exc
+
+    task_metrics.record_completed(TaskType.DIRECT_PROBE)
 
     record_admin_operation(
         db,
@@ -254,6 +325,29 @@ def stream_memory(
         )
 
     try:
+        task_slot = task_limiter.acquire(
+            TaskType.STREAM,
+            timeout=get_settings().stream_wait_timeout_seconds,
+        )
+    except TaskRejected as exc:
+        raise _task_http_error(exc) from exc
+
+    user_key = request.client.host or "unknown"
+    with _stream_users_lock:
+        if (
+            _stream_users.get(user_key, 0)
+            >= get_settings().stream_user_concurrency_limit
+        ):
+            task_limiter.release(task_slot)
+            task_metrics.record_rejected(TaskType.STREAM)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="同一用户的视频回退流已达上限",
+                headers={"Retry-After": "1"},
+            )
+        _stream_users[user_key] = _stream_users.get(user_key, 0) + 1
+
+    try:
         status_code, content_length, content_range, content_type, response = (
             BaiduPanClient(settings).open_stream(
                 memory_file.remote_id or "",
@@ -261,6 +355,13 @@ def stream_memory(
             )
         )
     except BaiduPanError as exc:
+        task_limiter.release(task_slot)
+        with _stream_users_lock:
+            _stream_users[user_key] -= 1
+            if _stream_users[user_key] <= 0:
+                del _stream_users[user_key]
+
+        task_metrics.record_failed(TaskType.STREAM)
         record_admin_operation(
             db,
             action="stream_proxy_failed",
@@ -276,8 +377,14 @@ def stream_memory(
     def stream_response():
         try:
             yield from response.iter_bytes()
+            task_metrics.record_completed(TaskType.STREAM)
         finally:
             response.close()
+            task_limiter.release(task_slot)
+            with _stream_users_lock:
+                _stream_users[user_key] -= 1
+                if _stream_users[user_key] <= 0:
+                    del _stream_users[user_key]
 
     headers: dict[str, str] = {
         "Accept-Ranges": "bytes",
@@ -364,14 +471,36 @@ def get_memory_thumbnail(
     if memory_file is not None:
         local_source_path = resolve_media_path(media_root, memory_file.source_path)
         if local_source_path is not None and local_source_path.is_file():
-            generated_path = create_memory_derivative(
-                local_source_path,
-                media_root,
-                kind=memory.kind,
-                memory_id=memory.id,
-                max_size=max_size,
-                duration_seconds=memory.duration_seconds,
+            key = derivative_key(
+                memory.id,
+                settings.media_derivative_version,
+                max_size,
             )
+
+            def generate_local() -> str | None:
+                with task_limiter.slot(
+                    TaskType.DERIVATIVE,
+                    priority=_derivative_priority(max_size),
+                ):
+                    return create_memory_derivative(
+                        local_source_path,
+                        media_root,
+                        kind=memory.kind,
+                        memory_id=memory.id,
+                        max_size=max_size,
+                        duration_seconds=memory.duration_seconds,
+                    )
+
+            try:
+                generated_path = in_flight_derivatives.run(
+                    key,
+                    generate_local,
+                    task_type=TaskType.DERIVATIVE,
+                    wait_timeout=settings.derivative_wait_timeout_seconds,
+                )
+            except TaskRejected as exc:
+                raise _task_http_error(exc) from exc
+
             if generated_path:
                 memory.thumbnail_path = generated_path
                 memory_file.thumbnail_state = RemoteThumbnailState.READY
@@ -393,15 +522,15 @@ def get_memory_thumbnail(
 
     client = BaiduPanClient(settings)
     try:
-        generated_path = create_remote_thumbnail(
+        generated_path = _run_remote_derivative(
             client,
-            memory_file.remote_id,
+            memory_file,
+            memory,
             media_root,
-            kind=memory.kind,
-            memory_id=memory.id,
             max_size=max_size,
-            duration_seconds=memory.duration_seconds,
         )
+    except TaskRejected as exc:
+        raise _task_http_error(exc) from exc
     except BaiduPanError:
         generated_path = None
 
@@ -427,6 +556,7 @@ def get_memory_thumbnail(
             )
 
     memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+    task_metrics.record_failed(TaskType.DERIVATIVE)
     record_admin_operation(
         db,
         action="thumbnail_derivation_failed",

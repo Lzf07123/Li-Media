@@ -1,5 +1,6 @@
 import io
 import subprocess
+from resource import RUSAGE_CHILDREN, getrusage
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -7,6 +8,8 @@ from PIL import Image, ImageOps
 
 from app.core.config import get_settings
 from app.models.memory import MemoryKind
+from app.services.task_limits import task_metrics
+from app.services.task_limits import register_temporary_path, unregister_temporary_path
 
 
 def resolve_media_path(media_root: Path, relative_path: str) -> Path | None:
@@ -84,13 +87,17 @@ def _create_video_poster(
     duration_seconds: int | None,
     max_size: int,
 ) -> None:
-    start_seconds = min(max(duration_seconds or 0, 0) / 10, 5) if duration_seconds else 0
+    settings = get_settings()
+    start_seconds = max(0.0, settings.video_frame_offset_seconds)
     command = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
         "error",
+        "-nostdin",
         "-y",
+        "-threads",
+        "1",
         "-ss",
         f"{start_seconds:.2f}",
         "-i",
@@ -108,6 +115,7 @@ def _create_video_poster(
     ]
 
     subprocess.run(command, check=True, capture_output=True, timeout=30)
+    task_metrics.record_child_peak_kbytes(getrusage(RUSAGE_CHILDREN).ru_maxrss)
     temporary_path.replace(output_path)
 
 
@@ -130,6 +138,8 @@ def create_memory_derivative(
     output_dir = output_path.parent
     temporary_path = output_dir / f".{memory_id}.{uuid4().hex}.tmp.webp"
     output_dir.mkdir(parents=True, exist_ok=True)
+    active_output_path = output_path.resolve()
+    register_temporary_path(active_output_path)
 
     try:
         if kind == MemoryKind.PHOTO:
@@ -152,7 +162,10 @@ def create_memory_derivative(
         _cleanup_output(output_path, temporary_path)
         return None
 
-    return output_path.relative_to(media_root).as_posix()
+    else:
+        return output_path.relative_to(media_root).as_posix()
+    finally:
+        unregister_temporary_path(active_output_path)
 
 
 def create_memory_thumbnail(
