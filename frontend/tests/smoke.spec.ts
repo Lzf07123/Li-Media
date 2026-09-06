@@ -129,6 +129,10 @@ test("detail shows status strip without resource data", async ({ page }) => {
   await mockPublicMemoryRoutes(page);
   await page.goto(`/memories/${memoryId}`);
 
+  await expect(page.locator('meta[name="referrer"]')).toHaveAttribute(
+    "content",
+    "no-referrer",
+  );
   await expect(page.getByText("湖边清晨")).toHaveCount(0);
   await expect(page.getByText("2400 × 1200")).toHaveCount(0);
   await expect(page.getByRole("list", { name: "状态" })).toBeVisible();
