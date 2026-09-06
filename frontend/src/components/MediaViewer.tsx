@@ -3,9 +3,18 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Download, Play, RefreshCw, TriangleAlert, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Play,
+  RefreshCw,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import VideoPlayer from "@/components/VideoPlayer";
 import {
@@ -19,6 +28,8 @@ import { brand } from "@/lib/brand";
 type MediaViewerProps = {
   memory: Memory;
   onClose: () => void;
+  onNext?: () => void;
+  onPrev?: () => void;
 };
 
 type PlaybackSource = {
@@ -29,7 +40,7 @@ type PlaybackSource = {
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 
-export default function MediaViewer({ memory, onClose }: MediaViewerProps) {
+export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const dragOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -59,6 +70,12 @@ export default function MediaViewer({ memory, onClose }: MediaViewerProps) {
   const smallSrc = resolveThumbnailUrl(memory.thumbnail_url, "small");
   const largeSrc = resolveThumbnailUrl(memory.thumbnail_url, "large");
   const isVideo = memory.kind === "video";
+  const aspectRatio = memory.width && memory.height
+    ? memory.width / memory.height
+    : 16 / 9;
+  const videoShellStyle = {
+    "--aspect-ratio": String(aspectRatio),
+  } as CSSProperties;
   const fileStatus = memory.primary_file?.status;
   const remoteState = memory.primary_file?.remote_state;
   const thumbnailState = memory.primary_file?.thumbnail_state;
@@ -161,6 +178,18 @@ export default function MediaViewer({ memory, onClose }: MediaViewerProps) {
         return;
       }
 
+      if (event.key === "ArrowLeft" && onPrev && (isVideo || zoom <= 1)) {
+        event.preventDefault();
+        onPrev();
+        return;
+      }
+
+      if (event.key === "ArrowRight" && onNext && (isVideo || zoom <= 1)) {
+        event.preventDefault();
+        onNext();
+        return;
+      }
+
       if (event.key.startsWith("Arrow")) {
         event.preventDefault();
         if (zoom > 1) {
@@ -201,7 +230,7 @@ export default function MediaViewer({ memory, onClose }: MediaViewerProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clampZoom, onClose, resetTransform, zoom]);
+  }, [clampZoom, isVideo, onClose, onNext, onPrev, resetTransform, zoom]);
 
   const distance = (a: { x: number; y: number }, b: { x: number; y: number }) => {
     return Math.hypot(a.x - b.x, a.y - b.y);
@@ -393,8 +422,22 @@ export default function MediaViewer({ memory, onClose }: MediaViewerProps) {
     }
   };
 
-  useEffect(() => () => {
+  useEffect(() => {
     playbackTask.current += 1;
+    recoveredDirectLink.current = false;
+    isRecoveringPlayback.current = false;
+    refreshedDirectUrl.current = null;
+    downloadRetried.current = false;
+    setPlaybackSource(null);
+    setPlaybackState("idle");
+    setPlaybackRetryKey(0);
+    setDirectExpiresAt(null);
+    setDirectLinkFailed(false);
+    setDownloadState("idle");
+
+    return () => {
+      playbackTask.current += 1;
+    };
   }, [memory.id]);
 
   return (
@@ -412,38 +455,40 @@ export default function MediaViewer({ memory, onClose }: MediaViewerProps) {
       tabIndex={0}
     >
       {isVideo ? (
-        <div className="photo-viewer-stage">
-          {playbackSource ? (
-            <VideoPlayer
-              key={`${playbackRetryKey}-${playbackSource.src}`}
-              onReady={() => setPlaybackState("ready")}
-              onSourceError={() => handleVideoSourceError(playbackSource)}
-              poster={largeSrc ?? smallSrc ?? undefined}
-              src={playbackSource.src}
-            />
-          ) : (
-            <>
-              {largeSrc || smallSrc ? (
-                <img
-                  alt={brand.copy.detailPreviewAlt}
-                  className="photo-viewer-image is-loaded"
-                  draggable={false}
-                  src={largeSrc ?? smallSrc ?? undefined}
-                />
-              ) : (
-                <div aria-hidden="true" className="media-frame" />
-              )}
-              <button
-                aria-label={brand.copy.viewerPlay}
-                className="video-viewer-play"
-                disabled={playbackState === "loading"}
-                onClick={() => void startPlayback()}
-                type="button"
-              >
-                <Play aria-hidden="true" />
-              </button>
-            </>
-          )}
+        <div className="photo-viewer-stage is-video">
+          <div className="video-viewer-shell" style={videoShellStyle}>
+            {playbackSource ? (
+              <VideoPlayer
+                key={`${playbackRetryKey}-${playbackSource.src}`}
+                onReady={() => setPlaybackState("ready")}
+                onSourceError={() => handleVideoSourceError(playbackSource)}
+                poster={largeSrc ?? smallSrc ?? undefined}
+                src={playbackSource.src}
+              />
+            ) : (
+              <>
+                {largeSrc || smallSrc ? (
+                  <img
+                    alt={brand.copy.detailPreviewAlt}
+                    className="photo-viewer-image is-loaded"
+                    draggable={false}
+                    src={largeSrc ?? smallSrc ?? undefined}
+                  />
+                ) : (
+                  <div aria-hidden="true" className="media-frame" />
+                )}
+                <button
+                  aria-label={brand.copy.viewerPlay}
+                  className="video-viewer-play"
+                  disabled={playbackState === "loading"}
+                  onClick={() => void startPlayback()}
+                  type="button"
+                >
+                  <Play aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </div>
           {playbackState === "loading" ? (
             <p aria-live="polite" className="photo-viewer-loading">
               <span className="spinner text-primary" />
@@ -523,6 +568,27 @@ export default function MediaViewer({ memory, onClose }: MediaViewerProps) {
           {statusText}
         </span>
       </div>
+
+      {onPrev ? (
+        <button
+          aria-label={brand.copy.viewerPrevious}
+          className="photo-viewer-button photo-viewer-nav photo-viewer-nav-prev"
+          onClick={onPrev}
+          type="button"
+        >
+          <ChevronLeft aria-hidden="true" />
+        </button>
+      ) : null}
+      {onNext ? (
+        <button
+          aria-label={brand.copy.viewerNext}
+          className="photo-viewer-button photo-viewer-nav photo-viewer-nav-next"
+          onClick={onNext}
+          type="button"
+        >
+          <ChevronRight aria-hidden="true" />
+        </button>
+      ) : null}
 
       <div className="photo-viewer-actions">
         <button
