@@ -26,11 +26,13 @@ from app.schemas.responses import (
     RemoteStorageStatus,
     ResourceStatus,
     ServiceStatus,
+    SourceZeroStatus,
     TaskQueueStatus,
 )
 from app.services.baidu_oauth import load_baidu_credentials
 from app.services.baidu_pan import download_url_cache
 from app.services.resource_metrics import collect_resource_metrics
+from app.services.source_zero import collect_source_zero_status
 from app.services.task_limits import task_limiter, task_metrics
 
 
@@ -201,6 +203,9 @@ def collect_system_status(
             stack_guard="task thread pool + cgroup memory + pids limit",
         ),
         remote_storage=_remote_storage_status(db, settings),
+        source_zero=SourceZeroStatus(
+            **collect_source_zero_status(db, Path(settings.media_root))
+        ),
         tasks=tasks,
         metrics=metrics,
         resources=ResourceStatus(

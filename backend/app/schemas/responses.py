@@ -197,6 +197,20 @@ class RemoteStorageStatus(BaseModel):
     last_scan: RemoteScanTaskRead | None
 
 
+class SourceZeroStatus(BaseModel):
+    compliant: bool
+    source_path_count: int
+    source_path_schema_exposed: bool
+    database_blob_count: int
+    source_media_file_count: int
+    source_media_extensions: dict[str, int]
+    media_photos_file_count: int
+    media_videos_file_count: int
+    unexpected_media_file_count: int
+    temporary_file_count: int
+    filesystem_scan_failed: bool
+
+
 class TaskQueueStatus(BaseModel):
     active: int
     queued: int
@@ -227,6 +241,7 @@ class AdminSystemStatusResponse(BaseModel):
     generated_at: datetime
     backend: BackendRuntimeStatus
     remote_storage: RemoteStorageStatus
+    source_zero: SourceZeroStatus
     tasks: dict[str, TaskQueueStatus]
     metrics: dict[str, int]
     resources: ResourceStatus
