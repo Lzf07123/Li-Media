@@ -1,10 +1,12 @@
 from collections.abc import Generator
+import io
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
+from PIL import Image
 
 from app.core.config import Settings
 from app.db.session import Base, get_db
@@ -34,8 +36,14 @@ class FakeResponse:
 
 
 class FakeProxyClient:
-    def __init__(self, *, thumbnail_fails: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        thumbnail_fails: bool = False,
+        thumbnail_content: bytes | None = None,
+    ) -> None:
         self.thumbnail_fails = thumbnail_fails
+        self.thumbnail_content = thumbnail_content
         self.thumbnail_sizes: list[str] = []
 
     def open_stream(self, remote_id: str, *, range_header: str | None):
@@ -67,7 +75,7 @@ class FakeProxyClient:
         self.thumbnail_sizes.append(requested_size)
         if self.thumbnail_fails:
             raise BaiduPanError("远程缩略图不可用")
-        return b"thumb", "image/webp"
+        return self.thumbnail_content or b"thumb", "image/webp"
 
     def resolve_direct_url(self, remote_id: str) -> tuple[str, int]:
         assert remote_id == "remote-1"
@@ -80,7 +88,13 @@ def create_database(tmp_path: Path) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-def configure_app(tmp_path: Path, monkeypatch, *, thumbnail_fails=False):
+def configure_app(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    thumbnail_fails=False,
+    thumbnail_content: bytes | None = None,
+):
     session_factory = create_database(tmp_path)
     settings = Settings(
         admin_token="test-token",
@@ -90,7 +104,10 @@ def configure_app(tmp_path: Path, monkeypatch, *, thumbnail_fails=False):
     monkeypatch.setattr("app.api.v1.memories.get_settings", lambda: settings)
     monkeypatch.setattr(
         "app.api.v1.memories.BaiduPanClient",
-        lambda settings: FakeProxyClient(thumbnail_fails=thumbnail_fails),
+        lambda settings: FakeProxyClient(
+            thumbnail_fails=thumbnail_fails,
+            thumbnail_content=thumbnail_content,
+        ),
     )
 
     def override_get_db() -> Generator[Session, None, None]:
@@ -129,6 +146,12 @@ def add_remote_memory(session_factory: sessionmaker[Session], *, published=True)
         )
         session.add_all([memory, memory_file])
     return memory.id
+
+
+def _png_bytes(width: int, height: int) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "red").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_published_stream_supports_range_without_exposing_direct_link(
@@ -195,6 +218,30 @@ def test_remote_thumbnail_failure_is_logged_and_hidden_is_not_served(
         with session_factory() as session:
             memory_file = session.scalar(select(MemoryFile))
             assert memory_file.thumbnail_state == RemoteThumbnailState.FAILED
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_remote_thumbnail_persists_natural_dimensions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    session_factory = configure_app(
+        tmp_path,
+        monkeypatch,
+        thumbnail_content=_png_bytes(3, 2),
+    )
+    memory_id = add_remote_memory(session_factory)
+
+    try:
+        with TestClient(app) as client:
+            thumbnail = client.get(f"/api/v1/memories/{memory_id}/thumbnail")
+            assert thumbnail.status_code == 200
+
+            listed = client.get("/api/v1/memories")
+            item = listed.json()["items"][0]
+            assert item["id"] == str(memory_id)
+            assert item["width"] == 3
+            assert item["height"] == 2
     finally:
         app.dependency_overrides.clear()
 
