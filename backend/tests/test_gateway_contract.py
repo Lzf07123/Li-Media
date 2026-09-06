@@ -47,6 +47,8 @@ def test_nginx_excludes_private_media_from_cache() -> None:
     assert "proxy_cache off" in nginx
     assert 'add_header Cache-Control "no-store" always;' in nginx
     assert "limit_req_zone $binary_remote_addr zone=limedia_derivative" in nginx
+    assert nginx.index("\nhttp {") < nginx.index("upstream limedia_backend {")
+    assert "\nupstream limedia_backend {" not in nginx
     assert "X-Content-Type-Options nosniff" in security_headers
     assert "Content-Security-Policy" in security_headers
     assert "include /etc/nginx/security-headers.conf;" in nginx
