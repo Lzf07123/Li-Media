@@ -4,7 +4,7 @@ from pathlib import Path
 import uuid
 
 from app.core.config import Settings
-from app.api.v1.memories import _run_remote_derivative
+from app.services.derivative_tasks import run_remote_derivative
 from app.models.memory import Memory, MemoryFile, MemoryKind
 from app.services.remote_thumbnails import create_remote_thumbnail
 
@@ -190,7 +190,7 @@ def test_same_derivative_id_merges_concurrent_ffmpeg_work(
         return "generated"
 
     monkeypatch.setattr(
-        "app.api.v1.memories.create_remote_thumbnail",
+        "app.services.derivative_tasks.create_remote_thumbnail",
         fake_remote_derivative,
     )
     memory_id = uuid.uuid4()
@@ -207,20 +207,20 @@ def test_same_derivative_id_merges_concurrent_ffmpeg_work(
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         owner = executor.submit(
-            _run_remote_derivative,
+            run_remote_derivative,
             object(),
-            memory_file,
-            memory,
-            tmp_path / "media",
+            "remote-1",
+            memory=memory,
+            media_root=tmp_path / "media",
             max_size=240,
         )
         started.wait(1)
         follower = executor.submit(
-            _run_remote_derivative,
+            run_remote_derivative,
             object(),
-            memory_file,
-            memory,
-            tmp_path / "media",
+            "remote-1",
+            memory=memory,
+            media_root=tmp_path / "media",
             max_size=240,
         )
         release.set()

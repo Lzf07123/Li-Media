@@ -71,6 +71,12 @@ export default function AdminStatusDashboard({
       ? status.resources.temporary.bytes /
         status.resources.limits.temp_disk_quota_bytes
       : null;
+  const queueLabels: Record<string, string> = {
+    scan: brand.copy.adminQueueScan,
+    direct_probe: brand.copy.adminQueueDirectProbe,
+    derivative: brand.copy.adminQueueDerivative,
+    stream: brand.copy.adminQueueStream,
+  };
 
   return (
     <div className="card mt-4 p-4">
@@ -239,6 +245,33 @@ export default function AdminStatusDashboard({
                 value={status.resources.cgroup.oom_kill ?? 0}
               />
             </dl>
+
+            <div>
+              <h4 className="text-sm font-semibold">
+                {brand.copy.adminQueueTitle}
+              </h4>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {Object.entries(status.tasks).map(([key, queue]) => (
+                  <div className="rounded-lg border border-border p-3" key={key}>
+                    <p className="text-sm font-medium">
+                      {queueLabels[key] ?? key}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      {brand.copy.adminQueueActive} {queue.active}/{queue.limit}
+                      {" · "}
+                      {brand.copy.adminQueueQueued} {queue.queued}/{queue.queue_limit}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      {brand.copy.adminQueueCompleted}{" "}
+                      {status.metrics[`${key}.completed`] ?? 0}
+                      {" · "}
+                      {brand.copy.adminQueueRejected}{" "}
+                      {status.metrics[`${key}.rejected`] ?? 0}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {tempRatio !== null ? (
               <ProgressBar

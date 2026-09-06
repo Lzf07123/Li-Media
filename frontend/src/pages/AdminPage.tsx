@@ -10,13 +10,16 @@ import BaiduSetupCard from "@/components/BaiduSetupCard";
 import FileStatusBadge from "@/components/FileStatusBadge";
 import RemoteStateBadge from "@/components/RemoteStateBadge";
 import StatusBadge from "@/components/StatusBadge";
+import ThumbnailPreheatCard from "@/components/ThumbnailPreheatCard";
 import { brand } from "@/lib/brand";
 import {
   deleteMemory,
   getAdminMemories,
   getRemoteConfig,
   getSystemStatus,
+  getLatestThumbnailPreheat,
   getLatestRemoteScan,
+  startThumbnailPreheat,
   requestLocalMediaCleanup,
   startBaiduAuthorization,
   loginAdmin,
@@ -32,6 +35,7 @@ import {
   type CleanupResult,
   type CleanupStats,
   type SystemStatus,
+  type ThumbnailPreheatJob,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import Button from "@/components/ui/Button";
@@ -57,6 +61,8 @@ export default function AdminPage() {
   const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const [preheatJob, setPreheatJob] = useState<ThumbnailPreheatJob | null>(null);
+  const [isPreheating, setIsPreheating] = useState(false);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -87,6 +93,11 @@ export default function AdminPage() {
       setScanTask(scan);
       const config = await getRemoteConfig();
       setRemoteConfig(config);
+      try {
+        setPreheatJob(await getLatestThumbnailPreheat());
+      } catch {
+        setPreheatJob(null);
+      }
       try {
         setSystemStatus(await getSystemStatus());
       } catch {
@@ -125,6 +136,23 @@ export default function AdminPage() {
 
     return () => window.clearInterval(timer);
   }, [scanTask?.status, loadMemories]);
+
+  useEffect(() => {
+    if (preheatJob?.status !== "queued" && preheatJob?.status !== "running") {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      const nextJob = await getLatestThumbnailPreheat();
+      setPreheatJob(nextJob);
+
+      if (nextJob?.status === "completed") {
+        void refreshSystemStatus();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [preheatJob?.status]);
 
   useEffect(() => {
     const authorizationResult = searchParams.get("baidu_auth");
@@ -342,6 +370,20 @@ export default function AdminPage() {
     }
   };
 
+  const startPreheat = async (payload: Parameters<typeof startThumbnailPreheat>[0]) => {
+    setIsPreheating(true);
+    try {
+      const job = await startThumbnailPreheat(payload);
+      setPreheatJob(job);
+      setError(null);
+      pushToast(brand.copy.adminPreheatQueuedToast, "success");
+    } catch {
+      setError(brand.copy.adminPreheatFailedToast);
+    } finally {
+      setIsPreheating(false);
+    }
+  };
+
   const retryRemote = async (memory: Memory) => {
     if (!memory.primary_file) {
       return;
@@ -416,6 +458,12 @@ export default function AdminPage() {
         isRefreshing={isRefreshingStatus}
         onRefresh={() => void refreshSystemStatus()}
         status={systemStatus}
+      />
+
+      <ThumbnailPreheatCard
+        isStarting={isPreheating}
+        job={preheatJob}
+        onStart={startPreheat}
       />
 
       <h2 className="section-title mt-12 flex flex-wrap items-center justify-between gap-3">

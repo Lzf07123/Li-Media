@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
 
 
-from app.models.memory import MemoryStatus, RemoteScanStatus
+from app.models.memory import MemoryKind, MemoryStatus, RemoteScanStatus
 from app.schemas.memory import MemoryRead, MemorySummaryRead
 
 
@@ -230,3 +230,26 @@ class AdminSystemStatusResponse(BaseModel):
     tasks: dict[str, TaskQueueStatus]
     metrics: dict[str, int]
     resources: ResourceStatus
+
+
+class ThumbnailPreheatRequest(BaseModel):
+    max_size: Literal["240", "480", "768", "1280"] = "480"
+    kind: MemoryKind | None = None
+    limit: int = Field(default=24, ge=1, le=200)
+
+
+class ThumbnailPreheatJobRead(BaseModel):
+    id: uuid.UUID
+    max_size: int
+    kind: MemoryKind | None
+    limit: int
+    status: Literal["queued", "running", "completed", "failed"]
+    total: int
+    processed: int
+    generated: int
+    cached: int
+    failed: int
+    message: str | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
