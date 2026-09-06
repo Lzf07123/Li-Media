@@ -36,6 +36,7 @@ def configure_app(tmp_path: Path, monkeypatch) -> sessionmaker[Session]:
     settings = Settings(
         admin_token="test-token",
         media_root=str(tmp_path / "media"),
+        nginx_cache_root=str(tmp_path / "media" / "nginx_cache"),
         admin_login_base_delay=0,
         admin_login_max_delay=0,
     )
@@ -62,8 +63,10 @@ def add_remote_data(session_factory: sessionmaker[Session], media_root: Path) ->
     thumbnail_dir = media_root / "thumbnails" / str(memory_id) / "20260906-ratio-v1"
     thumbnail_dir.mkdir(parents=True)
     (media_root / "tmp").mkdir(parents=True)
+    (media_root / "nginx_cache" / "proxy").mkdir(parents=True)
     (thumbnail_dir / "480.webp").write_bytes(b"thumbnail")
     (media_root / "tmp" / "source.tmp").write_bytes(b"temporary")
+    (media_root / "nginx_cache" / "proxy" / "cached-file").write_bytes(b"proxy")
 
     with session_factory.begin() as session:
         memory = Memory(
@@ -123,7 +126,8 @@ def test_cleanup_dry_run_and_confirm_preserves_admin_and_remote_resources(
                 "remote_file_indexes": 1,
                 "scan_tasks": 1,
                 "thumbnail_files": 2,
-                "estimated_bytes_to_free": 18,
+                "nginx_cache_files": 1,
+                "estimated_bytes_to_free": 23,
             }
             assert (media_root / "thumbnails").is_dir()
 
@@ -148,6 +152,7 @@ def test_cleanup_dry_run_and_confirm_preserves_admin_and_remote_resources(
         assert download_url_cache.get("remote-1") is None
         assert not any((media_root / "thumbnails").rglob("*"))
         assert not any((media_root / "tmp").rglob("*"))
+        assert not any((media_root / "nginx_cache" / "proxy").rglob("*"))
     finally:
         download_url_cache.clear()
         app.dependency_overrides.clear()

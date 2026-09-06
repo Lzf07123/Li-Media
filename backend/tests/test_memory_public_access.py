@@ -54,6 +54,11 @@ def test_published_memory_is_visible_and_hidden_memory_is_not(tmp_path: Path) ->
             public_list = client.get("/api/v1/memories")
             assert public_list.status_code == 200
             assert [item["title"] for item in public_list.json()["items"]] == ["published memory"]
+            public_item = public_list.json()["items"][0]
+            assert "remote_md5" not in public_item["primary_file"]
+            assert "parent_path" not in public_item["primary_file"]
+            assert "modified_at" not in public_item["primary_file"]
+            assert "sync_error" not in public_item["primary_file"]
 
             published_detail = client.get(f"/api/v1/memories/{published.id}")
             assert published_detail.status_code == 200

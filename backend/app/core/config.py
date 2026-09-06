@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     admin_login_max_delay: float = 2.0
     admin_cookie_secure: bool = False
     media_root: str = "./data/media"
+    nginx_cache_root: str = "./data/nginx_cache"
     thumbnail_max_size: int = 1280
     thumbnail_quality: int = 82
     media_derivative_version: str = "20260906-ratio-v1"

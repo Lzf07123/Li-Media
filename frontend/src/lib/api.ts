@@ -34,8 +34,45 @@ export type Memory = {
   updated_at: string;
 };
 
-export type MemoryListResponse = {
-  items: Memory[];
+type MemoryFileStatus = NonNullable<Memory["primary_file"]>["status"];
+type MemoryRemoteState = NonNullable<Memory["primary_file"]>["remote_state"];
+type MemoryThumbnailState = NonNullable<Memory["primary_file"]>["thumbnail_state"];
+type MemoryStreamState = NonNullable<Memory["primary_file"]>["stream_state"];
+
+export type MemoryFileSummary = {
+  id: string;
+  source: string;
+  remote_id: string | null;
+  remote_path: string;
+  filename: string;
+  status: MemoryFileStatus;
+  remote_state: MemoryRemoteState;
+  thumbnail_state: MemoryThumbnailState;
+  stream_state: MemoryStreamState;
+};
+
+export type MemorySummary = {
+  id: string;
+  title: string;
+  description: string;
+  kind: Memory["kind"];
+  status: Memory["status"];
+  captured_at: string | null;
+  location: string | null;
+  file_url: string;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  primary_file: MemoryFileSummary | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MemoryListResponse = MemorySummaryListResponse;
+
+export type MemorySummaryListResponse = {
+  items: MemorySummary[];
   total: number;
   page: number;
   page_size: number;
@@ -107,6 +144,7 @@ export type CleanupStats = {
   remote_file_indexes: number;
   scan_tasks: number;
   thumbnail_files: number;
+  nginx_cache_files: number;
   estimated_bytes_to_free: number;
 };
 
@@ -150,7 +188,7 @@ export function resolveMediaUrl(path: string): string {
 
 export function resolveThumbnailUrl(
   path: string | null | undefined,
-  size: "small" | "medium" | "large" | "detail",
+  size: "240" | "480" | "768" | "1280",
 ): string | null {
   if (!path) {
     return null;
@@ -159,6 +197,22 @@ export function resolveThumbnailUrl(
   const url = resolveMediaUrl(path);
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}ratio=1&size=${size}`;
+}
+
+export function resolveThumbnailSrcSet(
+  path: string | null | undefined,
+): string | null {
+  if (!path) {
+    return null;
+  }
+
+  return (["240", "480", "768", "1280"] as const)
+    .map((size) => {
+      const url = resolveThumbnailUrl(path, size);
+      return url ? `${url} ${size}w` : null;
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 export async function requestLocalMediaCleanup(
@@ -252,8 +306,8 @@ export async function getMemories(params: {
   return request<MemoryListResponse>(`/memories${query ? `?${query}` : ""}`);
 }
 
-export function getMemoryById(memoryId: string): Promise<Memory> {
-  return request<Memory>(`/memories/${memoryId}`);
+export function getMemoryById(memoryId: string): Promise<MemorySummary> {
+  return request<MemorySummary>(`/memories/${memoryId}`);
 }
 
 export async function getMediaDirectLink(

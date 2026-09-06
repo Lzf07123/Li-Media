@@ -120,6 +120,7 @@ def _collect_cleanup_stats(db: Session, media_root: Path) -> AdminCleanupStats:
     scan_task_count = db.scalar(select(func.count(RemoteScanTask.id))) or 0
 
     derived_files = 0
+    nginx_cache_files = 0
     derived_bytes = 0
     for directory_name in ("thumbnails", "tmp"):
         directory = media_root / directory_name
@@ -133,17 +134,29 @@ def _collect_cleanup_stats(db: Session, media_root: Path) -> AdminCleanupStats:
                 except OSError:
                     continue
 
+    nginx_cache_root = Path(get_settings().nginx_cache_root)
+    if nginx_cache_root.exists():
+        for path in nginx_cache_root.rglob("*"):
+            if path.is_file():
+                nginx_cache_files += 1
+                try:
+                    derived_bytes += path.stat().st_size
+                except OSError:
+                    continue
+
     return AdminCleanupStats(
         memories=memory_count,
         remote_file_indexes=memory_file_count,
         scan_tasks=scan_task_count,
         thumbnail_files=derived_files,
+        nginx_cache_files=nginx_cache_files,
         estimated_bytes_to_free=derived_bytes,
     )
 
 
-def _remove_derived_media(media_root: Path) -> tuple[int, str | None]:
+def _remove_derived_media(media_root: Path) -> tuple[int, int, str | None]:
     removed_files = 0
+    removed_nginx_cache_files = 0
     for directory_name in ("thumbnails", "tmp"):
         directory = media_root / directory_name
         if not directory.exists():
@@ -156,9 +169,20 @@ def _remove_derived_media(media_root: Path) -> tuple[int, str | None]:
             shutil.rmtree(directory)
             directory.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            return removed_files, str(exc)
+            return removed_files, removed_nginx_cache_files, str(exc)
 
-    return removed_files, None
+    nginx_cache_root = Path(get_settings().nginx_cache_root)
+    if nginx_cache_root.exists():
+        try:
+            for path in nginx_cache_root.rglob("*"):
+                if path.is_file():
+                    removed_nginx_cache_files += 1
+            shutil.rmtree(nginx_cache_root)
+            nginx_cache_root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return removed_files, removed_nginx_cache_files, str(exc)
+
+    return removed_files, removed_nginx_cache_files, None
 
 
 @router.post("/cleanup", response_model=AdminCleanupResponse)
@@ -191,7 +215,9 @@ def cleanup_local_media(
         ) from exc
 
     download_url_cache.clear()
-    removed_files, file_cleanup_error = _remove_derived_media(media_root)
+    removed_files, removed_nginx_cache_files, file_cleanup_error = _remove_derived_media(
+        media_root,
+    )
     duration_seconds = time.perf_counter() - started_at
     record_admin_operation(
         db,
@@ -200,6 +226,7 @@ def cleanup_local_media(
         detail=(
             f"memories={stats.memories};remote_file_indexes={stats.remote_file_indexes};"
             f"scan_tasks={stats.scan_tasks};derived_files={removed_files};"
+            f"nginx_cache_files={removed_nginx_cache_files};"
             "remote_resource=untouched"
         ),
     )

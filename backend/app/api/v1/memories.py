@@ -18,11 +18,11 @@ from app.models.memory import (
     MemoryStatus,
     RemoteThumbnailState,
 )
-from app.schemas.memory import MemoryRead, to_memory_read
+from app.schemas.memory import MemorySummaryRead, to_memory_summary
 from app.schemas.responses import (
     MemoryCounts,
     MemoryDirectLinkResponse,
-    MemoryListResponse,
+    MemorySummaryListResponse,
 )
 from app.services.memory_thumbnails import (
     derivative_cache_path,
@@ -37,7 +37,7 @@ from app.services.remote_thumbnails import create_remote_thumbnail
 router = APIRouter(prefix="/memories", tags=["memories"])
 
 
-@router.get("", response_model=MemoryListResponse)
+@router.get("", response_model=MemorySummaryListResponse)
 def list_memories(
     kind: MemoryKind | None = None,
     keyword: str | None = Query(default=None, max_length=100),
@@ -48,7 +48,7 @@ def list_memories(
         pattern="^(captured_desc|captured_asc|updated_desc)$",
     ),
     db: Session = Depends(get_db),
-) -> MemoryListResponse:
+) -> MemorySummaryListResponse:
     statement = (
         select(Memory)
         .join(Memory.files)
@@ -98,8 +98,8 @@ def list_memories(
         .limit(page_size)
     ).all()
 
-    return MemoryListResponse(
-        items=[to_memory_read(memory) for memory in memories],
+    return MemorySummaryListResponse(
+        items=[to_memory_summary(memory) for memory in memories],
         total=total,
         page=page,
         page_size=page_size,
@@ -107,8 +107,8 @@ def list_memories(
     )
 
 
-@router.get("/{memory_id}", response_model=MemoryRead)
-def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
+@router.get("/{memory_id}", response_model=MemorySummaryRead)
+def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> MemorySummaryRead:
     memory = db.get(Memory, memory_id)
 
     if (
@@ -120,7 +120,7 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    return to_memory_read(memory)
+    return to_memory_summary(memory)
 
 
 @router.get("/{memory_id}/direct-url", response_model=MemoryDirectLinkResponse)
@@ -254,7 +254,10 @@ def stream_memory(
         finally:
             response.close()
 
-    headers: dict[str, str] = {"Accept-Ranges": "bytes"}
+    headers: dict[str, str] = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+    }
     if content_range:
         headers["Content-Range"] = str(content_range)
     if content_length is not None:
@@ -272,7 +275,7 @@ def stream_memory(
 def get_memory_thumbnail(
     memory_id: uuid.UUID,
     request: Request,
-    size: Literal["small", "medium", "large", "detail"] = Query(default="small"),
+    size: Literal["240", "480", "768", "1280"] = Query(default="480"),
     db: Session = Depends(get_db),
 ) -> FileResponse | Response:
     memory = db.get(Memory, memory_id)
@@ -304,7 +307,7 @@ def get_memory_thumbnail(
 
     settings = get_settings()
     media_root = Path(settings.media_root)
-    max_size = 480 if size in {"small", "medium"} else 1280
+    max_size = int(size)
     cache_headers = {
         "Cache-Control": "public, max-age=31536000, immutable",
         "ETag": f'"{memory_id}-{settings.media_derivative_version}-{max_size}"',

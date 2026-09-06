@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 from app.models.memory import MemoryStatus, RemoteScanStatus
-from app.schemas.memory import MemoryRead
+from app.schemas.memory import MemoryRead, MemorySummaryRead
 
 
 class MemoryCounts(BaseModel):
@@ -14,6 +14,14 @@ class MemoryCounts(BaseModel):
 
 class MemoryListResponse(BaseModel):
     items: list[MemoryRead]
+    total: int
+    page: int
+    page_size: int
+    counts: MemoryCounts
+
+
+class MemorySummaryListResponse(BaseModel):
+    items: list[MemorySummaryRead]
     total: int
     page: int
     page_size: int
@@ -115,6 +123,7 @@ class AdminCleanupStats(BaseModel):
     remote_file_indexes: int
     scan_tasks: int
     thumbnail_files: int
+    nginx_cache_files: int
     estimated_bytes_to_free: int
 
 

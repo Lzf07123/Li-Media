@@ -213,6 +213,7 @@ def test_published_stream_supports_range_without_exposing_direct_link(
         assert response.content == b"ab"
         assert response.headers["content-range"] == "bytes 0-1/3"
         assert response.headers["accept-ranges"] == "bytes"
+        assert response.headers["cache-control"] == "no-store"
         assert "private-thumbnail" not in response.text
         assert all("private-thumbnail" not in value for value in response.headers.values())
     finally:
@@ -235,6 +236,9 @@ def test_remote_thumbnail_is_proxied_for_published_memory(
     try:
         with TestClient(app) as client:
             response = client.get(f"/api/v1/memories/{memory_id}/thumbnail")
+            mobile = client.get(
+                f"/api/v1/memories/{memory_id}/thumbnail?size=240",
+            )
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/webp"
@@ -243,6 +247,10 @@ def test_remote_thumbnail_is_proxied_for_published_memory(
             f'"{memory_id}-{get_settings().media_derivative_version}-480"'
         )
         assert "private-thumbnail" not in response.text
+        assert mobile.status_code == 200
+        assert mobile.headers["etag"] == (
+            f'"{memory_id}-{get_settings().media_derivative_version}-240"'
+        )
     finally:
         app.dependency_overrides.clear()
 
