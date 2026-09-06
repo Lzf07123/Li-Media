@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     thumbnail_quality: int = 82
     media_derivative_version: str = "20260906-ratio-v1"
     video_frame_offset_seconds: float = 0.0
-    remote_thumbnail_source_max_bytes: int = 32 * 1024 * 1024
+    remote_thumbnail_source_max_bytes: int = 16 * 1024 * 1024
     remote_thumbnail_disk_quota_bytes: int = 512 * 1024 * 1024
     remote_thumbnail_max_temp_files: int = 8
     scan_concurrency_limit: int = 1
@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     direct_probe_concurrency_limit: int = 4
     direct_probe_queue_limit: int = 16
     direct_probe_wait_timeout_seconds: float = 3.0
-    derivative_concurrency_limit: int = 2
-    derivative_queue_limit: int = 32
+    derivative_concurrency_limit: int = 1
+    derivative_queue_limit: int = 8
     derivative_wait_timeout_seconds: float = 5.0
     stream_global_concurrency_limit: int = 16
     stream_user_concurrency_limit: int = 1
