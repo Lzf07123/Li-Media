@@ -1,19 +1,26 @@
 export type ImageLoadPriority = "normal" | "high";
 
 type ImageLoadOptions = {
+  retries?: number;
   priority?: ImageLoadPriority;
   signal?: AbortSignal;
 };
 
 type QueueTask = {
   abort: () => void;
+  attempt: number;
+  image: HTMLImageElement;
+  reject: (error: Error) => void;
+  retries: number;
+  retryTimer?: number;
   start: () => void;
   priority: ImageLoadPriority;
   sequence: number;
   signal?: AbortSignal;
+  cleanup: () => void;
 };
 
-const MAX_ACTIVE_IMAGE_LOADS = 4;
+const MAX_ACTIVE_IMAGE_LOADS = 2;
 
 class ImageLoadQueue {
   private activeCount = 0;
@@ -21,7 +28,7 @@ class ImageLoadQueue {
   private tasks: QueueTask[] = [];
 
   load(src: string, options: ImageLoadOptions = {}): Promise<HTMLImageElement> {
-    const { priority = "normal", signal } = options;
+    const { priority = "normal", retries = 0, signal } = options;
 
     if (signal?.aborted) {
       return Promise.reject(createAbortError());
@@ -48,6 +55,7 @@ class ImageLoadQueue {
           return;
         }
         isSettled = true;
+        window.clearTimeout(task.retryTimer);
         cleanup();
         if (isActive) {
           this.activeCount -= 1;
@@ -74,19 +82,35 @@ class ImageLoadQueue {
         if (isSettled) {
           return;
         }
-        isSettled = true;
-        cleanup();
-        image.src = "";
         finish();
+
+        if (task.attempt < task.retries && !signal?.aborted) {
+          task.attempt += 1;
+          image.src = "";
+          task.retryTimer = window.setTimeout(() => {
+            this.tasks.push(task);
+            this.startNext();
+          }, retryDelayMs(task.attempt));
+          return;
+        }
+
+        isSettled = true;
+        task.cleanup();
+        image.src = "";
         reject(new Error("Image load failed"));
         this.startNext();
       };
 
       const task: QueueTask = {
         abort,
+        attempt: 0,
+        image,
+        reject,
+        retries: retries,
         priority,
         sequence: this.sequence++,
         signal,
+        cleanup,
         start: () => {
           isActive = true;
           image.onload = complete;
@@ -130,6 +154,10 @@ class ImageLoadQueue {
       this.tasks.splice(index, 1);
     }
   }
+}
+
+function retryDelayMs(attempt: number) {
+  return Math.min(4000, 500 * 2 ** Math.max(0, attempt - 1));
 }
 
 function createAbortError(): Error {

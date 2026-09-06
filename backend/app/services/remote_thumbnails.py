@@ -27,7 +27,12 @@ def create_remote_thumbnail(
     temporary_dir = media_root / "tmp"
     temporary_dir.mkdir(parents=True, exist_ok=True)
     temporary_path = temporary_dir / f"{memory_id}.{uuid4().hex}.tmp"
-    max_source_bytes = get_settings().remote_thumbnail_source_max_bytes
+    settings = get_settings()
+    max_source_bytes = (
+        settings.remote_thumbnail_video_source_max_bytes
+        if kind == MemoryKind.VIDEO
+        else settings.remote_thumbnail_source_max_bytes
+    )
     stream: BaiduStreamResponse | None = None
 
     try:
