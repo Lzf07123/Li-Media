@@ -1,5 +1,5 @@
 import { Image as ImageIcon, Play, Video } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { brand } from "@/lib/brand";
@@ -14,6 +14,7 @@ export default function MemoryCard({ memory, priority = false }: MemoryCardProps
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, priority ? "medium" : "small");
   const srcSet = memory.thumbnail_url
     ? [
@@ -34,6 +35,15 @@ export default function MemoryCard({ memory, priority = false }: MemoryCardProps
     setLoadState("loading");
     setThumbnailFailed(false);
     setNaturalSize(null);
+    const image = imageRef.current;
+    if (image?.complete) {
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
+        setLoadState("ready");
+      } else {
+        setLoadState("error");
+      }
+    }
   }, [memory.thumbnail_url]);
 
   const showError = thumbnailFailed || loadState === "error";
@@ -67,6 +77,7 @@ export default function MemoryCard({ memory, priority = false }: MemoryCardProps
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
             src={thumbnailUrl}
             srcSet={srcSet}
+            ref={imageRef}
             width={memory.width ?? undefined}
           />
         </span>
