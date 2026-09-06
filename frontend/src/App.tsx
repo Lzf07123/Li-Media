@@ -7,6 +7,7 @@ import BaiduCallbackPage from "@/pages/BaiduCallbackPage";
 import HomePage from "@/pages/HomePage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import BackToTop from "@/components/BackToTop";
+import AmbientBackground from "@/components/ui/AmbientBackground";
 
 function MemoryRedirect() {
   const { memoryId } = useParams();
@@ -16,9 +17,10 @@ function MemoryRedirect() {
 export default function App() {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <AmbientBackground />
       <SiteHeader />
 
-      <main className="page-shell mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 lg:px-8" id="main">
+      <main className="page-shell relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 lg:px-8" id="main">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/memories/:memoryId" element={<MemoryRedirect />} />

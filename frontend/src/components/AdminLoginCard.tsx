@@ -1,6 +1,8 @@
 import type { FormEvent } from "react";
 
 import { brand } from "@/lib/brand";
+import Avatar from "@/components/ui/Avatar";
+import BlurText from "@/components/ui/BlurText";
 import Button from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import Notice from "@/components/ui/Notice";
@@ -19,8 +21,15 @@ export default function AdminLoginCard({
   onSubmit,
 }: AdminLoginCardProps) {
   return (
-    <section className="card mx-auto max-w-md p-6 sm:p-8">
-      <h1 className="text-xl font-semibold">{brand.copy.adminLoginTitle}</h1>
+    <section className="card card-signature card-halo page-enter mx-auto max-w-md p-6 sm:p-8">
+      <div className="flex flex-col items-center gap-3">
+        <Avatar name={brand.copyrightHolder} size="lg" />
+        <BlurText
+          as="h1"
+          className="text-xl font-semibold"
+          text={brand.copy.adminLoginTitle}
+        />
+      </div>
       <p className="mt-2 text-sm text-muted">{brand.copy.adminLoginDescription}</p>
 
       <form className="mt-6 flex flex-col gap-3" onSubmit={onSubmit}>

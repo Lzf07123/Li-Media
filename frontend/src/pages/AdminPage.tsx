@@ -37,6 +37,7 @@ import Notice from "@/components/ui/Notice";
 import { ToastViewport, type Toast } from "@/components/ui/Toast";
 import { Input, TextArea } from "@/components/ui/Input";
 import ProgressBar from "@/components/ui/ProgressBar";
+import StatusDot from "@/components/ui/StatusDot";
 
 export default function AdminPage() {
   const [tokenInput, setTokenInput] = useState("");
@@ -348,7 +349,7 @@ export default function AdminPage() {
   }
 
   return (
-    <section aria-labelledby="admin-title">
+    <section aria-labelledby="admin-title" className="page-enter">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold" id="admin-title">
@@ -423,11 +424,22 @@ export default function AdminPage() {
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
               <dd className="text-sm">
-                {scanTask.status === "running"
-                  ? brand.copy.adminScanRunning
-                  : scanTask.status === "completed"
-                    ? brand.copy.adminScanCompleted
-                    : brand.copy.adminScanFailed}
+                <span className="inline-flex items-center gap-2">
+                  <StatusDot
+                    tone={
+                      scanTask.status === "completed"
+                        ? "connected"
+                        : scanTask.status === "running"
+                          ? "connecting"
+                          : "invalid"
+                    }
+                  />
+                  {scanTask.status === "running"
+                    ? brand.copy.adminScanRunning
+                    : scanTask.status === "completed"
+                      ? brand.copy.adminScanCompleted
+                      : brand.copy.adminScanFailed}
+                </span>
               </dd>
             </div>
             <div>
@@ -547,7 +559,15 @@ export default function AdminPage() {
       {isLoading ? (
         <div className="shimmer mt-4 h-24 rounded-xl" />
       ) : memories.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">{brand.copy.adminEmpty}</p>
+        <div className="table-shell mt-4">
+          <table>
+            <tbody>
+              <tr className="table-empty-row">
+                <td>{brand.copy.adminEmpty}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="table-shell mt-4">
           <table>

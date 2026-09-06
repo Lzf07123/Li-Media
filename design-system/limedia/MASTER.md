@@ -23,7 +23,8 @@
 | 类别 | 组件 / 类 |
 | --- | --- |
 | 交互控件 | `Button`、`IconButton`、`Input`、`TextArea`、`DropdownMenu`、`Pagination` |
-| 反馈 | `Badge`、`StatusBadge`、`FileStatusBadge`、`Notice`、`Toast`、`Modal`、`ProgressBar`、`EmptyState`、`MediaSkeleton` |
+| 反馈 | `Badge`、`StatusBadge`、`FileStatusBadge`、`Notice`、`Toast`、`Modal`、`ProgressBar`、`EmptyState`、`MediaSkeleton`、`SearchSkeleton`、`StatusDot` |
+| 氛围 | `AmbientBackground`（软极光 + 科技光效层）、`BlurText`、`FlowRule`（CSS 类） |
 | 内容组件 | `MemoryCard`、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
 | 外壳 | `SiteHeader`、`SiteFooter`、`BackToTop`、`Breadcrumb` |
 
@@ -31,7 +32,7 @@
 
 | 页面 | 关键状态 |
 | --- | --- |
-| `HomePage` | 关键词搜索、类型导航、居中搜索行、居中分页、骨架屏、加载失败、空库、搜索空态、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
+| `HomePage` | 关键词搜索、类型导航、居中搜索行、居中分页、媒体骨架、搜索骨架、加载失败、空库、搜索空态、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
 | `AdminPage` | 登录态、表格列表、状态徽章、发布、下架、删除确认、远程扫描、确认式本地清理 |
 | `NotFoundPage` | 空态图标、返回首页 |
 
@@ -41,6 +42,7 @@
 - 桌面导航在 769px 显示；768px 及以下显示外露首页和二级菜单，菜单项与图标按钮均为 44px 热区。
 - 320px 隐藏品牌文字，仅保留品牌图标；所有主视图不允许横向溢出。
 - 响应式覆盖放在 `@layer components` 之外，避免 utilities 覆盖。
+- 全站使用 `AmbientBackground` 软氛围层；表格、正文和媒体内容保持前景层优先，移动端隐藏光束与光点。
 
 ## 资产与品牌单点
 
