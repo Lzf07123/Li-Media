@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from PIL import Image, ImageOps
 
 from app.core.config import get_settings
-from app.models.memory import MemoryKind
+from app.models.memory import DerivativeFailureKind, MemoryKind
 from app.services.task_limits import task_metrics
 from app.services.task_limits import register_temporary_path, unregister_temporary_path
 
@@ -57,6 +57,25 @@ def derivative_cache_path(
 def _cleanup_output(output_path: Path, temporary_path: Path) -> None:
     temporary_path.unlink(missing_ok=True)
     output_path.unlink(missing_ok=True)
+
+
+def classify_derivative_exception(exc: Exception) -> str:
+    stderr = getattr(exc, "stderr", b"")
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", errors="ignore")
+    message = f"{exc} {stderr}".lower()
+
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return DerivativeFailureKind.TIMEOUT.value
+    if "moov atom not found" in message:
+        return DerivativeFailureKind.MOV_MOOV.value
+    if "invalid data found" in message or "no video" in message:
+        return DerivativeFailureKind.CODEC_UNSUPPORTED.value
+    if isinstance(exc, Image.UnidentifiedImageError):
+        return DerivativeFailureKind.FORMAT_UNSUPPORTED.value
+    if isinstance(exc, OSError):
+        return DerivativeFailureKind.TEMPORARY_IO.value
+    return DerivativeFailureKind.UNKNOWN.value
 
 
 def _create_photo_thumbnail(
@@ -127,6 +146,7 @@ def create_memory_derivative(
     memory_id: UUID,
     max_size: int,
     duration_seconds: int | None = None,
+    failure_sink: dict[str, str] | None = None,
 ) -> str | None:
     settings = get_settings()
     output_path = derivative_cache_path(
@@ -158,8 +178,13 @@ def create_memory_derivative(
                 duration_seconds=duration_seconds,
                 max_size=max_size,
             )
-    except Exception:
+    except Exception as exc:
         _cleanup_output(output_path, temporary_path)
+        if failure_sink is not None:
+            failure_sink.setdefault(
+                "kind",
+                classify_derivative_exception(exc),
+            )
         return None
 
     else:

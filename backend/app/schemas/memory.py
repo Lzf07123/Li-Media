@@ -30,6 +30,7 @@ class MemoryFileRead(BaseModel):
     status: MemoryFileStatus
     remote_state: RemoteFileState
     thumbnail_state: RemoteThumbnailState
+    thumbnail_failure_kind: str | None
     stream_state: RemoteStreamState
     last_synced_at: datetime | None
     sync_error: str | None
@@ -46,6 +47,7 @@ class MemoryCardFileRead(BaseModel):
     status: MemoryFileStatus
     remote_state: RemoteFileState
     thumbnail_state: RemoteThumbnailState
+    thumbnail_failure_kind: str | None
     stream_state: RemoteStreamState
 
 

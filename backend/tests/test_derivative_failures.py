@@ -1,0 +1,39 @@
+import subprocess
+import uuid
+
+from app.services.memory_thumbnails import classify_derivative_exception
+from app.services.remote_thumbnails import create_remote_thumbnail
+from app.models.memory import MemoryKind
+
+
+class RaisingClient:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def open_stream(self, remote_id: str, *, range_header: str | None):
+        raise self.error
+
+
+def test_derivative_exception_classifies_ffmpeg_container_errors() -> None:
+    error = subprocess.CalledProcessError(
+        1,
+        "ffmpeg",
+        stderr=b"moov atom not found\n",
+    )
+    assert classify_derivative_exception(error) == "mov_moov"
+
+
+def test_remote_thumbnail_records_rate_limit_failure(tmp_path) -> None:
+    failure_sink: dict[str, str] = {}
+    result = create_remote_thumbnail(
+        RaisingClient(RuntimeError("百度网盘接口限流，请稍后重试")),
+        "remote-1",
+        tmp_path / "media",
+        kind=MemoryKind.VIDEO,
+        memory_id=uuid.uuid4(),
+        max_size=240,
+        failure_sink=failure_sink,
+    )
+
+    assert result is None
+    assert failure_sink == {"kind": "baidu_rate_limited"}

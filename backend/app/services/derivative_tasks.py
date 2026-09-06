@@ -28,6 +28,7 @@ def run_local_derivative(
     max_size: int,
     duration_seconds: int | None = None,
     priority: int | None = None,
+    failure_sink: dict[str, str] | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -46,6 +47,7 @@ def run_local_derivative(
                 memory_id=memory.id,
                 max_size=max_size,
                 duration_seconds=duration_seconds,
+                failure_sink=failure_sink,
             )
 
     return in_flight_derivatives.run(
@@ -65,6 +67,7 @@ def run_remote_derivative(
     max_size: int,
     duration_seconds: int | None = None,
     priority: int | None = None,
+    failure_sink: dict[str, str] | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -85,6 +88,7 @@ def run_remote_derivative(
                 max_size=max_size,
                 duration_seconds=duration_seconds,
                 cancel_event=make_cancel_event(),
+                failure_sink=failure_sink,
             )
 
     return in_flight_derivatives.run(

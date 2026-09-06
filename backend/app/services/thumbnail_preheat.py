@@ -181,6 +181,7 @@ def _process_pair(
     memory_file_id: UUID,
     settings: Settings,
     max_size: int,
+    failure_sink: dict[str, str] | None = None,
 ) -> str:
     memory = db.get(Memory, memory_id)
     memory_file = db.get(MemoryFile, memory_file_id)
@@ -211,6 +212,7 @@ def _process_pair(
                 max_size=max_size,
                 duration_seconds=memory.duration_seconds,
                 priority=60,
+                failure_sink=failure_sink,
             )
         else:
             client = BaiduPanClient(settings)
@@ -222,6 +224,7 @@ def _process_pair(
                 max_size=max_size,
                 duration_seconds=memory.duration_seconds,
                 priority=60,
+                failure_sink=failure_sink,
             )
     except TaskRejected:
         task_metrics.record_failed(TaskType.DERIVATIVE)
@@ -235,6 +238,7 @@ def _process_pair(
 
     memory.thumbnail_path = generated_path
     memory_file.thumbnail_state = RemoteThumbnailState.READY
+    memory_file.thumbnail_failure_kind = None
     db.commit()
     return "generated"
 
@@ -260,15 +264,27 @@ def run_thumbnail_preheat(
         registry.mark_running(job_id, total=len(pairs))
 
         for memory_id, memory_file_id in pairs:
+            failure_sink: dict[str, str] = {}
             with session_factory() as db:
                 outcome = _process_pair(
-                    db,
-                    memory_id=memory_id,
-                    memory_file_id=memory_file_id,
-                    settings=settings,
-                    max_size=job.max_size,
-                )
+                db,
+                memory_id=memory_id,
+                memory_file_id=memory_file_id,
+                settings=settings,
+                max_size=job.max_size,
+                failure_sink=failure_sink,
+            )
             registry.mark_item_processed(job_id, outcome=outcome)
+            if outcome == "failed" and failure_sink is not None:
+                with session_factory() as db:
+                    memory_file = db.get(MemoryFile, memory_file_id)
+                    if memory_file is not None:
+                        memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+                        memory_file.thumbnail_failure_kind = failure_sink.get(
+                            "kind",
+                            "unknown",
+                        )
+                        db.commit()
 
         registry.mark_completed(job_id)
     except Exception as exc:

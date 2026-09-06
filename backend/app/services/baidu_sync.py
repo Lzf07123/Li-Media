@@ -363,6 +363,7 @@ def _apply_remote_metadata(memory_file: MemoryFile, item: BaiduRemoteItem) -> No
     memory_file.thumbnail_state = (
         RemoteThumbnailState.READY if item.thumbnail_url else RemoteThumbnailState.MISSING
     )
+    memory_file.thumbnail_failure_kind = None
 
 
 def _fill_memory_from_remote(

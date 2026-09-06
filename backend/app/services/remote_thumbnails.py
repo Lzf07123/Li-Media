@@ -2,13 +2,13 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.core.config import get_settings
-from app.models.memory import MemoryKind
+from app.models.memory import DerivativeFailureKind, MemoryKind
 from app.services.task_limits import (
     is_temporary_path_active,
     register_temporary_path,
     unregister_temporary_path,
 )
-from app.services.baidu_pan import BaiduStreamResponse
+from app.services.baidu_pan import BaiduPanError, BaiduStreamResponse
 from app.services.memory_thumbnails import create_memory_derivative
 
 
@@ -22,6 +22,7 @@ def create_remote_thumbnail(
     max_size: int,
     duration_seconds: int | None = None,
     cancel_event: object | None = None,
+    failure_sink: dict[str, str] | None = None,
 ) -> str | None:
     """Create a cached aspect-preserving thumbnail without storing source media."""
 
@@ -36,15 +37,26 @@ def create_remote_thumbnail(
     )
     stream: BaiduStreamResponse | None = None
 
+    def record_failure(kind: str) -> None:
+        if failure_sink is not None:
+            failure_sink.setdefault("kind", kind)
+
     try:
         if not _temporary_directory_has_capacity(temporary_dir):
+            record_failure(DerivativeFailureKind.DISK_QUOTA.value)
             return None
 
-        status_code, _, _, _, stream = client.open_stream(
-            remote_id,
-            range_header=None,
-        )
+        try:
+            status_code, _, _, _, stream = client.open_stream(
+                remote_id,
+                range_header=None,
+            )
+        except BaiduPanError as exc:
+            record_failure(_classify_remote_error(exc))
+            return None
+
         if status_code is not None and status_code >= 400:
+            record_failure(DerivativeFailureKind.REMOTE_UNAVAILABLE.value)
             return None
 
         register_temporary_path(temporary_path.resolve())
@@ -54,6 +66,7 @@ def create_remote_thumbnail(
                 if cancel_event is not None and getattr(
                     cancel_event, "is_set", lambda: False
                 )():
+                    record_failure(DerivativeFailureKind.CANCELLED.value)
                     return None
 
                 if not chunk:
@@ -62,9 +75,11 @@ def create_remote_thumbnail(
                 output.write(chunk)
                 written_bytes += len(chunk)
                 if written_bytes >= max_source_bytes:
+                    record_failure(DerivativeFailureKind.SOURCE_TRUNCATED.value)
                     break
 
         if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
+            record_failure(DerivativeFailureKind.TEMPORARY_EMPTY.value)
             return None
 
         return create_memory_derivative(
@@ -74,14 +89,35 @@ def create_remote_thumbnail(
             memory_id=memory_id,
             max_size=max_size,
             duration_seconds=duration_seconds,
+            failure_sink=failure_sink,
         )
-    except Exception:
+    except Exception as exc:
+        record_failure(_classify_remote_error(exc))
         return None
     finally:
         if stream is not None:
             stream.close()
         temporary_path.unlink(missing_ok=True)
         unregister_temporary_path(temporary_path.resolve())
+
+
+def _classify_remote_error(exc: Exception) -> str:
+    message = str(exc)
+    if "不可用" in message or "暂时无法读取" in message:
+        return DerivativeFailureKind.REMOTE_UNAVAILABLE.value
+    if "403" in message or "直链被拒绝" in message:
+        return DerivativeFailureKind.REMOTE_FORBIDDEN.value
+    if "不存在" in message:
+        return DerivativeFailureKind.REMOTE_NOT_FOUND.value
+    if "限流" in message:
+        return DerivativeFailureKind.BAIDU_RATE_LIMITED.value
+    if "凭证" in message:
+        return DerivativeFailureKind.REMOTE_AUTH.value
+    if isinstance(exc, TimeoutError):
+        return DerivativeFailureKind.TIMEOUT.value
+    if isinstance(exc, OSError):
+        return DerivativeFailureKind.TEMPORARY_IO.value
+    return DerivativeFailureKind.UNKNOWN.value
 
 
 def _temporary_directory_has_capacity(temporary_dir: Path) -> bool:

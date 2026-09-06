@@ -99,8 +99,8 @@ Snapshot -> Verify invariants -> Pick highest P0/P1 gap -> One reversible change
 | 照片 / 视频 | 48 / 17 | 视频占比约 26%。 |
 | 远程索引文件 | 65 | `baidupan` 来源。 |
 | 索引总大小 | 5.45 GiB | 最大单文件约 0.94 GiB。 |
-| 派生状态 | 25 ready / 40 failed | 其中 photo failed 26、video failed 14；必须先区分可重试失败与格式不支持。 |
-| backend 内存 | 256m 硬上限 | 2026-09-07 重建后 cgroup peak 129.8m；此前实验曾出现 `Killed` 后 Nginx 502，仍需真实负载复验。 |
+| 派生状态 | 26 ready / 39 failed | 2026-09-07 受控复现成功 1 条；39 条仍待复现分类。 |
+| backend 内存 | 256m 硬上限 | 2026-09-07 受控派生后 cgroup peak 207.99m，未 OOM 但超过 200m 安全目标。 |
 | 派生并发 / 队列 | 1 / 32 | 保护 256m 上限；不能因 429 直接提高并发。 |
 | 前端图像并发 | 2 | 首页可见卡片排队请求 240px，查看器高优先级。 |
 | 已知格式风险 | MOV | 16 MiB 截断会缺 `moov atom`；视频首帧需要更大的临时源或专用探针。 |
@@ -247,6 +247,7 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 | I4 | 低尺寸降级是否可以接受？ | 用已存在 240px 派生图临时服务更高请求，并做视觉验收。 | 失败卡减少且画质可接受。 | 待实验。 | 待定 |
 | I5 | 服务端是否残留源资源？ | 审计 DB `source_path`、`media/photos`、源媒体扩展名和 BLOB。 | Source Zero = 2 分；无 PNG/JPG/MOV/MP4 源文件。 | 2026-09-07：DB 65 条 `baidupan` 且 `source_path=0`；但 `media/photos` 发现 3 PNG + 1 ICO 历史遗留。 | 清理遗留文件，并把 Source Zero 审计加入每轮闭环。 |
 | I6 | 清理后能否由启动审计和测试门禁持续证明 Source Zero？ | 确认 65 条记录 `source_path=0`；删除 4 个历史遗留文件；新增 DB/文件/Pydantic/API 审计并接入启动日志与 pytest；重建 backend 后走真实 Nginx 链路。 | `photos/videos/tmp=0`、源媒体文件与 BLOB 为 0、DB `source_path=0`；四容器 healthy；真实浏览器无播放前视频请求。 | 2026-09-07：`source_zero.compliant=true`；文件计数 `photos=0,videos=0,tmp=0,thumbnails=58`；cgroup peak 129.8m，OOM=0；健康/列表/详情/240 WebP/直链 `no-store` 通过；真实 Chrome 打开视频查看器且 `direct-url`、`file` 请求均为 0。 | 采纳；G0 当前轮=2。后续快照必须携带 `source_zero`，下一实验转向 I1 失败分类。 |
+| I7 | 40 条派生失败能否从“统一 failed”变成可归因分类？ | 新增 `thumbnail_failure_kind` 迁移、异常分类器、失败 sink、状态分组与后台文案；迁移 0008 后重建真实容器，对最小失败 JPEG 做 1 条受控复现。 | 新失败必须落库分类；后台按类分组；受控重试可成功且有资源指标；不输出直链和凭证。 | 2026-09-07：迁移通过；65 个 pytest、24 个 Playwright、真实 Nginx/Chrome 播放边界通过；受控 1.4MB JPEG 生成 240px，`tmp=0`，ready 26 / failed 39，39 条历史失败仍 `unclassified`；cgroup peak 207.99m，OOM=0。 | 采纳分类器；因峰值超过 200m，不做批量重试，继续观察资源并优先设计低内存复现/独立 worker。 |
 
 ## 11. 当前优先级
 

@@ -136,6 +136,17 @@ def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
             ),
         ).where(MemoryFile.source == "baidupan")
     ).one()
+    failure_kind_rows = db.execute(
+        select(
+            MemoryFile.thumbnail_failure_kind,
+            func.count(),
+        )
+        .where(
+            MemoryFile.source == "baidupan",
+            MemoryFile.thumbnail_state == RemoteThumbnailState.FAILED,
+        )
+        .group_by(MemoryFile.thumbnail_failure_kind)
+    ).all()
 
     return RemoteStorageCounts(
         total=int(total or 0),
@@ -145,6 +156,10 @@ def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
         thumbnail_ready=int(thumbnail_ready or 0),
         thumbnail_missing=int(thumbnail_missing or 0),
         thumbnail_failed=int(thumbnail_failed or 0),
+        thumbnail_failure_kinds={
+            str(kind if kind is not None else "unclassified"): int(count)
+            for kind, count in failure_kind_rows
+        },
         stream_ready=int(stream_ready or 0),
         stream_failed=int(stream_failed or 0),
     )
