@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Images, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Images, Sparkles } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
 import MediaViewer from "@/components/MediaViewer";
 import { brand } from "@/lib/brand";
-import { getMemoryById, getMemories, type MemorySummary } from "@/lib/api";
+import {
+  getMemoryById,
+  getMemories,
+  getMemoryRecommendations,
+  type MemorySummary,
+} from "@/lib/api";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
-import IconButton from "@/components/ui/IconButton";
 import MediaSkeleton from "@/components/ui/MediaSkeleton";
 import Notice from "@/components/ui/Notice";
-import Pagination from "@/components/ui/Pagination";
 import BlurText from "@/components/ui/BlurText";
-import SearchSkeleton from "@/components/ui/SearchSkeleton";
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 18;
+const RECOMMENDATION_COUNT = 8;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
 let scrollBeforeViewer = 0;
 
@@ -23,67 +26,120 @@ export default function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { pathname } = useLocation();
   const kind = searchParams.get("kind") ?? undefined;
-  const keyword = searchParams.get("keyword") ?? "";
-  const page = Number(searchParams.get("page") ?? "1");
-  const sort = searchParams.get("sort") ?? "captured_desc";
   const viewerId = searchParams.get("viewer");
-  const [searchInput, setSearchInput] = useState(keyword);
+  const [recommendations, setRecommendations] = useState<MemorySummary[]>([]);
   const [memories, setMemories] = useState<MemorySummary[]>([]);
   const [directMemory, setDirectMemory] = useState<MemorySummary | null>(null);
   const [viewerMissing, setViewerMissing] = useState(false);
   const [counts, setCounts] = useState({ photo: 0, video: 0 });
   const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasRestoredScroll = useRef(false);
-  const requestPage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const requestTokenRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
-  const activeSort = ["captured_desc", "captured_asc", "updated_desc"].includes(sort)
-    ? sort
-    : "captured_desc";
+  const hasNextPage = memories.length > 0 && memories.length < total;
 
   const updateParams = (next: URLSearchParams) => {
     const query = next.toString();
     setSearchParams(query ? `?${query}` : "");
   };
 
-  const loadMemories = useCallback(async (activePage: number) => {
-    setIsLoading(true);
+  const loadPage = useCallback(async (
+    page: number,
+    mode: "replace" | "append",
+  ) => {
+    const requestToken = requestTokenRef.current + 1;
+    requestTokenRef.current = requestToken;
+
+    if (mode === "replace") {
+      setIsLoadingInitial(true);
+      setMemories([]);
+      setViewerMissing(false);
+    } else {
+      setIsLoadingMore(true);
+    }
+
     try {
       const data = await getMemories({
         kind: activeKind,
-        keyword: keyword || undefined,
-        page: activePage,
+        page,
         page_size: PAGE_SIZE,
-        sort: activeSort,
       });
-      setMemories(data.items);
+
+      if (requestToken !== requestTokenRef.current) {
+        return false;
+      }
+
+      setMemories((current) => {
+        if (mode === "replace") {
+          return data.items;
+        }
+
+        const knownIds = new Set(current.map((memory) => memory.id));
+        return [
+          ...current,
+          ...data.items.filter((memory) => !knownIds.has(memory.id)),
+        ];
+      });
       setTotal(data.total);
       setCounts(data.counts ?? { photo: 0, video: 0 });
       setError(null);
-      setViewerMissing(false);
+      return true;
     } catch {
-      setError(brand.copy.loadFailed);
+      if (requestToken === requestTokenRef.current) {
+        setError(brand.copy.loadFailed);
+      }
+      return false;
     } finally {
-      setIsLoading(false);
+      if (requestToken === requestTokenRef.current) {
+        if (mode === "replace") {
+          setIsLoadingInitial(false);
+        } else {
+          setIsLoadingMore(false);
+        }
+      }
     }
-  }, [activeKind, activeSort, keyword]);
+  }, [activeKind]);
+
+  useEffect(() => {
+    void loadPage(1, "replace");
+  }, [loadPage]);
 
   useEffect(() => {
     let active = true;
-    void loadMemories(requestPage).then(() => {
-      if (!active) {
-        return;
-      }
-    });
+
+    getMemoryRecommendations(RECOMMENDATION_COUNT)
+      .then((items) => {
+        if (active && Array.isArray(items)) {
+          setRecommendations(items);
+        } else if (active) {
+          setRecommendations([]);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRecommendations([]);
+        }
+      });
 
     return () => {
       active = false;
     };
-  }, [loadMemories, page]);
+  }, []);
+
+  const viewerMemories = useMemo(() => {
+    const unique = new Map<string, MemorySummary>();
+    [...recommendations, ...memories].forEach((memory) => {
+      unique.set(memory.id, memory);
+    });
+    return Array.from(unique.values());
+  }, [recommendations, memories]);
 
   useEffect(() => {
-    if (!viewerId || memories.some((memory) => memory.id === viewerId)) {
+    if (!viewerId || viewerMemories.some((memory) => memory.id === viewerId)) {
       return;
     }
 
@@ -105,26 +161,7 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, [memories, viewerId]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (searchInput.trim() === keyword) {
-        return;
-      }
-
-      const next = new URLSearchParams(searchParams);
-      if (searchInput.trim()) {
-        next.set("keyword", searchInput.trim());
-      } else {
-        next.delete("keyword");
-      }
-      next.delete("page");
-      updateParams(next);
-    }, 300);
-
-    return () => window.clearTimeout(timer);
-  }, [keyword, searchInput, searchParams]);
+  }, [viewerId, viewerMemories]);
 
   useEffect(() => {
     const saveScroll = () => {
@@ -136,7 +173,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (isLoading || hasRestoredScroll.current) {
+    if (isLoadingInitial || hasRestoredScroll.current) {
       return;
     }
 
@@ -151,7 +188,7 @@ export default function HomePage() {
         window.scrollTo({ behavior: "auto", top: previousScroll });
       });
     });
-  }, [isLoading, pathname]);
+  }, [isLoadingInitial, pathname]);
 
   useEffect(() => {
     if (viewerId) {
@@ -168,35 +205,45 @@ export default function HomePage() {
     }, 100);
   }, [pathname, viewerId]);
 
-  useEffect(() => {
-    setSearchInput(keyword);
-  }, [keyword]);
-
-  const updateSearch = (value: string) => {
-    const next = new URLSearchParams(searchParams);
-
-    if (value.trim()) {
-      next.set("keyword", value.trim());
-    } else {
-      next.delete("keyword");
+  const loadNextPage = useCallback(() => {
+    if (isLoadingInitial || isLoadingMore || error || !hasNextPage) {
+      return;
     }
-    next.delete("page");
-    updateParams(next);
-  };
 
-  const clearSearch = () => {
-    const next = new URLSearchParams(searchParams);
-    next.delete("keyword");
-    next.delete("page");
-    setSearchInput("");
-    updateParams(next);
-  };
+    void loadPage(Math.floor(memories.length / PAGE_SIZE) + 1, "append");
+  }, [
+    error,
+    hasNextPage,
+    isLoadingInitial,
+    isLoadingMore,
+    loadPage,
+    memories.length,
+  ]);
 
-  const changePage = (nextPage: number) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("page", String(nextPage));
-    updateParams(next);
-  };
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || isLoadingInitial || isLoadingMore || error || !hasNextPage) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadNextPage();
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [
+    error,
+    hasNextPage,
+    isLoadingInitial,
+    isLoadingMore,
+    loadNextPage,
+  ]);
 
   const changeKind = (nextKind: "photo" | "video" | undefined) => {
     const next = new URLSearchParams(searchParams);
@@ -205,13 +252,8 @@ export default function HomePage() {
     } else {
       next.delete("kind");
     }
-    next.delete("page");
-    updateParams(next);
-  };
-
-  const changeSort = (nextSort: string) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("sort", nextSort);
+    next.delete("keyword");
+    next.delete("sort");
     next.delete("page");
     updateParams(next);
   };
@@ -237,15 +279,18 @@ export default function HomePage() {
     }, 100);
   };
 
-  const activeMemory = memories.find((memory) => memory.id === viewerId) ?? directMemory;
+  const activeMemory = viewerMemories.find((memory) => memory.id === viewerId)
+    ?? directMemory;
   const activeMemoryIndex = activeMemory
-    ? memories.findIndex((memory) => memory.id === activeMemory.id)
+    ? viewerMemories.findIndex((memory) => memory.id === activeMemory.id)
     : -1;
-  const previousMemory = activeMemoryIndex > 0 ? memories[activeMemoryIndex - 1] : null;
-  const nextMemory =
-    activeMemoryIndex >= 0 && activeMemoryIndex < memories.length - 1
-      ? memories[activeMemoryIndex + 1]
-      : null;
+  const previousMemory = activeMemoryIndex > 0
+    ? viewerMemories[activeMemoryIndex - 1]
+    : null;
+  const nextMemory = activeMemoryIndex >= 0
+    && activeMemoryIndex < viewerMemories.length - 1
+    ? viewerMemories[activeMemoryIndex + 1]
+    : null;
 
   return (
     <section aria-labelledby="library-title" className="page-enter">
@@ -257,6 +302,27 @@ export default function HomePage() {
       />
       <div aria-hidden="true" className="flow-rule mx-auto mt-3 w-16" />
       <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
+
+      {recommendations.length > 0 ? (
+        <section
+          aria-labelledby="recommendation-title"
+          className="infinite-canvas recommendation-section"
+        >
+          <h2 className="section-heading" id="recommendation-title">
+            <Sparkles aria-hidden="true" className="size-4" />
+            {brand.copy.recommendationTitle}
+          </h2>
+          <div className="recommendation-rail">
+            {recommendations.map((memory) => (
+              <MemoryCard
+                key={`recommendation-${memory.id}`}
+                memory={memory}
+                onOpen={openViewer}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
         <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
@@ -287,54 +353,9 @@ export default function HomePage() {
             <span className="segmented-count">{counts.video}</span>
           </button>
         </div>
-
-        <form className="search-cluster" onSubmit={(event) => {
-          event.preventDefault();
-          updateSearch(searchInput);
-        }}>
-          <div className="relative w-full min-w-56">
-            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <input
-              aria-label={brand.copy.searchLabel}
-              className="input pl-10"
-              id="library-search"
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder={brand.copy.searchPlaceholder}
-              type="search"
-              value={searchInput}
-            />
-          </div>
-          {keyword ? (
-            <Button aria-label={brand.copy.clearSearch} onClick={clearSearch} variant="secondary">
-              <X aria-hidden="true" className="size-4" />
-            </Button>
-          ) : null}
-        </form>
-
-        <label className="sort-cluster">
-          <select
-            aria-label={brand.copy.sortLabel}
-            className="select"
-            onChange={(event) => changeSort(event.target.value)}
-            value={activeSort}
-          >
-            <option value="captured_desc">{brand.copy.sortCapturedDesc}</option>
-            <option value="captured_asc">{brand.copy.sortCapturedAsc}</option>
-            <option value="updated_desc">{brand.copy.sortUpdatedDesc}</option>
-          </select>
-        </label>
       </div>
 
-      {isLoading ? (
-        <SearchSkeleton className="mx-auto mt-3 w-full max-w-6xl" />
-      ) : (
-        <p aria-live="polite" className="result-meta mx-auto mt-3 w-full max-w-6xl">
-          {brand.copy.resultSummary.replace("{total}", String(total))}
-          {keyword ? ` · ${brand.copy.activeKeyword} ${keyword}` : ""}
-        </p>
-      )}
-
-      {isLoading ? (
+      {isLoadingInitial ? (
         <>
           <span className="sr-only">{brand.copy.loadingLibrary}</span>
           <MediaSkeleton />
@@ -342,18 +363,22 @@ export default function HomePage() {
       ) : error ? (
         <Notice className="mt-8" tone="error">
           <span>{error}</span>
-          <Button className="ml-2" onClick={() => void loadMemories(page)} variant="secondary">
+          <Button
+            className="ml-2"
+            onClick={() => void loadPage(1, "replace")}
+            variant="secondary"
+          >
             {brand.copy.loadFailedAction}
           </Button>
         </Notice>
       ) : memories.length === 0 ? (
         <div className="mt-8">
           <EmptyState art={Images}>
-            {keyword ? brand.copy.emptySearch : brand.copy.emptyLibrary}
+            {brand.copy.emptyLibrary}
           </EmptyState>
         </div>
       ) : (
-        <>
+        <section aria-label={brand.copy.libraryTitle} className="infinite-canvas">
           <div className="masonry">
             {memories.map((memory, index) => (
               <MemoryCard
@@ -364,9 +389,13 @@ export default function HomePage() {
               />
             ))}
           </div>
-          <Pagination onPageChange={changePage} page={page} pageSize={PAGE_SIZE} total={total} />
-        </>
+          <div aria-hidden="true" className="canvas-sentinel" ref={sentinelRef} />
+          <p aria-live="polite" className="canvas-loading">
+            {isLoadingMore ? brand.copy.loadingMoreLibrary : ""}
+          </p>
+        </section>
       )}
+
       {viewerMissing ? (
         <Notice className="mt-8" tone="error">
           {brand.copy.notFoundText}

@@ -136,3 +136,63 @@ def test_public_memories_support_kind_counts_and_sort(tmp_path: Path) -> None:
             ).status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+def test_memory_recommendations_are_public_and_not_cached(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
+    testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    def override_get_db() -> Generator[Session, None, None]:
+        session = testing_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with testing_session.begin() as session:
+            memories = [
+                Memory(
+                    title=f"photo {index}",
+                    kind=MemoryKind.PHOTO,
+                    status=MemoryStatus.PUBLISHED,
+                )
+                for index in range(5)
+            ]
+            hidden = Memory(
+                title="hidden photo",
+                kind=MemoryKind.PHOTO,
+                status=MemoryStatus.HIDDEN,
+            )
+            memories.append(hidden)
+            session.add_all(memories)
+            session.flush()
+            for memory in memories:
+                session.add(
+                    MemoryFile(
+                        memory_id=memory.id,
+                        source="baidupan",
+                        remote_path=f"/remote/{memory.id}.jpg",
+                        mime_type="image/jpeg",
+                        status=MemoryFileStatus.MATCHED,
+                    )
+                )
+
+        with TestClient(app) as client:
+            response = client.get("/api/v1/memories/recommend?limit=3")
+            assert response.status_code == 200
+            assert len(response.json()) == 3
+            assert response.headers["cache-control"] == "no-store"
+            assert "hidden photo" not in [
+                item["title"] for item in response.json()
+            ]
+
+            kind_response = client.get(
+                "/api/v1/memories/recommend?kind=video&limit=8",
+            )
+            assert kind_response.status_code == 200
+            assert kind_response.json() == []
+    finally:
+        app.dependency_overrides.clear()

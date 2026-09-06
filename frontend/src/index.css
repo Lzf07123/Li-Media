@@ -2342,6 +2342,64 @@ html {
   white-space: nowrap;
 }
 
+/* 无限画布：突破常规版心承载瀑布流，滚动到底部前才加载下一分段 */
+.infinite-canvas {
+  width: 100vw;
+  max-width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  padding-inline: clamp(16px, 4vw, 48px);
+}
+
+.recommendation-section {
+  margin-top: 28px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--limedia-fg);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.recommendation-rail {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: 8px;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.recommendation-rail > .post-card {
+  flex: 0 0 min(232px, 68vw);
+  margin: 0 !important;
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+
+.canvas-sentinel {
+  display: grid;
+  min-height: 72px;
+  width: 100%;
+  place-items: center;
+}
+
+.canvas-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  color: var(--limedia-muted);
+  font-size: 0.8rem;
+}
+
 /* 详情状态：默认轻量摘要，展开后保留完整技术状态 */
 .status-card {
   border: 1px solid var(--limedia-border);
@@ -2477,6 +2535,48 @@ html {
 }
 
 .viewer-fallback button {
+  min-height: 44px;
+  padding-inline: 14px;
+  border: 1px solid var(--limedia-btn-primary-border);
+  border-radius: 8px;
+  background: var(--limedia-btn-primary-bg);
+  color: var(--limedia-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.video-playback-overlay {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--limedia-border);
+  border-radius: 12px;
+  background: var(--limedia-surface);
+  color: var(--limedia-fg);
+  font-size: 0.875rem;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.video-playback-overlay p {
+  margin: 0;
+}
+
+.video-playback-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-playback-overlay button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
   padding-inline: 14px;
   border: 1px solid var(--limedia-btn-primary-border);
