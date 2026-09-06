@@ -56,13 +56,14 @@
 
 ## 6. 栈内存与资源限制
 
-- [ ] 分别定义 backend、db、redis、nginx 的内存预算；初始建议 backend 512m、nginx 128m、redis 192m，PostgreSQL 按实例和连接数单独评估。
+- [ ] 分别定义 backend、db、redis、nginx 的内存预算；backend 硬上限固定为 256m，nginx 128m、redis 192m，PostgreSQL 按实例和连接数单独评估。
 - [ ] 在 Docker Compose 中为每个服务配置硬性 `mem_limit`、`cpus` 和 `pids_limit`；不要只依赖应用内信号量。
 - [ ] 设置 Docker 日志轮转，例如 `max-size` / `max-file`，避免长驻容器日志耗尽宿主磁盘。
 - [ ] 盘点 Python 主进程、任务线程和 FFmpeg 子进程的栈内存；优先限制线程总数，再评估是否调整默认栈大小。
 - [ ] 如需限制栈，先通过 Compose `ulimits.stack` 或启动命令中的 `ulimit -s` 设置软 / 硬上限，并用小型真实视频验证 Python C 扩展、Pillow 和 FFmpeg 流程不崩溃。
 - [ ] 不默认使用 `RLIMIT_AS` 限制地址空间；优先使用 cgroup `mem_limit`，避免虚拟内存保留量误触发分配失败。
 - [ ] FFmpeg 单帧任务限制线程、输出尺寸和运行时长；使用 `-nostdin`、超时和失败清理，防止子进程堆积。
+- [ ] backend 的 uvicorn、任务线程和 FFmpeg 子进程共享 256m cgroup 上限；提高并发前必须先核对真实 RSS / PSS，并优先减少任务数。
 - [ ] 远程媒体流必须分块读取，不在 Python 内存中聚合完整响应；为临时目录设置磁盘配额和并发文件上限。
 - [ ] PostgreSQL 配置 `shared_buffers`、`work_mem`、`effective_cache_size` 和 `max_connections`，与 backend 并发池匹配。
 - [ ] Redis 保持 `maxmemory`、淘汰策略和 AOF 设置；确认扫描状态和临时数据有 TTL 或可清理边界。
@@ -81,6 +82,7 @@
 - [ ] 使用小型真实视频验证单帧耗时、临时文件峰值和并发上限收益，并记录优化前后指标。
 - [ ] 使用容器级压测验证 `mem_limit`、`pids_limit`、磁盘配额和栈上限；确认超限时返回降级响应而不是 OOM。
 - [ ] 在资源指标中捕获内存 / 线程 / 磁盘峰值，并与各项硬上限对比，留出安全余量。
+- [ ] 压测后确认 backend 容器内存峰值小于 256m；超过预算时降低并发、派生尺寸或队列长度，不放宽 256m 硬上限。
 
 ## 8. 质量门禁与合并
 
