@@ -276,6 +276,7 @@ def test_remote_thumbnail_failure_is_logged_and_hidden_is_not_served(
         with session_factory() as session:
             memory_file = session.scalar(select(MemoryFile))
             assert memory_file.thumbnail_state == RemoteThumbnailState.FAILED
+            assert memory_file.thumbnail_failure_kind == "remote_unavailable"
     finally:
         app.dependency_overrides.clear()
 

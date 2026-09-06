@@ -441,6 +441,7 @@ def get_memory_thumbnail(
             if generated_path:
                 memory.thumbnail_path = generated_path
                 memory_file.thumbnail_state = RemoteThumbnailState.READY
+                memory_file.thumbnail_failure_kind = None
                 if memory.width is None or memory.height is None:
                     dimensions = read_image_dimensions(target_path.read_bytes())
                     if dimensions is not None:
@@ -457,6 +458,7 @@ def get_memory_thumbnail(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory thumbnail missing"
         )
 
+    failure_sink: dict[str, str] = {}
     client = BaiduPanClient(settings)
     try:
         generated_path = run_remote_derivative(
@@ -466,6 +468,7 @@ def get_memory_thumbnail(
             memory=memory,
             max_size=max_size,
             duration_seconds=memory.duration_seconds,
+            failure_sink=failure_sink,
         )
     except TaskRejected as exc:
         raise _task_http_error(exc) from exc
@@ -475,6 +478,7 @@ def get_memory_thumbnail(
     if generated_path:
         memory.thumbnail_path = generated_path
         memory_file.thumbnail_state = RemoteThumbnailState.READY
+        memory_file.thumbnail_failure_kind = None
         served_target = derivative_cache_path(
             media_root,
             memory.id,
@@ -494,13 +498,17 @@ def get_memory_thumbnail(
             )
 
     memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+    memory_file.thumbnail_failure_kind = failure_sink.get("kind", "unknown")
     task_metrics.record_failed(TaskType.DERIVATIVE)
     record_admin_operation(
         db,
         action="thumbnail_derivation_failed",
         target_type="memory",
         target_id=memory.id,
-        detail="服务端派生失败，未回退到方形缩略图",
+        detail=(
+            "服务端派生失败，未回退到方形缩略图；"
+            f"failure_kind={memory_file.thumbnail_failure_kind}"
+        ),
     )
     db.commit()
     raise HTTPException(

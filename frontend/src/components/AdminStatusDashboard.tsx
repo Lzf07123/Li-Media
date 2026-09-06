@@ -23,6 +23,11 @@ function statusLabel(status: ServiceStatus) {
     : brand.copy.adminStatusUnavailable;
 }
 
+function failureKindLabel(kind: string) {
+  const labels = brand.copy.adminThumbnailFailureReasons as Record<string, string>;
+  return labels[kind] ?? kind;
+}
+
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
     <div>
@@ -145,6 +150,20 @@ export default function AdminStatusDashboard({
               value={status.backend.task_thread_pool_size}
             />
           </dl>
+          {Object.entries(status.remote_storage.counts.thumbnail_failure_kinds ?? {}).length > 0 ? (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs font-medium text-muted">
+                {brand.copy.adminScanFailure}
+              </p>
+              {Object.entries(
+                status.remote_storage.counts.thumbnail_failure_kinds,
+              ).map(([kind, count]) => (
+                <p className="text-xs text-muted" key={kind}>
+                  {failureKindLabel(kind)}: {count}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <section aria-labelledby="remote-storage-status">
@@ -186,6 +205,10 @@ export default function AdminStatusDashboard({
             <Metric
               label={brand.copy.adminRemoteStoragePreviewReady}
               value={status.remote_storage.counts.thumbnail_ready}
+            />
+            <Metric
+              label={brand.copy.adminRemoteStoragePreviewFailed}
+              value={status.remote_storage.counts.thumbnail_failed}
             />
             <Metric
               label={brand.copy.adminRemoteStorageStreamFailed}

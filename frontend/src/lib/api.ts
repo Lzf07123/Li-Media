@@ -26,6 +26,7 @@ export type Memory = {
     status: "discovered" | "pending" | "syncing" | "matched" | "missing" | "removed" | "failed";
     remote_state: "unverified" | "ready" | "missing" | "failed";
     thumbnail_state: "missing" | "ready" | "failed";
+    thumbnail_failure_kind: string | null;
     stream_state: "unavailable" | "ready" | "failed";
     last_synced_at: string | null;
     sync_error: string | null;
@@ -48,6 +49,7 @@ export type MemoryFileSummary = {
   status: MemoryFileStatus;
   remote_state: MemoryRemoteState;
   thumbnail_state: MemoryThumbnailState;
+  thumbnail_failure_kind: string | null;
   stream_state: MemoryStreamState;
 };
 
@@ -191,6 +193,7 @@ export type RemoteStorageCounts = {
   thumbnail_ready: number;
   thumbnail_missing: number;
   thumbnail_failed: number;
+  thumbnail_failure_kinds: Record<string, number>;
   stream_ready: number;
   stream_failed: number;
 };

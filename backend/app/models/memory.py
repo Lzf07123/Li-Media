@@ -50,6 +50,24 @@ class RemoteStreamState(StrEnum):
     FAILED = "failed"
 
 
+class DerivativeFailureKind(StrEnum):
+    UNKNOWN = "unknown"
+    DISK_QUOTA = "disk_quota"
+    REMOTE_AUTH = "remote_auth"
+    REMOTE_FORBIDDEN = "remote_forbidden"
+    REMOTE_NOT_FOUND = "remote_not_found"
+    BAIDU_RATE_LIMITED = "baidu_rate_limited"
+    REMOTE_UNAVAILABLE = "remote_unavailable"
+    CANCELLED = "cancelled"
+    SOURCE_TRUNCATED = "source_truncated"
+    TEMPORARY_EMPTY = "temporary_empty"
+    TIMEOUT = "timeout"
+    FORMAT_UNSUPPORTED = "format_unsupported"
+    MOV_MOOV = "mov_moov"
+    CODEC_UNSUPPORTED = "codec_unsupported"
+    TEMPORARY_IO = "temporary_io"
+
+
 class RemoteScanStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
@@ -136,6 +154,9 @@ class MemoryFile(Base):
     )
     thumbnail_state: Mapped[RemoteThumbnailState] = mapped_column(
         String(32), default=RemoteThumbnailState.MISSING, index=True
+    )
+    thumbnail_failure_kind: Mapped[str | None] = mapped_column(
+        String(64), index=True
     )
     stream_state: Mapped[RemoteStreamState] = mapped_column(
         String(32), default=RemoteStreamState.UNAVAILABLE, index=True
