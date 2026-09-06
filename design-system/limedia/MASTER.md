@@ -1,13 +1,13 @@
 # Li&Media Master
 
-> 版本：V1.0 ｜ 日期：2026-09-05 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
+> 版本：V1.1 ｜ 日期：2026-09-06 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
 > 相关：[BRAND.md](BRAND.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
 
 ## 技术栈与路由
 
 - React 19 + TypeScript + Vite 7 + Tailwind CSS 4 + React Router 7 + lucide-react。
 - 路由：`/`（回忆库和 `?viewer=<memoryId>` 查看器）、`/memories/:memoryId`（兼容重定向到查看器）、`/admin`（后台）、`*`（404）。
-- API：`/api/v1/memories`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。
+- API：`/api/v1/memories`、`/api/v1/memories/recommend`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/memories/:id/stream`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。
 
 ## 令牌快照
 
@@ -32,13 +32,13 @@
 
 | 页面 | 关键状态 |
 | --- | --- |
-| `HomePage` | 关键词搜索、类型导航、居中搜索行、居中分页、媒体骨架、搜索骨架、加载失败、空库、搜索空态、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
+| `HomePage` | 类型导航、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、媒体骨架、加载失败、空库、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
 | `AdminPage` | 登录态、表格列表、状态徽章、发布、下架、删除确认、远程扫描、确认式本地清理 |
 | `NotFoundPage` | 空态图标、返回首页 |
 
 ## 布局与响应式
 
-- 公开内容使用 `.masonry`：1440/1024 三列，768 两列，640 一列。
+- 公开内容使用 `.masonry`：1600 六列、1280 五列、1024 四列、768 三列、640 两列；画布保留版心两侧留白。
 - 桌面导航在 769px 显示；768px 及以下显示外露首页和二级菜单，菜单项与图标按钮均为 44px 热区。
 - 320px 隐藏品牌文字，仅保留品牌图标；所有主视图不允许横向溢出。
 - 响应式覆盖放在 `@layer components` 之外，避免 utilities 覆盖。
@@ -61,4 +61,4 @@ cd ../backend
 ../.venv/bin/pytest -q
 ```
 
-上线前还需检查：明暗正文 AA、320/390/768/769/1440 无横向溢出、焦点可见、空态/加载/失败/404、上传后公开列表即时展示、下架后公开页隐藏、Compose 服务健康。
+上线前还需检查：明暗正文 AA、320/390/768/769/1280/1600 无横向溢出、焦点可见、空态/加载/失败/404、发布后公开列表即时展示、下架后公开页隐藏、Compose 服务健康。

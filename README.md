@@ -31,7 +31,7 @@ http://localhost:8080
 
 默认部署中只有 Nginx 暴露宿主端口；backend、PostgreSQL 和 Redis 只在 Compose 网络内访问。API 文档默认由 Nginx 关闭；如需调试，可在 backend 容器内访问 `http://127.0.0.1:8000/api/docs`。
 
-生产环境 TLS 仍由同一 Nginx 终止。可提供证书挂载和覆盖文件后启用：
+生产环境 TLS 仍由同一 Nginx 终止。需要证书挂载、`HTTPS_PORT` 映射和 443 监听配置时，先提供 Compose 覆盖文件，再在部署环境中启用：
 
 ```text
 HTTPS_PORT=443
@@ -61,10 +61,10 @@ alembic upgrade head
 python3 scripts/check.py
 ```
 
-在提交或部署前校验单入口端口边界：
+在提交或部署前校验单入口端口边界；`--quiet` 只输出错误：
 
 ```bash
-docker compose config
+docker compose config --quiet
 ```
 
 临时跳过浏览器测试时使用：
@@ -90,13 +90,23 @@ frontend/
   src/                 React 前端
 design-system/limedia/ 项目级设计方案
 packages/li-design/    设计模板子模块
-CHECKLIST.md          下一阶段待办清单
+CHECKLIST.md          当前版本验收基线
 ```
+
+## 运行时行为
+
+- 公开首页是无限瀑布画布，保留版心两侧留白；每页 18 条，滚动接近底部时继续分段追加。
+- 页面不提供搜索和排序入口；推荐内容按当前类型随机取 8 条，并置入画布最前且与列表去重。
+- 公开列表和详情返回瘦身 DTO，只包含首页卡片和查看器需要的字段。
+- 派生图矩阵为 240 / 480 / 768 / 1280px；首页按列宽和 DPR 选择最小可用尺寸，查看器移动端用 480px、桌面端用 1280px。
+- 视频仅在用户触发播放后申请百度短时直链；直链只在应用内存中短期复用，失败后最多强制刷新一次再回退服务端流。
+- 管理清理会移除本地索引、派生缓存、临时文件和 Nginx 派生图缓存，但不修改百度网盘资源。
 
 ## 当前进度
 
 - 单网关传输：同一域名和端口提供 SPA、API、健康检查和公开派生图；Nginx 不缓存短时直链或带凭证响应。
 - Remote-First：百度网盘只作为存储源；服务端保存扫描任务、远程索引和可观测状态，不保存媒体本体。
+- 已完成：公开瘦身列表/详情、`/api/v1/memories/recommend` 每次访问随机推荐、类型筛选、无限分段加载和 URL 驱动查看器。
 - 已完成：递归分页扫描、增量去重、扫描检查点、限流退避、元数据回填、远程缩略图代理、按需媒体流转发和 Range 播放。
 - 已完成：生产基础框架、Remote-Only 公开列表/详情接口、照片/视频详情展示、Docker Compose。
 - 已完成：液态玻璃令牌、通用组件、无限瀑布流、分段加载、类型筛选、每次进入随机推荐、后台表格与删除确认、文件状态输出、明暗主题与 404 空态。
@@ -106,6 +116,19 @@ CHECKLIST.md          下一阶段待办清单
 - 已完成：批量修改/发布/下架、整理报告导出和 Playwright 冒烟测试；本地上传接口已关闭。
 - 已完成：视频播放直链应用内短时复用、并发请求合并和单一播放状态提示。
 - 待完成：后台审核、发布流程增强和线上部署验收。
+
+## 公开接口
+
+| 路径 | 说明 |
+| --- | --- |
+| `GET /api/v1/healthz` | 进程健康检查 |
+| `GET /api/v1/readyz` | 数据库与 Redis 就绪检查 |
+| `GET /api/v1/memories` | 公开瘦身列表；支持 `kind`、`page`、`page_size` |
+| `GET /api/v1/memories/recommend` | 随机推荐；`limit` 最大 24，响应 `no-store` |
+| `GET /api/v1/memories/:id` | 公开瘦身详情 |
+| `GET /api/v1/memories/:id/thumbnail` | 派生图；`size=240|480|768|1280` |
+| `GET /api/v1/memories/:id/direct-url` | 播放或下载短链；响应 `no-store` |
+| `GET /api/v1/memories/:id/stream` | 直链失败时的流式回退 |
 
 ## 管理入口
 
@@ -123,7 +146,7 @@ BAIDU_OAUTH_REDIRECT_URI=http://127.0.0.1:8080/admin/baidu/callback
 3. 打开：
 
 ```text
-http://127.0.0.1:5173/admin
+http://127.0.0.1:8080/admin
 ```
 
 4. 输入管理令牌后点击「开始授权」；百度回跳后系统会自动接收授权码、换取凭证并保存到服务端配置，然后返回管理页触发扫描。
