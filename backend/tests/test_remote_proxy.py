@@ -35,15 +35,28 @@ class FakeResponse:
         return None
 
 
+class FakeRemoteStream:
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+
+    def iter_bytes(self):
+        yield self.content
+
+    def close(self) -> None:
+        return None
+
+
 class FakeProxyClient:
     def __init__(
         self,
         *,
         thumbnail_fails: bool = False,
         thumbnail_content: bytes | None = None,
+        remote_content: bytes | None = None,
     ) -> None:
         self.thumbnail_fails = thumbnail_fails
         self.thumbnail_content = thumbnail_content
+        self.remote_content = remote_content
         self.thumbnail_sizes: list[str] = []
 
     def open_stream(self, remote_id: str, *, range_header: str | None):
@@ -77,6 +90,25 @@ class FakeProxyClient:
             raise BaiduPanError("远程缩略图不可用")
         return self.thumbnail_content or b"thumb", "image/webp"
 
+    def open_stream(self, remote_id: str, *, range_header: str | None):
+        if range_header:
+            return (
+                206,
+                2,
+                "bytes 0-1/3",
+                "video/mp4",
+                FakeResponse([b"ab"]),
+            )
+        if self.remote_content is None:
+            raise BaiduPanError("远程原始媒体不可用")
+        return (
+            200,
+            len(self.remote_content),
+            None,
+            "image/png",
+            FakeRemoteStream(self.remote_content),
+        )
+
     def resolve_direct_url(self, remote_id: str) -> tuple[str, int]:
         assert remote_id == "remote-1"
         return "https://baidu.invalid/private-download?access_token=test-token", 300
@@ -94,6 +126,7 @@ def configure_app(
     *,
     thumbnail_fails=False,
     thumbnail_content: bytes | None = None,
+    remote_content: bytes | None = None,
 ):
     session_factory = create_database(tmp_path)
     settings = Settings(
@@ -107,6 +140,7 @@ def configure_app(
         lambda settings: FakeProxyClient(
             thumbnail_fails=thumbnail_fails,
             thumbnail_content=thumbnail_content,
+            remote_content=remote_content,
         ),
     )
 
@@ -121,13 +155,18 @@ def configure_app(
     return session_factory
 
 
-def add_remote_memory(session_factory: sessionmaker[Session], *, published=True):
+def add_remote_memory(
+    session_factory: sessionmaker[Session],
+    *,
+    published=True,
+    kind: MemoryKind = MemoryKind.VIDEO,
+):
     with session_factory.begin() as session:
         memory_id = uuid4()
         memory = Memory(
             id=memory_id,
             title="remote video",
-            kind=MemoryKind.VIDEO,
+            kind=kind,
             status=MemoryStatus.PUBLISHED if published else MemoryStatus.HIDDEN,
         )
         memory_file = MemoryFile(
@@ -158,7 +197,10 @@ def test_published_stream_supports_range_without_exposing_direct_link(
     tmp_path: Path, monkeypatch
 ) -> None:
     session_factory = configure_app(tmp_path, monkeypatch)
-    memory_id = add_remote_memory(session_factory)
+    memory_id = add_remote_memory(
+        session_factory,
+        kind=MemoryKind.PHOTO,
+    )
 
     try:
         with TestClient(app) as client:
@@ -242,6 +284,36 @@ def test_remote_thumbnail_persists_natural_dimensions(
             assert item["id"] == str(memory_id)
             assert item["width"] == 3
             assert item["height"] == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_remote_thumbnail_generates_aspect_preserving_cache(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = _png_bytes(8, 5)
+    session_factory = configure_app(
+        tmp_path,
+        monkeypatch,
+        remote_content=source,
+    )
+    memory_id = add_remote_memory(
+        session_factory,
+        kind=MemoryKind.PHOTO,
+    )
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(f"/api/v1/memories/{memory_id}/thumbnail")
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "image/webp"
+
+        with session_factory() as session:
+            memory = session.get(Memory, memory_id)
+            assert memory is not None
+            assert memory.thumbnail_path is not None
+            assert memory.thumbnail_path.startswith("thumbnails/")
+            assert (memory.width, memory.height) == (8, 5)
     finally:
         app.dependency_overrides.clear()
 

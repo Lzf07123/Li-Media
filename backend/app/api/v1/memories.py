@@ -27,6 +27,7 @@ from app.schemas.responses import (
 from app.services.memory_thumbnails import read_image_dimensions, resolve_media_path
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
+from app.services.remote_thumbnails import create_remote_thumbnail
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -315,10 +316,41 @@ def get_memory_thumbnail(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory thumbnail missing"
         )
 
+    client = BaiduPanClient(settings)
     try:
-            content, content_type = BaiduPanClient(settings).get_thumbnail(
-                memory_file.remote_id,
-                requested_size=size,
+        generated_path = create_remote_thumbnail(
+            client,
+            memory_file.remote_id,
+            Path(settings.media_root),
+            kind=memory.kind,
+            memory_id=memory.id,
+            duration_seconds=memory.duration_seconds,
+        )
+    except BaiduPanError:
+        generated_path = None
+
+    if generated_path:
+        memory.thumbnail_path = generated_path
+        memory_file.thumbnail_state = RemoteThumbnailState.READY
+        target_path = resolve_media_path(
+            Path(settings.media_root), memory.thumbnail_path
+        )
+        if target_path is not None and target_path.is_file():
+            if memory.width is None or memory.height is None:
+                dimensions = read_image_dimensions(target_path.read_bytes())
+                if dimensions is not None:
+                    memory.width, memory.height = dimensions
+            db.commit()
+            return FileResponse(
+                target_path,
+                media_type=mimetypes.guess_type(target_path.name)[0] or "image/webp",
+                headers=cache_headers,
+            )
+
+    try:
+        content, content_type = client.get_thumbnail(
+            memory_file.remote_id,
+            requested_size=size,
         )
     except BaiduPanError as exc:
         memory_file.thumbnail_state = RemoteThumbnailState.FAILED
