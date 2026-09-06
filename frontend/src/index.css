@@ -2262,20 +2262,21 @@ html {
   color: var(--limedia-fg);
 }
 
-/* 首页筛选：桌面成行，移动端单行横向滑动 */
+/* 首页筛选：内容居中，视觉高度紧凑但保留足够的点击区域 */
 .filter-toolbar {
   display: flex;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .segmented {
   display: inline-flex;
   gap: 4px;
-  padding: 4px;
+  padding: 2px;
   border: 1px solid var(--limedia-border);
-  border-radius: 12px;
+  border-radius: 11px;
   background: var(--limedia-surface);
 }
 
@@ -2283,8 +2284,9 @@ html {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
-  padding: 0 12px;
+  position: relative;
+  min-height: 32px;
+  padding: 0 10px;
   border: 0;
   border-radius: 9px;
   background: transparent;
@@ -2296,6 +2298,12 @@ html {
   transition:
     background-color var(--limedia-motion-fast) var(--limedia-ease-out),
     color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+
+.segmented button::after {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
 }
 
 .segmented button:hover,

@@ -270,6 +270,34 @@ test("kind and scroll restore after closing viewer", async ({ page }) => {
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
 });
 
+test("kind filter is centered and visually compact", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  await page.goto("/");
+
+  const toolbarBox = await page.locator(".filter-toolbar").boundingBox();
+  const controlBox = await page.locator(".segmented").boundingBox();
+  expect(toolbarBox).not.toBeNull();
+  expect(controlBox).not.toBeNull();
+  if (!toolbarBox || !controlBox) {
+    return;
+  }
+
+  const leftMargin = controlBox.x - toolbarBox.x;
+  const rightMargin = toolbarBox.x + toolbarBox.width - controlBox.x - controlBox.width;
+  expect(Math.abs(leftMargin - rightMargin)).toBeLessThanOrEqual(1);
+
+  const height = await page
+    .locator(".segmented")
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(height).toBeLessThanOrEqual(38);
+
+  const buttonHeight = await page
+    .locator(".segmented button")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(buttonHeight).toBeLessThanOrEqual(32);
+});
+
 test("infinite canvas appends segmented thumbnail pages while scrolling", async ({ page }) => {
   const requestedPages: string[] = [];
   let releasePageTwo: (() => void) | undefined;
