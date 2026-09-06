@@ -2,7 +2,8 @@ import { Image as ImageIcon, Play, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
-import { resolveThumbnailSrcSet, resolveThumbnailUrl, type MemorySummary } from "@/lib/api";
+import { resolveThumbnailUrl, type MemorySummary } from "@/lib/api";
+import { loadQueuedImage } from "@/lib/image-load-queue";
 
 type MemoryCardProps = {
   memory: MemorySummary;
@@ -14,9 +15,11 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [queuedThumbnailUrl, setQueuedThumbnailUrl] = useState<string | null>(null);
+  const [isIntersecting, setIsIntersecting] = useState(priority);
   const imageRef = useRef<HTMLImageElement>(null);
+  const cardRef = useRef<HTMLButtonElement>(null);
   const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "240");
-  const thumbnailSrcSet = resolveThumbnailSrcSet(memory.thumbnail_url);
   const knownSize = memory.width && memory.height
     ? { width: memory.width, height: memory.height }
     : null;
@@ -26,19 +29,63 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     : { minHeight: 160 };
 
   useEffect(() => {
+    if (priority || typeof IntersectionObserver === "undefined") {
+      setIsIntersecting(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsIntersecting(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "240px 0px", threshold: 0.01 },
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [priority]);
+
+  useEffect(() => {
+    if (!thumbnailUrl || !isIntersecting) {
+      setQueuedThumbnailUrl(null);
+      return;
+    }
+
+    const controller = new AbortController();
     setLoadState("loading");
     setThumbnailFailed(false);
     setNaturalSize(null);
-    const image = imageRef.current;
-    if (image?.complete) {
-      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-        setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
+    setQueuedThumbnailUrl(null);
+
+    loadQueuedImage(thumbnailUrl, {
+      priority: priority ? "high" : "normal",
+      signal: controller.signal,
+    })
+      .then((image) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setQueuedThumbnailUrl(thumbnailUrl);
+        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+          setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
+        }
         setLoadState("ready");
-      } else {
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || error.name === "AbortError") {
+          return;
+        }
         setLoadState("error");
-      }
-    }
-  }, [memory.thumbnail_url]);
+      });
+
+    return () => controller.abort();
+  }, [isIntersecting, priority, thumbnailUrl]);
 
   const showError = thumbnailFailed || loadState === "error";
 
@@ -46,6 +93,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     <button
       aria-label={brand.copy.detailPreviewAlt}
       className="post-card block w-full overflow-hidden"
+      ref={cardRef}
       onClick={() => onOpen(memory.id)}
       type="button"
     >
@@ -70,8 +118,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
               setLoadState("ready");
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
-            src={thumbnailUrl}
-            srcSet={thumbnailSrcSet ?? undefined}
+            src={queuedThumbnailUrl ?? undefined}
             ref={imageRef}
             width={memory.width ?? undefined}
           />

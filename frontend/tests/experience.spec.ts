@@ -351,6 +351,65 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
   await expect(page.locator(".pagination")).toHaveCount(0);
 });
 
+test("thumbnail image loads are queued with bounded concurrency", async ({ page }) => {
+  let activeThumbnailRequests = 0;
+  let maxActiveThumbnailRequests = 0;
+  const items = Array.from({ length: 24 }, (_, index) => {
+    const itemId = `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`;
+    return {
+      ...memory,
+      id: itemId,
+      thumbnail_url: `/api/v1/memories/${itemId}/thumbnail`,
+      file_url: `/api/v1/memories/${itemId}/file`,
+    };
+  });
+
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      await route.fulfill({
+        json: {
+          items,
+          total: items.length,
+          page: 1,
+          page_size: 24,
+          counts: { photo: items.length, video: 0 },
+        },
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+
+    if (!url.pathname.endsWith("/thumbnail")) {
+      await route.fulfill({ status: 404, json: { detail: "not found" } });
+      return;
+    }
+
+    activeThumbnailRequests += 1;
+    maxActiveThumbnailRequests = Math.max(
+      maxActiveThumbnailRequests,
+      activeThumbnailRequests,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    activeThumbnailRequests -= 1;
+    await route.fulfill({
+      body: Buffer.from(pngBase64, "base64"),
+      contentType: "image/webp",
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(24);
+  await expect.poll(() => activeThumbnailRequests).toBe(0);
+  expect(maxActiveThumbnailRequests).toBeGreaterThan(1);
+  expect(maxActiveThumbnailRequests).toBeLessThanOrEqual(4);
+});
+
 test("recommendations render first inside the canvas without a separate rail", async ({ page }) => {
   const requestedRecommendations: string[] = [];
   await mockMemoryRoutes(page);

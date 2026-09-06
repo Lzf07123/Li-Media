@@ -24,6 +24,7 @@ import {
   resolveThumbnailUrl,
   type MemorySummary,
 } from "@/lib/api";
+import { loadQueuedImage } from "@/lib/image-load-queue";
 import { brand } from "@/lib/brand";
 
 type MediaViewerProps = {
@@ -104,6 +105,8 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [photoLargeSrc, setPhotoLargeSrc] = useState<string | null>(null);
+  const [queuedSmallSrc, setQueuedSmallSrc] = useState<string | null>(null);
+  const [queuedPosterSrc, setQueuedPosterSrc] = useState<string | null>(null);
   const [smallImageReady, setSmallImageReady] = useState(false);
   const [smallImageFailed, setSmallImageFailed] = useState(false);
   const [photoState, setPhotoState] = useState<"loading" | "ready" | "error">("loading");
@@ -189,31 +192,79 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
       return;
     }
 
-    let active = true;
-    const image = new Image();
-    image.decoding = "async";
-    image.onload = () => {
-      if (!active) {
-        return;
-      }
-      setPhotoLargeSrc(largeSrc);
-      setPhotoState("ready");
-    };
-    image.onerror = () => {
-      if (!active) {
-        return;
-      }
-      setPhotoState("error");
-    };
-    image.src = largeSrc;
+    const controller = new AbortController();
+    loadQueuedImage(largeSrc, {
+      priority: "high",
+      signal: controller.signal,
+    })
+      .then(() => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setPhotoLargeSrc(largeSrc);
+        setPhotoState("ready");
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || error.name === "AbortError") {
+          return;
+        }
+        setPhotoState("error");
+      });
 
-    return () => {
-      active = false;
-      image.onload = null;
-      image.onerror = null;
-      image.src = "";
-    };
+    return () => controller.abort();
   }, [isVideo, largeSrc, photoRetryKey, resetTransform, smallSrc]);
+
+  useEffect(() => {
+    if (isVideo || !smallSrc) {
+      setQueuedSmallSrc(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    loadQueuedImage(smallSrc, {
+      priority: "normal",
+      signal: controller.signal,
+    })
+      .then(() => {
+        if (!controller.signal.aborted) {
+          setQueuedSmallSrc(smallSrc);
+        }
+      })
+      .catch(() => {
+        setQueuedSmallSrc(null);
+      });
+
+    return () => controller.abort();
+  }, [isVideo, smallSrc]);
+
+  useEffect(() => {
+    if (!isVideo) {
+      setQueuedPosterSrc(null);
+      return;
+    }
+
+    const posterSource = largeSrc ?? smallSrc;
+    if (!posterSource) {
+      setQueuedPosterSrc(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    loadQueuedImage(posterSource, {
+      priority: "high",
+      signal: controller.signal,
+    })
+      .then(() => {
+        if (!controller.signal.aborted) {
+          setQueuedPosterSrc(posterSource);
+        }
+      })
+      .catch(() => {
+        setQueuedPosterSrc(null);
+      });
+
+    return () => controller.abort();
+  }, [isVideo, largeSrc, smallSrc]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -510,17 +561,17 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
                 key={memory.id}
                 onReady={() => setPlaybackState("ready")}
                 onSourceError={() => handleVideoSourceError(playbackSource)}
-                poster={largeSrc ?? smallSrc ?? undefined}
+                poster={queuedPosterSrc ?? queuedSmallSrc ?? undefined}
                 src={playbackSource.src}
               />
             ) : (
               <>
-                {largeSrc || smallSrc ? (
+                {queuedPosterSrc || queuedSmallSrc ? (
                   <img
                     alt={brand.copy.detailPreviewAlt}
                     className="photo-viewer-image is-loaded"
                     draggable={false}
-                    src={largeSrc ?? smallSrc ?? undefined}
+                    src={queuedPosterSrc ?? queuedSmallSrc ?? undefined}
                   />
                 ) : (
                   <div aria-hidden="true" className="media-frame" />
@@ -589,7 +640,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
                 setPhotoState("error");
               }}
               onLoad={() => setSmallImageReady(true)}
-              src={smallSrc}
+              src={queuedSmallSrc ?? undefined}
             />
           ) : null}
           {photoLargeSrc ? (
