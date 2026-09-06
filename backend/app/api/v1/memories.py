@@ -24,7 +24,7 @@ from app.schemas.responses import (
     MemoryDirectLinkResponse,
     MemoryListResponse,
 )
-from app.services.memory_thumbnails import resolve_media_path
+from app.services.memory_thumbnails import read_image_dimensions, resolve_media_path
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 
@@ -336,6 +336,10 @@ def get_memory_thumbnail(
         ) from exc
 
     memory_file.thumbnail_state = RemoteThumbnailState.READY
+    if memory.width is None or memory.height is None:
+        dimensions = read_image_dimensions(content)
+        if dimensions is not None:
+            memory.width, memory.height = dimensions
     db.commit()
     return Response(
         content=content,

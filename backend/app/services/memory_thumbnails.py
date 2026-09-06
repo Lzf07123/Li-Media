@@ -1,3 +1,4 @@
+import io
 import subprocess
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -16,6 +17,17 @@ def resolve_media_path(media_root: Path, relative_path: str) -> Path | None:
         return None
 
     return target_path
+
+
+def read_image_dimensions(content: bytes) -> tuple[int, int] | None:
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            image = ImageOps.exif_transpose(image)
+            width, height = image.size
+    except Exception:
+        return None
+
+    return (width, height) if width > 0 and height > 0 else None
 
 
 def remove_media_file(media_root: Path, relative_path: str | None) -> None:
