@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from pathlib import Path
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -60,5 +61,73 @@ def test_published_memory_is_visible_and_hidden_memory_is_not(tmp_path: Path) ->
 
             hidden_detail = client.get(f"/api/v1/memories/{hidden.id}")
             assert hidden_detail.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_public_memories_support_kind_counts_and_sort(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
+    testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    def override_get_db() -> Generator[Session, None, None]:
+        session = testing_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with testing_session.begin() as session:
+            older = Memory(
+                title="older photo",
+                kind=MemoryKind.PHOTO,
+                status=MemoryStatus.PUBLISHED,
+                captured_at=datetime(2025, 1, 1, tzinfo=UTC),
+            )
+            newer = Memory(
+                title="newer photo",
+                kind=MemoryKind.PHOTO,
+                status=MemoryStatus.PUBLISHED,
+                captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+            video = Memory(
+                title="a video",
+                kind=MemoryKind.VIDEO,
+                status=MemoryStatus.PUBLISHED,
+            )
+            session.add_all([older, newer, video])
+            session.flush()
+            for memory in (older, newer, video):
+                session.add(
+                    MemoryFile(
+                        memory_id=memory.id,
+                        source="baidupan",
+                        remote_path=f"/remote/{memory.id}.jpg",
+                        mime_type="image/jpeg",
+                        status=MemoryFileStatus.MATCHED,
+                    )
+                )
+
+        with TestClient(app) as client:
+            list_response = client.get("/api/v1/memories")
+            payload = list_response.json()
+            assert [item["title"] for item in payload["items"]] == [
+                "newer photo",
+                "older photo",
+                "a video",
+            ]
+            assert payload["counts"] == {"photo": 2, "video": 1}
+
+            ascending = client.get("/api/v1/memories?kind=photo&sort=captured_asc")
+            assert [item["title"] for item in ascending.json()["items"]] == [
+                "older photo",
+                "newer photo",
+            ]
+
+            assert client.get(
+                "/api/v1/memories?sort=invalid",
+            ).status_code == 422
     finally:
         app.dependency_overrides.clear()

@@ -5,19 +5,30 @@ import Button from "@/components/ui/Button";
 import { brand } from "@/lib/brand";
 
 type VideoPlayerProps = {
+  onSourceError?: () => void;
   src: string;
   poster?: string | null;
   duration?: string | null;
   dimensions?: string | null;
 };
 
-export default function VideoPlayer({ src, poster, duration, dimensions }: VideoPlayerProps) {
+export default function VideoPlayer({
+  onSourceError,
+  src,
+  poster,
+  duration,
+  dimensions,
+}: VideoPlayerProps) {
   const [isReady, setIsReady] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [isSeeking, setIsSeeking] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     setIsReady(false);
+    setIsBuffering(false);
+    setIsSeeking(false);
     setHasError(false);
   }, [src]);
 
@@ -42,10 +53,16 @@ export default function VideoPlayer({ src, poster, duration, dimensions }: Video
 
   return (
     <div className="relative size-full">
-      {!isReady ? (
+      {!isReady || isBuffering || isSeeking ? (
         <div aria-live="polite" className="absolute inset-0 flex items-center justify-center">
           <span className="spinner text-primary" />
-          <span className="sr-only">{brand.copy.detailMediaLoading}</span>
+          <span className="video-state-label">
+            {isSeeking
+              ? brand.copy.detailSeeking
+              : isBuffering
+                ? brand.copy.detailBuffering
+                : brand.copy.detailMediaLoading}
+          </span>
         </div>
       ) : null}
 
@@ -72,8 +89,23 @@ export default function VideoPlayer({ src, poster, duration, dimensions }: Video
         }`}
         controls
         key={retryKey}
-        onError={() => setHasError(true)}
+        onError={() => {
+          setHasError(true);
+          onSourceError?.();
+        }}
+        onCanPlay={() => {
+          setIsReady(true);
+          setIsBuffering(false);
+          setIsSeeking(false);
+        }}
         onLoadedData={() => setIsReady(true)}
+        onPlaying={() => {
+          setIsBuffering(false);
+          setIsSeeking(false);
+        }}
+        onSeeked={() => setIsSeeking(false)}
+        onSeeking={() => setIsSeeking(true)}
+        onWaiting={() => setIsBuffering(true)}
         poster={poster ?? undefined}
         preload="metadata"
         src={src}

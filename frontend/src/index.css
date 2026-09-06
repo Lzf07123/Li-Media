@@ -263,6 +263,7 @@
   }
 
   body {
+    overflow-x: hidden;
     @apply bg-background font-sans text-foreground antialiased;
   }
 
@@ -1793,6 +1794,7 @@ html {
   padding-top: 0;
   padding-bottom: 96px;
 }
+
 .page-shell > *:first-child {
   margin-top: 32px;
 }
@@ -2226,10 +2228,260 @@ html {
   font-weight: 600;
 }
 
+/* 媒体体验：稳定占位、渐进显影与轻量卡片反馈 */
+.post-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
+.media-frame {
+  position: relative;
+  overflow: hidden;
+  background: var(--limedia-surface-2);
+}
+
+.media-reveal {
+  opacity: 0;
+  transition: opacity var(--limedia-motion-base) var(--limedia-ease-out);
+}
+
+.media-reveal.is-loaded {
+  opacity: 1;
+}
+
+.video-state-label {
+  margin-left: 8px;
+  font-size: 0.8rem;
+  color: var(--limedia-fg);
+}
+
+/* 首页筛选：桌面成行，移动端单行横向滑动 */
+.filter-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--limedia-border);
+  border-radius: 12px;
+  background: var(--limedia-surface);
+}
+
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--limedia-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+
+.segmented button:hover,
+.segmented button:focus-visible {
+  background: var(--limedia-surface-2);
+  color: var(--limedia-fg);
+}
+
+.segmented button[data-active="true"] {
+  background: var(--limedia-primary-soft);
+  color: var(--limedia-primary);
+  font-weight: 600;
+}
+
+.segmented-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--limedia-surface-2);
+  color: var(--limedia-muted);
+  font-size: 0.75rem;
+}
+
+.search-cluster {
+  display: flex;
+  flex: 1 1 240px;
+  gap: 8px;
+  align-items: center;
+}
+
+.sort-cluster {
+  flex: 0 0 auto;
+}
+
+.sort-cluster select {
+  min-width: 176px;
+}
+
+.result-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--limedia-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* 详情状态：默认轻量摘要，展开后保留完整技术状态 */
+.status-card {
+  border: 1px solid var(--limedia-border);
+  border-radius: 14px;
+  background: var(--limedia-surface);
+  padding: 10px;
+  box-shadow: var(--limedia-shadow-sm);
+}
+
+.status-summary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--limedia-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-summary-label {
+  display: inline-flex;
+  align-items: center;
+  color: var(--limedia-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* 图片查看器：全屏沉浸、双指缩放、键盘平移 */
+.photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--limedia-bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(var(--limedia-glass-blur));
+  backdrop-filter: blur(var(--limedia-glass-blur));
+  outline: none;
+}
+
+.photo-viewer-stage {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  touch-action: none;
+  transform-origin: center;
+}
+
+.photo-viewer-image {
+  max-width: min(96vw, 1600px);
+  max-height: calc(100dvh - 88px);
+  object-fit: contain;
+  opacity: 0;
+  transition:
+    opacity var(--limedia-motion-base) var(--limedia-ease-out),
+    transform 180ms var(--limedia-ease-out);
+  will-change: transform;
+}
+
+.photo-viewer-image.is-loaded {
+  opacity: 1;
+}
+
+.photo-viewer-loading,
+.photo-viewer-error {
+  position: absolute;
+  margin: 0;
+  color: var(--limedia-fg);
+}
+
+.photo-viewer-error {
+  color: var(--limedia-destructive);
+}
+
+.photo-viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+}
+
+.photo-viewer-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--limedia-border);
+  border-radius: 12px;
+  background: var(--limedia-surface);
+  color: var(--limedia-fg);
+  cursor: pointer;
+}
+
+.photo-viewer-button:hover,
+.photo-viewer-button:focus-visible {
+  background: var(--limedia-surface-2);
+}
+
+.detail-media-card {
+  border-radius: 20px;
+}
+
 @media (max-width: 1024px) {
   .masonry {
     column-width: 240px;
     column-gap: 20px;
+  }
+}
+@media (max-width: 768px) {
+  .filter-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+
+  .filter-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sort-cluster select {
+    min-height: 44px;
+  }
+
+  .detail-shell > .breadcrumb {
+    display: none;
+  }
+
+  .detail-media-card {
+    margin-inline: max(-2rem, -100vw);
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .detail-media-shell {
+    min-height: min(72dvh, 640px);
   }
 }
 @media (max-width: 768px) {

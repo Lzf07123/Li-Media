@@ -7,11 +7,17 @@ from app.models.memory import MemoryStatus, RemoteScanStatus
 from app.schemas.memory import MemoryRead
 
 
+class MemoryCounts(BaseModel):
+    photo: int
+    video: int
+
+
 class MemoryListResponse(BaseModel):
     items: list[MemoryRead]
     total: int
     page: int
     page_size: int
+    counts: MemoryCounts
 
 
 class MemoryDirectLinkResponse(BaseModel):

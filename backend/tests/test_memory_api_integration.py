@@ -146,6 +146,7 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
             assert public_list.status_code == 200
             assert public_list.json()["total"] == 1
             assert public_list.json()["items"][0]["title"] == "网盘照片"
+            assert public_list.json()["counts"] == {"photo": 1, "video": 0}
 
             assert client.get(f"/api/v1/memories/{local_id}").status_code == 404
             assert client.get(f"/api/v1/memories/{local_id}/file").status_code == 404
