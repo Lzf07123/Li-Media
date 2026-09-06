@@ -46,12 +46,10 @@ def recommend_memories(
 ) -> list[MemorySummaryRead]:
     statement = (
         select(Memory)
-        .join(Memory.files)
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
-            MemoryFile.source == "baidupan",
+            Memory.files.any(MemoryFile.source == "baidupan"),
         )
-        .distinct()
         .order_by(func.random())
     )
 
