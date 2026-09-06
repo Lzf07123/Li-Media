@@ -141,7 +141,8 @@ export function resolveThumbnailUrl(
   }
 
   const url = resolveMediaUrl(path);
-  return `${url}${url.includes("?") ? "&" : "?"}size=${size}`;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}ratio=1&size=${size}`;
 }
 
 class ApiError extends Error {
