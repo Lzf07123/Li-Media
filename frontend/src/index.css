@@ -2399,6 +2399,68 @@ html {
   opacity: 1;
 }
 
+.photo-viewer-placeholder {
+  position: absolute;
+  max-width: min(96vw, 1600px);
+  max-height: calc(100dvh - 88px);
+  object-fit: contain;
+  opacity: 0.72;
+  transition: opacity var(--limedia-motion-base) var(--limedia-ease-out);
+}
+
+.photo-viewer-placeholder.is-loaded {
+  opacity: 1;
+}
+
+.viewer-status {
+  position: absolute;
+  top: 20px;
+  left: 16px;
+  z-index: 2;
+}
+
+.viewer-fallback {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 12px;
+  border: 1px solid var(--limedia-border);
+  border-radius: 12px;
+  background: var(--limedia-surface);
+  color: var(--limedia-fg);
+  font-size: 0.875rem;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.viewer-fallback button {
+  min-height: 44px;
+  padding-inline: 14px;
+  border: 1px solid var(--limedia-btn-primary-border);
+  border-radius: 8px;
+  background: var(--limedia-btn-primary-bg);
+  color: var(--limedia-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.video-viewer-play {
+  position: absolute;
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border: 1px solid var(--limedia-btn-primary-border);
+  border-radius: 999px;
+  background: var(--limedia-surface);
+  color: var(--limedia-fg);
+  cursor: pointer;
+}
+
 .photo-viewer-loading,
 .photo-viewer-error {
   position: absolute;
@@ -2434,6 +2496,13 @@ html {
 .photo-viewer-button:hover,
 .photo-viewer-button:focus-visible {
   background: var(--limedia-surface-2);
+}
+
+.post-card {
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .detail-media-card {

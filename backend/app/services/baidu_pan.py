@@ -75,6 +75,9 @@ class DownloadUrlCache:
     def invalidate(self, remote_id: str) -> None:
         self._urls.pop(remote_id, None)
 
+    def clear(self) -> None:
+        self._urls.clear()
+
 
 download_url_cache = DownloadUrlCache(
     get_settings().baidu_download_url_ttl_seconds

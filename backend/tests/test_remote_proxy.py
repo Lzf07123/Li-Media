@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from PIL import Image
 
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.db.session import Base, get_db
 from app.main import app
 from app.models.memory import (
@@ -222,18 +222,26 @@ def test_published_stream_supports_range_without_exposing_direct_link(
 def test_remote_thumbnail_is_proxied_for_published_memory(
     tmp_path: Path, monkeypatch
 ) -> None:
-    session_factory = configure_app(tmp_path, monkeypatch)
-    memory_id = add_remote_memory(session_factory)
+    session_factory = configure_app(
+        tmp_path,
+        monkeypatch,
+        remote_content=_png_bytes(8, 5),
+    )
+    memory_id = add_remote_memory(
+        session_factory,
+        kind=MemoryKind.PHOTO,
+    )
 
     try:
         with TestClient(app) as client:
             response = client.get(f"/api/v1/memories/{memory_id}/thumbnail")
 
         assert response.status_code == 200
-        assert response.content == b"thumb"
         assert response.headers["content-type"] == "image/webp"
-        assert response.headers["cache-control"].startswith("public, max-age=86400")
-        assert response.headers["etag"] == f'"{memory_id}-medium"'
+        assert response.headers["cache-control"].startswith("public, max-age=31536000")
+        assert response.headers["etag"] == (
+            f'"{memory_id}-{get_settings().media_derivative_version}-480"'
+        )
         assert "private-thumbnail" not in response.text
     finally:
         app.dependency_overrides.clear()
@@ -255,7 +263,7 @@ def test_remote_thumbnail_failure_is_logged_and_hidden_is_not_served(
 
             response = client.get(f"/api/v1/memories/{published_id}/thumbnail")
             assert response.status_code == 502
-            assert response.json()["detail"] == "远程缩略图不可用"
+            assert response.json()["detail"] == "远程媒体派生暂时无法加载"
 
         with session_factory() as session:
             memory_file = session.scalar(select(MemoryFile))
@@ -270,9 +278,12 @@ def test_remote_thumbnail_persists_natural_dimensions(
     session_factory = configure_app(
         tmp_path,
         monkeypatch,
-        thumbnail_content=_png_bytes(3, 2),
+        remote_content=_png_bytes(6, 4),
     )
-    memory_id = add_remote_memory(session_factory)
+    memory_id = add_remote_memory(
+        session_factory,
+        kind=MemoryKind.PHOTO,
+    )
 
     try:
         with TestClient(app) as client:
@@ -282,8 +293,8 @@ def test_remote_thumbnail_persists_natural_dimensions(
             listed = client.get("/api/v1/memories")
             item = listed.json()["items"][0]
             assert item["id"] == str(memory_id)
-            assert item["width"] == 3
-            assert item["height"] == 2
+            assert item["width"] == 6
+            assert item["height"] == 4
     finally:
         app.dependency_overrides.clear()
 
@@ -313,6 +324,7 @@ def test_remote_thumbnail_generates_aspect_preserving_cache(
             assert memory is not None
             assert memory.thumbnail_path is not None
             assert memory.thumbnail_path.startswith("thumbnails/")
+            assert memory.thumbnail_path.endswith("/480.webp")
             assert (memory.width, memory.height) == (8, 5)
     finally:
         app.dependency_overrides.clear()

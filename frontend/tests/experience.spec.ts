@@ -97,12 +97,13 @@ async function mockMemoryRoutes(page: Page, listResponse = memoryList) {
 
 test("photo viewer supports keyboard zoom and restores scroll lock", async ({ page }) => {
   await mockMemoryRoutes(page);
-  await page.goto(`/memories/${memoryId}`);
-  await page.getByRole("button", { name: "打开图片查看器" }).click();
+  await page.goto("/");
+  await page.locator(".masonry .post-card").click();
 
   const viewer = page.locator(".photo-viewer");
   await expect(viewer).toBeVisible();
-  await expect(viewer.locator(".photo-viewer-image")).toHaveAttribute("src", /\/api\/v1\/memories\/.*\/file/);
+  await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
+  await expect(viewer.locator(".photo-viewer-image")).toHaveAttribute("src", /size=large/);
   await page.keyboard.press("+");
   await expect(viewer.locator(".photo-viewer-image")).toHaveAttribute(
     "style",
@@ -113,47 +114,68 @@ test("photo viewer supports keyboard zoom and restores scroll lock", async ({ pa
   await expect(viewer).toHaveCount(0);
 });
 
-test("failed direct link refreshes and recovers through server route", async ({ page }) => {
+test("video direct link refreshes after playback failure", async ({ page }) => {
   let directRequests = 0;
+  const recoveredDirectUrl = `${directUrl}&v=2`;
+  const recoveredRequest = page.waitForRequest(recoveredDirectUrl);
 
   await page.route("**/private-download**", async (route) => {
+    if (route.request().url() === recoveredDirectUrl) {
+      await route.fulfill({ body: Buffer.from("video"), contentType: "video/mp4" });
+      return;
+    }
     await route.abort("failed");
   });
-  await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
 
+    if (url.pathname === "/api/v1/memories") {
+      await route.fulfill({
+        json: {
+          ...memoryList,
+          items: [{
+            ...memory,
+            kind: "video",
+            primary_file: { ...memory.primary_file, mime_type: "video/mp4" },
+          }],
+          counts: { photo: 0, video: 1 },
+        },
+      });
+      return;
+    }
+
+    if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+
     if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
       directRequests += 1;
-      if (directRequests === 1) {
-        await route.fulfill({
-          json: {
-            direct_url: directUrl,
-            expires_at: "2027-01-01T09:35:00Z",
-            mime_type: "image/png",
-            size_bytes: 1024,
-          },
-        });
-      } else {
-        await route.fulfill({ status: 403, json: { detail: "forbidden" } });
-      }
+      await route.fulfill({
+        json: {
+          direct_url: directRequests === 1 ? directUrl : recoveredDirectUrl,
+          expires_at: "2027-01-01T09:35:00Z",
+          mime_type: "video/mp4",
+          size_bytes: 5,
+        },
+      });
       return;
     }
 
     await route.fallback();
   });
 
-  await page.goto(`/memories/${memoryId}`);
-  await page.getByRole("button", { name: "打开图片查看器" }).click();
+  await page.goto("/");
+  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "播放视频" }).click();
   await expect.poll(() => directRequests).toBeGreaterThan(1);
-  await expect(page.locator(".photo-viewer-image")).toHaveAttribute(
-    "src",
-    new RegExp(`/api/v1/memories/${memoryId}/file`),
-  );
-  await expect(page.locator(".photo-viewer-error")).toHaveCount(0);
+  await recoveredRequest;
 });
 
-test("kind, keyword, sort and scroll restore after opening detail", async ({ page }) => {
+test("kind, keyword, sort and scroll restore after closing viewer", async ({ page }) => {
   const items = Array.from({ length: 24 }, (_, index) => ({
     ...memory,
     id: `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`,
@@ -166,7 +188,7 @@ test("kind, keyword, sort and scroll restore after opening detail", async ({ pag
     total: items.length,
     counts: { photo: items.length, video: 0 },
   });
-  await page.setViewportSize({ width: 900, height: 700 });
+  await page.setViewportSize({ width: 360, height: 700 });
   await page.goto("/");
 
   await page.getByRole("button", { name: /^照片/ }).click();
@@ -176,11 +198,12 @@ test("kind, keyword, sort and scroll restore after opening detail", async ({ pag
   await page.locator("select").selectOption("updated_desc");
   await expect(page).toHaveURL(/sort=updated_desc/);
 
-  await page.mouse.wheel(0, 240);
+  await page.evaluate(() => window.scrollTo(0, 240));
+  await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
   await page.locator(".masonry .post-card").first().click();
-  await expect(page).toHaveURL(new RegExp(`/memories/${memoryId}`));
+  await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
 
-  await page.goBack();
+  await page.locator(".photo-viewer").getByRole("button", { name: "取消" }).click();
   await expect(page).toHaveURL(/kind=photo&keyword=lake&sort=updated_desc/);
   await expect(page.locator("#library-search")).toHaveValue("lake");
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
@@ -296,4 +319,86 @@ test("24 media page stays within load, transfer and layout-shift budgets", async
   expect(metrics.firstPaint).toBeLessThan(3000);
   expect(metrics.transferBytes).toBeLessThan(2 * 1024 * 1024);
   expect(metrics.layoutShift).toBeLessThan(0.1);
+});
+
+test("photo viewer requests 480px first and 1280px only after opening", async ({ page }) => {
+  const thumbnailSizes: string[] = [];
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/**/thumbnail**", async (route) => {
+    thumbnailSizes.push(new URL(route.request().url()).searchParams.get("size") ?? "");
+    await route.fallback();
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await expect.poll(() => thumbnailSizes).toContain("small");
+  expect(thumbnailSizes).not.toContain("large");
+
+  await page.locator(".masonry .post-card").click();
+  await expect(page.locator(".photo-viewer")).toBeVisible();
+  await expect.poll(() => thumbnailSizes).toContain("large");
+});
+
+test("video does not request playback until play and can use server fallback", async ({ page }) => {
+  let serverMediaRequests = 0;
+  let directRequests = 0;
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      await route.fulfill({
+        json: {
+          ...memoryList,
+          items: [{
+            ...memory,
+            kind: "video",
+            primary_file: { ...memory.primary_file, mime_type: "video/mp4" },
+          }],
+          counts: { photo: 0, video: 1 },
+        },
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
+      directRequests += 1;
+      await route.fulfill({ status: 403, json: { detail: "forbidden" } });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/file`) {
+      serverMediaRequests += 1;
+      await route.fulfill({ body: Buffer.from("video"), contentType: "video/mp4" });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/");
+  await page.locator(".masonry .post-card").click();
+  await expect(page.locator(".photo-viewer")).toBeVisible();
+  expect(directRequests).toBe(0);
+  await page.getByRole("button", { name: "播放视频" }).click();
+  await expect.poll(() => directRequests).toBe(1);
+  await page.getByRole("button", { name: "回退服务器播放" }).click();
+  await expect.poll(() => serverMediaRequests).toBe(1);
+});
+
+test("download button requests a short-lived direct link", async ({ page }) => {
+  const purposes: string[] = [];
+  await mockMemoryRoutes(page);
+  await page.route(`**/api/v1/memories/${memoryId}/direct-url**`, async (route) => {
+    purposes.push(new URL(route.request().url()).searchParams.get("purpose") ?? "");
+    await route.fallback();
+  });
+
+  await page.goto("/");
+  await page.locator(".masonry .post-card").click();
+  await page.locator(".photo-viewer").getByRole("button", { name: "下载" }).click();
+  await expect.poll(() => purposes).toContain("download");
+  await expect(page.locator(".viewer-status")).toContainText("可用");
 });

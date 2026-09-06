@@ -15,6 +15,7 @@ import {
   getAdminMemories,
   getRemoteConfig,
   getLatestRemoteScan,
+  requestLocalMediaCleanup,
   startBaiduAuthorization,
   loginAdmin,
   logoutAdmin,
@@ -26,6 +27,8 @@ import {
   type Memory,
   type RemoteConfig,
   type RemoteScanTask,
+  type CleanupResult,
+  type CleanupStats,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import Button from "@/components/ui/Button";
@@ -42,6 +45,9 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRetryingRemote, setIsRetryingRemote] = useState<string | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [pendingCleanup, setPendingCleanup] = useState<CleanupStats | null>(null);
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [scanTask, setScanTask] = useState<RemoteScanTask | null>(null);
   const [lastDeleted, setLastDeleted] = useState(0);
   const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null);
@@ -253,6 +259,55 @@ export default function AdminPage() {
     }
   };
 
+  const prepareCleanup = async () => {
+    setIsCleaning(true);
+    try {
+      const result = await requestLocalMediaCleanup(false);
+      setCleanupResult(null);
+      setPendingCleanup(result.stats);
+      setError(null);
+    } catch {
+      setError(brand.copy.adminCleanupFailed);
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
+  const confirmCleanup = async () => {
+    setIsCleaning(true);
+    try {
+      const result = await requestLocalMediaCleanup(true);
+      setCleanupResult(result);
+      setPendingCleanup(null);
+      setSelectedIds([]);
+      setError(result.file_cleanup_error ? brand.copy.adminCleanupFileWarning : null);
+      pushToast(
+        result.file_cleanup_error
+          ? brand.copy.adminCleanupFileWarning
+          : brand.copy.adminCleanupSuccess,
+        result.file_cleanup_error ? "warning" : "success",
+      );
+      await loadMemories();
+    } catch {
+      setError(brand.copy.adminCleanupFailed);
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) {
+      return `${bytes} ${brand.copy.bytes}`;
+    }
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    }
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  };
+
   const startAuthorization = async () => {
     setIsAuthorizing(true);
     try {
@@ -419,6 +474,43 @@ export default function AdminPage() {
             </p>
           ) : null}
         </div>
+      ) : null}
+
+      <div className="card mt-4 flex flex-wrap items-center gap-3 p-4">
+        <div className="mr-auto">
+          <h3 className="text-sm font-semibold">{brand.copy.adminCleanupTitle}</h3>
+          <p className="mt-1 text-xs text-muted">{brand.copy.adminCleanupDescription}</p>
+        </div>
+        <Button
+          disabled={isCleaning}
+          onClick={() => void prepareCleanup()}
+          variant="danger"
+        >
+          {isCleaning && pendingCleanup === null
+            ? brand.copy.adminCleanupRunning
+            : brand.copy.adminCleanup}
+        </Button>
+      </div>
+
+      {cleanupResult ? (
+        <dl className="card mt-4 grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupMemories}</dt>
+            <dd className="text-sm">{cleanupResult.stats.memories}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupRemoteIndexes}</dt>
+            <dd className="text-sm">{cleanupResult.stats.remote_file_indexes}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupThumbnails}</dt>
+            <dd className="text-sm">{cleanupResult.stats.thumbnail_files}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupBytes}</dt>
+            <dd className="text-sm">{formatBytes(cleanupResult.stats.estimated_bytes_to_free)}</dd>
+          </div>
+        </dl>
       ) : null}
 
       {selectedIds.length > 0 ? (
@@ -630,6 +722,41 @@ export default function AdminPage() {
           </Button>
           <Button disabled={isSyncing} onClick={() => void submitBatchEdit()}>
             {brand.copy.adminBatchSave}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        onClose={() => setPendingCleanup(null)}
+        open={pendingCleanup !== null}
+        title={brand.copy.adminCleanupConfirmTitle}
+        tone="danger"
+      >
+        <p className="mt-3 text-sm text-muted">{brand.copy.adminCleanupConfirmText}</p>
+        <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-surface-2 p-3">
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupMemories}</dt>
+            <dd className="text-sm">{pendingCleanup?.memories ?? 0}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupRemoteIndexes}</dt>
+            <dd className="text-sm">{pendingCleanup?.remote_file_indexes ?? 0}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupScanTasks}</dt>
+            <dd className="text-sm">{pendingCleanup?.scan_tasks ?? 0}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupBytes}</dt>
+            <dd className="text-sm">{formatBytes(pendingCleanup?.estimated_bytes_to_free ?? 0)}</dd>
+          </div>
+        </dl>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button onClick={() => setPendingCleanup(null)} variant="secondary">
+            {brand.copy.adminCancel}
+          </Button>
+          <Button disabled={isCleaning} onClick={() => void confirmCleanup()} variant="danger">
+            {isCleaning ? brand.copy.adminCleanupRunning : brand.copy.adminCleanupConfirm}
           </Button>
         </div>
       </Modal>

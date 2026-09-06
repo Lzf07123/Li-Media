@@ -95,6 +95,10 @@ async function mockPublicMemoryRoutes(page: Page) {
       });
       return;
     }
+    if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
+      await route.fulfill({ status: 403, json: { detail: "forbidden" } });
+      return;
+    }
 
     await route.fulfill({ status: 404, json: { detail: "not found" } });
   });
@@ -116,18 +120,18 @@ test("home shows memory and toggles between light and dark", async ({ page }) =>
   ).toBeVisible();
 });
 
-test("home waterfall card opens detail", async ({ page }) => {
+test("home waterfall card opens viewer", async ({ page }) => {
   await mockPublicMemoryRoutes(page);
   await page.goto("/");
 
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
   await page.locator(".masonry .post-card").click();
-  await page.getByRole("button", { name: "状态详情" }).click();
-  await expect(page.getByRole("list", { name: "状态" })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
+  await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
 });
 
-test("detail shows status strip without resource data", async ({ page }) => {
+test("old detail address redirects to viewer", async ({ page }) => {
   await mockPublicMemoryRoutes(page);
   await page.goto(`/memories/${memoryId}`);
 
@@ -135,14 +139,8 @@ test("detail shows status strip without resource data", async ({ page }) => {
     "content",
     "no-referrer",
   );
-  await expect(page.getByText("湖边清晨")).toHaveCount(0);
-  await expect(page.getByText("2400 × 1200")).toHaveCount(0);
-  await page.getByRole("button", { name: "状态详情" }).click();
-  await expect(page.getByRole("list", { name: "状态" })).toBeVisible();
-  await expect(page.getByText("文件状态")).toBeVisible();
-  await expect(page.getByText("远程状态")).toBeVisible();
-  await expect(page.getByText("预览状态")).toBeVisible();
-  await expect(page.getByText("播放状态")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
+  await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
 });
 
@@ -202,14 +200,14 @@ test("remote photo without preview uses placeholder", async ({ page }) => {
   await expect(page.locator("img[alt=\"回忆预览\"]")).toHaveCount(0);
 });
 
-test("detail load failure shows a recovery state", async ({ page }) => {
+test("missing old detail link shows viewer recovery state", async ({ page }) => {
   await page.route("**/api/v1/memories/**", async (route) => {
     await route.fulfill({ status: 500, json: { detail: "服务暂时不可用" } });
   });
   await page.goto(`/memories/${memoryId}`);
 
-  await expect(page.getByText("页面不存在")).toBeVisible();
-  await expect(page.getByRole("link", { name: "返回首页" })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
+  await expect(page.getByText("请检查地址，或回到回忆库首页。")).toBeVisible();
 });
 
 test("remote video playback failure can be retried", async ({ page }) => {
@@ -224,6 +222,10 @@ test("remote video playback failure can be retried", async ({ page }) => {
         body: Buffer.from(pngBase64, "base64"),
         contentType: "image/webp",
       });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
+      await route.fulfill({ status: 403, json: { detail: "forbidden" } });
       return;
     }
     if (url.pathname === `/api/v1/memories/${memoryId}`) {
@@ -244,8 +246,11 @@ test("remote video playback failure can be retried", async ({ page }) => {
   });
 
   await page.goto(`/memories/${memoryId}`);
-  await expect(page.getByText("视频播放失败")).toBeVisible();
-  await expect(page.getByRole("button", { name: "重试" })).toBeVisible();
+  await expect(page.locator(".photo-viewer")).toBeVisible();
+  await page.getByRole("button", { name: "播放视频" }).click();
+  await page.getByRole("button", { name: "回退服务器播放" }).click();
+  await expect(page.getByText("视频播放失败").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "重试" }).first()).toBeVisible();
 });
 
 test("admin can retry a remote entry", async ({ page }) => {
@@ -280,4 +285,72 @@ test("admin can retry a remote entry", async ({ page }) => {
   await page.goto("/admin");
   await page.getByRole("button", { name: "重试远程" }).click();
   await expect.poll(() => retried).toBe(true);
+});
+
+test("admin cleanup confirms before clearing local index", async ({ page }) => {
+  let memories = [memory];
+  await page.route("**/api/v1/admin/memories", async (route) => {
+    await route.fulfill({ json: { items: memories, total: memories.length } });
+  });
+  await page.route("**/api/v1/admin/remote-config", async (route) => {
+    await route.fulfill({
+      json: {
+        configured: true,
+        oauth_configured: true,
+        authorized: true,
+        scan_dir: "/apps/Li&Media",
+        redirect_uri: "/admin/baidu/callback",
+        docs_url: "https://pan.baidu.com/union/doc/",
+        token_expires_at: null,
+      },
+    });
+  });
+  await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
+    await route.fulfill({ json: scanTask });
+  });
+  await page.route("**/api/v1/admin/cleanup", async (route) => {
+    const payload = route.request().postDataJSON() as { confirm: boolean };
+    if (!payload.confirm) {
+      await route.fulfill({
+        json: {
+          dry_run: true,
+          stats: {
+            memories: 1,
+            remote_file_indexes: 1,
+            scan_tasks: 1,
+            thumbnail_files: 2,
+            estimated_bytes_to_free: 18,
+          },
+          duration_seconds: 0,
+          completed_at: null,
+          file_cleanup_error: null,
+        },
+      });
+      return;
+    }
+
+    memories = [];
+    await route.fulfill({
+      json: {
+        dry_run: false,
+        stats: {
+          memories: 1,
+          remote_file_indexes: 1,
+          scan_tasks: 1,
+          thumbnail_files: 2,
+          estimated_bytes_to_free: 18,
+        },
+        duration_seconds: 0.1,
+        completed_at: "2026-09-06T00:00:00Z",
+        file_cleanup_error: null,
+      },
+    });
+  });
+
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "一键清理" }).click();
+  await expect(page.getByText("确认清理全部本地索引？")).toBeVisible();
+  await page.getByRole("button", { name: "确认清理" }).click();
+  await expect(page.getByText("本地清理完成，网盘资源未变化。")).toBeVisible();
+  await expect(page.getByText("网盘中还没有照片或视频；请先完成接入步骤，再点击扫描。")).toBeVisible();
 });

@@ -1,4 +1,5 @@
 import secrets
+import shutil
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -14,7 +15,7 @@ from fastapi import (
     Response,
     status,
 )
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
@@ -36,6 +37,9 @@ from app.schemas.responses import (
     AdminBaiduAuthorizeResponse,
     AdminBaiduCallbackRequest,
     AdminBaiduCallbackResponse,
+    AdminCleanupRequest,
+    AdminCleanupResponse,
+    AdminCleanupStats,
     AdminMemoryListResponse,
     AdminLoginRequest,
     AdminMemoryBatchUpdateRequest,
@@ -60,6 +64,7 @@ from app.services.admin_security import (
     sleep_for_login_delay,
 )
 from app.services.baidu_pan import BaiduPanClient
+from app.services.baidu_pan import download_url_cache
 from app.services.baidu_oauth import (
     BaiduOAuthError,
     build_baidu_authorize_url,
@@ -107,6 +112,105 @@ def _ensure_remote_memory(memory: Memory) -> Memory:
         )
 
     return memory
+
+
+def _collect_cleanup_stats(db: Session, media_root: Path) -> AdminCleanupStats:
+    memory_count = db.scalar(select(func.count(Memory.id))) or 0
+    memory_file_count = db.scalar(select(func.count(MemoryFile.id))) or 0
+    scan_task_count = db.scalar(select(func.count(RemoteScanTask.id))) or 0
+
+    derived_files = 0
+    derived_bytes = 0
+    for directory_name in ("thumbnails", "tmp"):
+        directory = media_root / directory_name
+        if not directory.exists():
+            continue
+        for path in directory.rglob("*"):
+            if path.is_file():
+                derived_files += 1
+                try:
+                    derived_bytes += path.stat().st_size
+                except OSError:
+                    continue
+
+    return AdminCleanupStats(
+        memories=memory_count,
+        remote_file_indexes=memory_file_count,
+        scan_tasks=scan_task_count,
+        thumbnail_files=derived_files,
+        estimated_bytes_to_free=derived_bytes,
+    )
+
+
+def _remove_derived_media(media_root: Path) -> tuple[int, str | None]:
+    removed_files = 0
+    for directory_name in ("thumbnails", "tmp"):
+        directory = media_root / directory_name
+        if not directory.exists():
+            continue
+
+        try:
+            for path in directory.rglob("*"):
+                if path.is_file():
+                    removed_files += 1
+            shutil.rmtree(directory)
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return removed_files, str(exc)
+
+    return removed_files, None
+
+
+@router.post("/cleanup", response_model=AdminCleanupResponse)
+def cleanup_local_media(
+    payload: AdminCleanupRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminCleanupResponse:
+    """Dry-run first; destructive deletion only happens with explicit confirmation."""
+
+    settings = get_settings()
+    media_root = Path(settings.media_root).resolve()
+    stats = _collect_cleanup_stats(db, media_root)
+
+    if not payload.confirm:
+        return AdminCleanupResponse(dry_run=True, stats=stats)
+
+    started_at = time.perf_counter()
+    try:
+        db.execute(delete(MemoryFile))
+        db.execute(delete(Memory))
+        db.execute(delete(RemoteScanTask))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="本地媒体索引清理失败，数据库已回滚",
+        ) from exc
+
+    download_url_cache.clear()
+    removed_files, file_cleanup_error = _remove_derived_media(media_root)
+    duration_seconds = time.perf_counter() - started_at
+    record_admin_operation(
+        db,
+        action="cleanup_local_media",
+        client_ip=_client_ip(request),
+        detail=(
+            f"memories={stats.memories};remote_file_indexes={stats.remote_file_indexes};"
+            f"scan_tasks={stats.scan_tasks};derived_files={removed_files};"
+            "remote_resource=untouched"
+        ),
+    )
+
+    return AdminCleanupResponse(
+        dry_run=False,
+        stats=stats,
+        duration_seconds=round(duration_seconds, 3),
+        completed_at=datetime.now(timezone.utc),
+        file_cleanup_error=file_cleanup_error,
+    )
 
 
 @router.get("/remote-config", response_model=AdminRemoteConfigResponse)

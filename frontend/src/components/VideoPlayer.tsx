@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clock, Ratio, Video } from "lucide-react";
 
 import Button from "@/components/ui/Button";
@@ -6,6 +6,7 @@ import { brand } from "@/lib/brand";
 
 type VideoPlayerProps = {
   onSourceError?: () => void;
+  onReady?: () => void;
   src: string;
   poster?: string | null;
   duration?: string | null;
@@ -14,11 +15,13 @@ type VideoPlayerProps = {
 
 export default function VideoPlayer({
   onSourceError,
+  onReady,
   src,
   poster,
   duration,
   dimensions,
 }: VideoPlayerProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isReady, setIsReady] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
@@ -31,6 +34,17 @@ export default function VideoPlayer({
     setIsSeeking(false);
     setHasError(false);
   }, [src]);
+
+  useEffect(() => () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }, []);
 
   if (hasError) {
     return (
@@ -95,6 +109,7 @@ export default function VideoPlayer({
         }}
         onCanPlay={() => {
           setIsReady(true);
+          onReady?.();
           setIsBuffering(false);
           setIsSeeking(false);
         }}
@@ -108,6 +123,7 @@ export default function VideoPlayer({
         onWaiting={() => setIsBuffering(true)}
         poster={poster ?? undefined}
         preload="metadata"
+        ref={videoRef}
         src={src}
       />
     </div>
