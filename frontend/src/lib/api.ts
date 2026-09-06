@@ -308,15 +308,18 @@ export async function getMemories(params: {
 
 export async function getMemoryRecommendations(
   limit = 8,
+  kind?: "photo" | "video",
 ): Promise<MemorySummary[]> {
-  return request<MemorySummary[]>(
-    `/memories/recommend?limit=${limit}`,
-    {
-      headers: {
-        Accept: "application/json",
-      },
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (kind) {
+    query.set("kind", kind);
+  }
+
+  return request<MemorySummary[]>(`/memories/recommend?${query.toString()}`, {
+    headers: {
+      Accept: "application/json",
     },
-  );
+  });
 }
 
 export function getMemoryById(memoryId: string): Promise<MemorySummary> {
