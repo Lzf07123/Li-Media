@@ -24,6 +24,7 @@ def test_nginx_excludes_private_media_from_cache() -> None:
         encoding="utf-8",
     )
 
+    assert "root /usr/share/nginx/html;" in nginx
     assert "proxy_cache_path /var/cache/nginx/limedia" in nginx
     assert "proxy_cache_key" in nginx
     assert "$http_accept" in nginx
