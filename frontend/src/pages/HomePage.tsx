@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Images, Sparkles } from "lucide-react";
+import { Images } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
@@ -111,7 +111,7 @@ export default function HomePage() {
   useEffect(() => {
     let active = true;
 
-    getMemoryRecommendations(RECOMMENDATION_COUNT)
+    getMemoryRecommendations(RECOMMENDATION_COUNT, activeKind)
       .then((items) => {
         if (active && Array.isArray(items)) {
           setRecommendations(items);
@@ -128,9 +128,9 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeKind]);
 
-  const viewerMemories = useMemo(() => {
+  const canvasMemories = useMemo(() => {
     const unique = new Map<string, MemorySummary>();
     [...recommendations, ...memories].forEach((memory) => {
       unique.set(memory.id, memory);
@@ -138,6 +138,7 @@ export default function HomePage() {
     return Array.from(unique.values());
   }, [recommendations, memories]);
 
+  const viewerMemories = canvasMemories;
   useEffect(() => {
     if (!viewerId || viewerMemories.some((memory) => memory.id === viewerId)) {
       return;
@@ -303,27 +304,6 @@ export default function HomePage() {
       <div aria-hidden="true" className="flow-rule mx-auto mt-3 w-16" />
       <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
 
-      {recommendations.length > 0 ? (
-        <section
-          aria-labelledby="recommendation-title"
-          className="infinite-canvas recommendation-section"
-        >
-          <h2 className="section-heading" id="recommendation-title">
-            <Sparkles aria-hidden="true" className="size-4" />
-            {brand.copy.recommendationTitle}
-          </h2>
-          <div className="recommendation-rail">
-            {recommendations.map((memory) => (
-              <MemoryCard
-                key={`recommendation-${memory.id}`}
-                memory={memory}
-                onOpen={openViewer}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
         <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
           <button
@@ -371,16 +351,19 @@ export default function HomePage() {
             {brand.copy.loadFailedAction}
           </Button>
         </Notice>
-      ) : memories.length === 0 ? (
+      ) : canvasMemories.length === 0 ? (
         <div className="mt-8">
           <EmptyState art={Images}>
             {brand.copy.emptyLibrary}
           </EmptyState>
         </div>
       ) : (
-        <section aria-label={brand.copy.libraryTitle} className="infinite-canvas">
+        <section
+          aria-label={brand.copy.libraryTitle}
+          className="infinite-canvas mx-auto w-full"
+        >
           <div className="masonry">
-            {memories.map((memory, index) => (
+            {canvasMemories.map((memory, index) => (
               <MemoryCard
                 key={memory.id}
                 memory={memory}

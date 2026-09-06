@@ -323,21 +323,30 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
   await expect(page.locator(".pagination")).toHaveCount(0);
 });
 
-test("recommendation rail renders visit-scoped media", async ({ page }) => {
+test("recommendations render first inside the canvas without a separate rail", async ({ page }) => {
+  const requestedRecommendations: string[] = [];
   await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories/recommend**", async (route) => {
+    const url = new URL(route.request().url());
+    requestedRecommendations.push(url.searchParams.get("kind") ?? "");
     await route.fulfill({
       json: [
         { ...memory, id: "0e1c6c1d-34a4-459b-8f85-e7ac76b1fb99", title: "推荐一" },
-        { ...memory, id: "0e1c6c1d-34a4-459b-8f85-e7ac76b1fb98", title: "推荐二" },
+        { ...memory, title: "推荐二" },
       ],
     });
   });
 
   await page.goto("/");
-  await expect(page.locator(".recommendation-rail .post-card")).toHaveCount(2);
-  await page.locator(".recommendation-rail .post-card").first().click();
+  await expect(page.locator(".recommendation-rail")).toHaveCount(0);
+  await expect(page.locator(".masonry .post-card")).toHaveCount(2);
+  await page.locator(".masonry .post-card").first().click();
   await expect(page.locator(".photo-viewer")).toHaveAttribute("aria-label", "推荐一");
+  await expect.poll(() => requestedRecommendations).toContain("");
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /^照片/ }).click();
+  await expect.poll(() => requestedRecommendations).toContain("photo");
 });
 
 test("video preparation shows one playback overlay", async ({ page }) => {
