@@ -1830,15 +1830,14 @@ html {
 }
 
 .masonry {
-  column-width: 288px;
-  column-count: 4;
-  column-gap: 24px;
-  margin-top: 28px;
-  padding-inline: 8px;
+  column-count: 2;
+  column-gap: 16px;
+  margin-top: 24px;
+  padding-inline: 0;
 }
 .masonry > * {
   break-inside: avoid;
-  margin: 0 0 24px !important;
+  margin: 0 0 16px !important;
 }
 .masonry > .post-card {
   padding: 0;
@@ -2446,10 +2445,27 @@ html {
   border-radius: 20px;
 }
 
-@media (max-width: 1024px) {
+@media (min-width: 768px) {
   .masonry {
-    column-width: 240px;
+    column-count: 3;
     column-gap: 20px;
+  }
+}
+@media (min-width: 1024px) {
+  .masonry {
+    column-count: 4;
+  }
+}
+@media (min-width: 1280px) {
+  .masonry {
+    column-count: 5;
+    column-gap: 20px;
+  }
+}
+@media (min-width: 1600px) {
+  .masonry {
+    column-count: 6;
+    column-gap: 24px;
   }
 }
 @media (max-width: 768px) {
@@ -2502,11 +2518,6 @@ html {
     min-height: 44px;
     padding: 0 9px;
   }
-  .masonry {
-    column-count: 2;
-    column-width: auto;
-    column-gap: 16px;
-  }
   .masonry > * {
     margin-bottom: 16px !important;
   }
@@ -2517,10 +2528,6 @@ html {
   }
 }
 @media (max-width: 640px) {
-  .masonry {
-    column-count: 1;
-    column-gap: 0;
-  }
   .back-to-top {
     right: 14px;
     bottom: 16px;

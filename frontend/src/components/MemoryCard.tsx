@@ -52,7 +52,7 @@ export default function MemoryCard({ memory, priority = false }: MemoryCardProps
               setThumbnailFailed(true);
             }}
             onLoad={() => setLoadState("ready")}
-            sizes="(max-width: 360px) 88vw, (max-width: 640px) 92vw, (max-width: 768px) 45vw, (max-width: 1024px) 31vw, (max-width: 1280px) 24vw, 21vw"
+            sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
             src={thumbnailUrl}
             srcSet={srcSet}
             width={memory.width ?? undefined}
