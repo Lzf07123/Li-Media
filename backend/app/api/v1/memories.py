@@ -37,6 +37,33 @@ from app.services.remote_thumbnails import create_remote_thumbnail
 router = APIRouter(prefix="/memories", tags=["memories"])
 
 
+@router.get("/recommend", response_model=list[MemorySummaryRead])
+def recommend_memories(
+    response: Response,
+    kind: MemoryKind | None = None,
+    limit: int = Query(default=8, ge=1, le=24),
+    db: Session = Depends(get_db),
+) -> list[MemorySummaryRead]:
+    statement = (
+        select(Memory)
+        .join(Memory.files)
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            MemoryFile.source == "baidupan",
+        )
+        .distinct()
+        .order_by(func.random())
+    )
+
+    if kind is not None:
+        statement = statement.where(Memory.kind == kind)
+
+    memories = db.scalars(statement.limit(limit)).all()
+    # Recommendations are intentionally visit-scoped; do not let a browser reuse them.
+    response.headers["Cache-Control"] = "no-store"
+    return [to_memory_summary(memory) for memory in memories]
+
+
 @router.get("", response_model=MemorySummaryListResponse)
 def list_memories(
     kind: MemoryKind | None = None,

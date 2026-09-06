@@ -7,6 +7,8 @@ export const brand = {
   copy: {
     libraryTitle: "回忆库",
     libraryDescription: "按拍摄时间浏览照片与视频回忆。",
+    recommendationTitle: "为你推荐",
+    loadingMoreLibrary: "正在加载更多回忆",
     allKinds: "全部",
     photoKind: "照片",
     videoKind: "视频",

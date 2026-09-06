@@ -58,6 +58,11 @@ async function mockMemoryRoutes(page: Page, listResponse = memoryList) {
       return;
     }
 
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+
     if (url.pathname === `/api/v1/memories/${memoryId}`) {
       await route.fulfill({ json: memory });
       return;
@@ -234,8 +239,8 @@ test("video direct link refreshes after playback failure", async ({ page }) => {
   await recoveredRequest;
 });
 
-test("kind, keyword, sort and scroll restore after closing viewer", async ({ page }) => {
-  const items = Array.from({ length: 24 }, (_, index) => ({
+test("kind and scroll restore after closing viewer", async ({ page }) => {
+  const items = Array.from({ length: 18 }, (_, index) => ({
     ...memory,
     id: `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`,
     width: index % 2 === 0 ? 2400 : 1200,
@@ -251,11 +256,7 @@ test("kind, keyword, sort and scroll restore after closing viewer", async ({ pag
   await page.goto("/");
 
   await page.getByRole("button", { name: /^照片/ }).click();
-  await page.locator("#library-search").fill("lake");
-  await expect(page).toHaveURL(/kind=photo&keyword=lake/);
-
-  await page.locator("select").selectOption("updated_desc");
-  await expect(page).toHaveURL(/sort=updated_desc/);
+  await expect(page).toHaveURL(/kind=photo/);
 
   await page.evaluate(() => window.scrollTo(0, 240));
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
@@ -263,9 +264,135 @@ test("kind, keyword, sort and scroll restore after closing viewer", async ({ pag
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
 
   await page.locator(".photo-viewer").getByRole("button", { name: "取消" }).click();
-  await expect(page).toHaveURL(/kind=photo&keyword=lake&sort=updated_desc/);
-  await expect(page.locator("#library-search")).toHaveValue("lake");
+  await expect(page).toHaveURL(/kind=photo/);
+  await expect(page.locator("#library-search")).toHaveCount(0);
+  await expect(page.locator("select[aria-label='排序']")).toHaveCount(0);
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
+});
+
+test("infinite canvas appends segmented thumbnail pages while scrolling", async ({ page }) => {
+  const requestedPages: string[] = [];
+  let releasePageTwo: (() => void) | undefined;
+  const pageTwoReady = new Promise<void>((resolve) => {
+    releasePageTwo = resolve;
+  });
+  const items = Array.from({ length: 36 }, (_, index) => ({
+    ...memory,
+    id: `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`,
+    width: index % 2 === 0 ? 2400 : 1200,
+    height: index % 2 === 0 ? 1200 : 1800,
+  }));
+
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      const pageNumber = Number(url.searchParams.get("page") ?? "1");
+      requestedPages.push(String(pageNumber));
+      if (pageNumber === 2) {
+        await pageTwoReady;
+      }
+      await route.fulfill({
+        json: {
+          items: items.slice((pageNumber - 1) * 18, pageNumber * 18),
+          total: items.length,
+          page: pageNumber,
+          page_size: 18,
+          counts: { photo: items.length, video: 0 },
+        },
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    await route.fulfill({
+      body: Buffer.from(pngBase64, "base64"),
+      contentType: "image/webp",
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(18);
+  await expect.poll(() => requestedPages).toContain("1");
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(() => requestedPages).toContain("2");
+  releasePageTwo?.();
+  await expect(page.locator(".masonry .post-card")).toHaveCount(36);
+  await expect(page.locator(".pagination")).toHaveCount(0);
+});
+
+test("recommendation rail renders visit-scoped media", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/recommend**", async (route) => {
+    await route.fulfill({
+      json: [
+        { ...memory, id: "0e1c6c1d-34a4-459b-8f85-e7ac76b1fb99", title: "推荐一" },
+        { ...memory, id: "0e1c6c1d-34a4-459b-8f85-e7ac76b1fb98", title: "推荐二" },
+      ],
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".recommendation-rail .post-card")).toHaveCount(2);
+  await page.locator(".recommendation-rail .post-card").first().click();
+  await expect(page.locator(".photo-viewer")).toHaveAttribute("aria-label", "推荐一");
+});
+
+test("video preparation shows one playback overlay", async ({ page }) => {
+  let resolveDirectLink: ((value: unknown) => void) | undefined;
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      await route.fulfill({
+        json: {
+          ...memoryList,
+          items: [{
+            ...memory,
+            kind: "video",
+            primary_file: { ...memory.primary_file, mime_type: "video/mp4" },
+          }],
+          counts: { photo: 0, video: 1 },
+        },
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
+      await new Promise<void>((resolve) => {
+        resolveDirectLink = resolve;
+      });
+      await route.fulfill({
+        json: {
+          direct_url: directUrl,
+          expires_at: "2027-01-01T09:35:00Z",
+          mime_type: "video/mp4",
+          size_bytes: 5,
+        },
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/");
+  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "播放视频" }).click();
+  await expect(page.locator(".video-playback-overlay")).toBeVisible();
+  expect(await page.locator(".video-playback-message").count()).toBe(1);
+  expect(await page.locator(".viewer-fallback").count()).toBe(0);
+  resolveDirectLink?.();
 });
 
 test("waterfall remains stable across acceptance viewports", async ({ page }) => {

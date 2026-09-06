@@ -306,6 +306,19 @@ export async function getMemories(params: {
   return request<MemoryListResponse>(`/memories${query ? `?${query}` : ""}`);
 }
 
+export async function getMemoryRecommendations(
+  limit = 8,
+): Promise<MemorySummary[]> {
+  return request<MemorySummary[]>(
+    `/memories/recommend?limit=${limit}`,
+    {
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+}
+
 export function getMemoryById(memoryId: string): Promise<MemorySummary> {
   return request<MemorySummary>(`/memories/${memoryId}`);
 }
