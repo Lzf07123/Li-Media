@@ -255,6 +255,29 @@ export type SystemStatus = {
   };
 };
 
+export type ThumbnailPreheatJob = {
+  id: string;
+  max_size: number;
+  kind: "photo" | "video" | null;
+  limit: number;
+  status: "queued" | "running" | "completed" | "failed";
+  total: number;
+  processed: number;
+  generated: number;
+  cached: number;
+  failed: number;
+  message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export type ThumbnailPreheatPayload = {
+  max_size: "240" | "480" | "768" | "1280";
+  kind?: "photo" | "video";
+  limit: number;
+};
+
 const TASK_KEYS = {
   scan: true,
   direct_probe: true,
@@ -502,6 +525,23 @@ export async function getSystemStatus(): Promise<SystemStatus> {
       "Cache-Control": "no-store",
     },
   });
+}
+
+export async function startThumbnailPreheat(
+  payload: ThumbnailPreheatPayload,
+): Promise<ThumbnailPreheatJob> {
+  return request<ThumbnailPreheatJob>("/admin/thumbnails/preheat", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getLatestThumbnailPreheat(): Promise<ThumbnailPreheatJob | null> {
+  return request<ThumbnailPreheatJob | null>("/admin/thumbnails/preheat/latest");
 }
 
 export async function startBaiduAuthorization(): Promise<BaiduAuthorizeResponse> {

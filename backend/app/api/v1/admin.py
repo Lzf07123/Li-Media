@@ -51,6 +51,8 @@ from app.schemas.responses import (
     AdminSyncResponse,
     AdminSystemStatusResponse,
     RemoteScanTaskRead,
+    ThumbnailPreheatJobRead,
+    ThumbnailPreheatRequest,
 )
 from app.services.memory_thumbnails import (
     remove_media_file,
@@ -83,6 +85,11 @@ from app.services.baidu_sync import (
 )
 from app.services.task_limits import is_temporary_path_active, task_limiter, task_metrics
 from app.services.system_status import collect_system_status
+from app.services.thumbnail_preheat import (
+    ThumbnailPreheatJob,
+    run_thumbnail_preheat,
+    thumbnail_preheat_registry,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -517,6 +524,44 @@ def get_system_status(
 
     settings = get_settings()
     return collect_system_status(db, settings=settings)
+
+
+@router.post(
+    "/thumbnails/preheat",
+    response_model=ThumbnailPreheatJobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_thumbnail_preheat(
+    payload: ThumbnailPreheatRequest,
+    background_tasks: BackgroundTasks,
+    session_factory: sessionmaker[Session] = Depends(get_session_factory),
+    _: AdminSession = Depends(require_admin_session),
+) -> ThumbnailPreheatJob:
+    settings = get_settings()
+    job, started = thumbnail_preheat_registry.start(
+        max_size=int(payload.max_size),
+        kind=payload.kind,
+        limit=payload.limit,
+    )
+    if started:
+        background_tasks.add_task(
+            run_thumbnail_preheat,
+            job.id,
+            session_factory=session_factory,
+            settings=settings,
+        )
+
+    return job
+
+
+@router.get(
+    "/thumbnails/preheat/latest",
+    response_model=ThumbnailPreheatJobRead | None,
+)
+def get_latest_thumbnail_preheat(
+    _: AdminSession = Depends(require_admin_session),
+) -> ThumbnailPreheatJob | None:
+    return thumbnail_preheat_registry.get_latest()
 
 
 @router.post("/remote-entries/{memory_file_id}/retry", response_model=MemoryRead)

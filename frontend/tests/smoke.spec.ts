@@ -103,6 +103,8 @@ const systemStatus = {
     queue_depth: 0,
     queue_wait_total_ms: 12,
     child_peak_kbytes: 64096,
+    "derivative.completed": 6,
+    "derivative.rejected": 3,
   },
   resources: {
     process: { rss_kbytes: 59080, threads: 8, pss_kbytes: 49960 },
@@ -130,6 +132,23 @@ const systemStatus = {
       temp_max_files: 8,
     },
   },
+};
+
+const preheatJob = {
+  id: "b1c32dd1-2dc8-4de9-a3b4-c96f94977865",
+  max_size: 480,
+  kind: null,
+  limit: 24,
+  status: "completed",
+  total: 3,
+  processed: 3,
+  generated: 2,
+  cached: 1,
+  failed: 0,
+  message: null,
+  created_at: "2026-09-07T08:00:00Z",
+  started_at: "2026-09-07T08:00:01Z",
+  completed_at: "2026-09-07T08:00:02Z",
 };
 
 const memoryList = {
@@ -220,6 +239,7 @@ test("old detail address redirects to viewer", async ({ page }) => {
 
 test("admin table is visible in dark mode", async ({ page }) => {
   let statusRequests = 0;
+  let preheatRequests = 0;
   await page.route("**/api/v1/admin/memories", async (route) => {
     await route.fulfill({ json: { items: [memory], total: 1 } });
   });
@@ -239,6 +259,18 @@ test("admin table is visible in dark mode", async ({ page }) => {
     statusRequests += 1;
     await route.fulfill({ json: systemStatus });
   });
+  await page.route("**/api/v1/admin/thumbnails/preheat/latest", async (route) => {
+    preheatRequests += 1;
+    await route.fulfill({ json: preheatJob });
+  });
+  await page.route("**/api/v1/admin/thumbnails/preheat", async (route) => {
+    if (route.request().method() === "POST") {
+      preheatRequests += 1;
+      await route.fulfill({ json: preheatJob });
+      return;
+    }
+    await route.fallback();
+  });
   await page.goto("/admin");
 
   await expect(page.getByRole("heading", { name: "回忆管理" })).toBeVisible();
@@ -250,7 +282,12 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await expect(page.getByText("远端存储状态")).toBeVisible();
   await expect(page.getByText("百度网盘", { exact: true })).toBeVisible();
   await expect(page.getByText("资源与队列")).toBeVisible();
+  await expect(page.getByText("任务队列")).toBeVisible();
+  await expect(page.getByText("单帧派生")).toBeVisible();
+  await expect(page.getByText("预热缩略图")).toBeVisible();
   await expect(page.getByText("预览就绪").first()).toBeVisible();
+  await page.getByRole("button", { name: "开始预热" }).click();
+  await expect.poll(() => preheatRequests).toBeGreaterThan(1);
   await page.getByRole("button", { name: "刷新状态" }).click();
   await expect.poll(() => statusRequests).toBeGreaterThan(1);
   await page.getByRole("button", { name: "切换到深色主题" }).click();

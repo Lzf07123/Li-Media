@@ -27,19 +27,18 @@ from app.schemas.responses import (
 )
 from app.services.memory_thumbnails import (
     derivative_cache_path,
-    create_memory_derivative,
     read_image_dimensions,
     resolve_media_path,
 )
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
-from app.services.remote_thumbnails import create_remote_thumbnail
+from app.services.derivative_tasks import (
+    run_local_derivative,
+    run_remote_derivative,
+)
 from app.services.task_limits import (
     TaskRejected,
     TaskType,
-    derivative_key,
-    in_flight_derivatives,
-    make_cancel_event,
     task_limiter,
     task_metrics,
 )
@@ -54,49 +53,6 @@ def _task_http_error(exc: TaskRejected) -> HTTPException:
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         detail=str(exc),
         headers={"Retry-After": str(max(1, int(exc.retry_after)))},
-    )
-
-
-def _derivative_priority(max_size: int) -> int:
-    return {240: 0, 480: 1, 768: 2, 1280: 3}.get(max_size, 50)
-
-
-def _run_remote_derivative(
-    client: BaiduPanClient,
-    memory_file: MemoryFile,
-    memory: Memory,
-    media_root: Path,
-    *,
-    max_size: int,
-) -> str | None:
-    settings = get_settings()
-    key = derivative_key(
-        memory.id,
-        settings.media_derivative_version,
-        max_size,
-    )
-
-    def operation() -> str | None:
-        with task_limiter.slot(
-            TaskType.DERIVATIVE,
-            priority=_derivative_priority(max_size),
-        ):
-            return create_remote_thumbnail(
-                client,
-                memory_file.remote_id or "",
-                media_root,
-                kind=memory.kind,
-                memory_id=memory.id,
-                max_size=max_size,
-                duration_seconds=memory.duration_seconds,
-                cancel_event=make_cancel_event(),
-            )
-
-    return in_flight_derivatives.run(
-        key,
-        operation,
-        task_type=TaskType.DERIVATIVE,
-        wait_timeout=settings.derivative_wait_timeout_seconds,
     )
 
 
@@ -471,32 +427,13 @@ def get_memory_thumbnail(
     if memory_file is not None:
         local_source_path = resolve_media_path(media_root, memory_file.source_path)
         if local_source_path is not None and local_source_path.is_file():
-            key = derivative_key(
-                memory.id,
-                settings.media_derivative_version,
-                max_size,
-            )
-
-            def generate_local() -> str | None:
-                with task_limiter.slot(
-                    TaskType.DERIVATIVE,
-                    priority=_derivative_priority(max_size),
-                ):
-                    return create_memory_derivative(
-                        local_source_path,
-                        media_root,
-                        kind=memory.kind,
-                        memory_id=memory.id,
-                        max_size=max_size,
-                        duration_seconds=memory.duration_seconds,
-                    )
-
             try:
-                generated_path = in_flight_derivatives.run(
-                    key,
-                    generate_local,
-                    task_type=TaskType.DERIVATIVE,
-                    wait_timeout=settings.derivative_wait_timeout_seconds,
+                generated_path = run_local_derivative(
+                    local_source_path,
+                    media_root,
+                    memory=memory,
+                    max_size=max_size,
+                    duration_seconds=memory.duration_seconds,
                 )
             except TaskRejected as exc:
                 raise _task_http_error(exc) from exc
@@ -522,12 +459,13 @@ def get_memory_thumbnail(
 
     client = BaiduPanClient(settings)
     try:
-        generated_path = _run_remote_derivative(
+        generated_path = run_remote_derivative(
             client,
-            memory_file,
-            memory,
+            memory_file.remote_id or "",
             media_root,
+            memory=memory,
             max_size=max_size,
+            duration_seconds=memory.duration_seconds,
         )
     except TaskRejected as exc:
         raise _task_http_error(exc) from exc

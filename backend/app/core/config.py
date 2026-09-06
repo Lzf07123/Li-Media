@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     direct_probe_queue_limit: int = 16
     direct_probe_wait_timeout_seconds: float = 3.0
     derivative_concurrency_limit: int = 1
-    derivative_queue_limit: int = 8
+    derivative_queue_limit: int = 32
     derivative_wait_timeout_seconds: float = 5.0
     stream_global_concurrency_limit: int = 16
     stream_user_concurrency_limit: int = 1
