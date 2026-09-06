@@ -1,6 +1,5 @@
 import { Image as ImageIcon, Play, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 
 import { brand } from "@/lib/brand";
 import { resolveThumbnailUrl, type Memory } from "@/lib/api";
@@ -8,21 +7,15 @@ import { resolveThumbnailUrl, type Memory } from "@/lib/api";
 type MemoryCardProps = {
   memory: Memory;
   priority?: boolean;
+  onOpen: (memoryId: string) => void;
 };
 
-export default function MemoryCard({ memory, priority = false }: MemoryCardProps) {
+export default function MemoryCard({ memory, onOpen, priority = false }: MemoryCardProps) {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, priority ? "medium" : "small");
-  const srcSet = memory.thumbnail_url
-    ? [
-      `${resolveThumbnailUrl(memory.thumbnail_url, "small")} 320w`,
-      `${resolveThumbnailUrl(memory.thumbnail_url, "medium")} 640w`,
-      `${resolveThumbnailUrl(memory.thumbnail_url, "large")} 1280w`,
-    ].join(", ")
-    : undefined;
+  const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "small");
   const knownSize = memory.width && memory.height
     ? { width: memory.width, height: memory.height }
     : null;
@@ -49,10 +42,11 @@ export default function MemoryCard({ memory, priority = false }: MemoryCardProps
   const showError = thumbnailFailed || loadState === "error";
 
   return (
-    <Link
+    <button
       aria-label={brand.copy.detailPreviewAlt}
-      className="post-card block overflow-hidden"
-      to={`/memories/${memory.id}`}
+      className="post-card block w-full overflow-hidden"
+      onClick={() => onOpen(memory.id)}
+      type="button"
     >
       {thumbnailUrl && !thumbnailFailed ? (
         <span className="post-cover-link block media-frame" style={mediaStyle}>
@@ -76,7 +70,6 @@ export default function MemoryCard({ memory, priority = false }: MemoryCardProps
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
             src={thumbnailUrl}
-            srcSet={srcSet}
             ref={imageRef}
             width={memory.width ?? undefined}
           />
@@ -102,6 +95,6 @@ export default function MemoryCard({ memory, priority = false }: MemoryCardProps
           {brand.copy.videoKind}
         </span>
       ) : null}
-    </Link>
+    </button>
   );
 }

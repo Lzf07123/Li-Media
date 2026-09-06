@@ -6,8 +6,8 @@
 ## 技术栈与路由
 
 - React 19 + TypeScript + Vite 7 + Tailwind CSS 4 + React Router 7 + lucide-react。
-- 路由：`/`（回忆库）、`/memories/:memoryId`（回忆详情）、`/admin`（后台）、`*`（404）。
-- API：`/api/v1/memories`、`/api/v1/memories/:id`、`/api/v1/memories/:id/file`、`/api/v1/admin/memories`。
+- 路由：`/`（回忆库和 `?viewer=<memoryId>` 查看器）、`/memories/:memoryId`（兼容重定向到查看器）、`/admin`（后台）、`*`（404）。
+- API：`/api/v1/memories`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。
 
 ## 令牌快照
 
@@ -24,16 +24,15 @@
 | --- | --- |
 | 交互控件 | `Button`、`IconButton`、`Input`、`TextArea`、`DropdownMenu`、`Pagination` |
 | 反馈 | `Badge`、`StatusBadge`、`FileStatusBadge`、`Notice`、`Toast`、`Modal`、`ProgressBar`、`EmptyState`、`MediaSkeleton` |
-| 内容组件 | `MemoryCard`、`PhotoPreview`、`VideoPlayer`、`MemoryUploadForm`、`AdminLoginCard` |
+| 内容组件 | `MemoryCard`、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
 | 外壳 | `SiteHeader`、`SiteFooter`、`BackToTop`、`Breadcrumb` |
 
 ## 页面与状态
 
 | 页面 | 关键状态 |
 | --- | --- |
-| `HomePage` | 关键词搜索、类型导航、居中搜索行、居中分页、骨架屏、加载失败、空库、搜索空态、真实封面瀑布流 |
-| `MemoryDetailPage` | 加载骨架、照片预览或视频播放、说明、拍摄信息、文件信息、404 |
-| `AdminPage` | 登录态、上传表单、上传中、上传成功/失败、表格列表、状态徽章、发布、下架、删除确认 |
+| `HomePage` | 关键词搜索、类型导航、居中搜索行、居中分页、骨架屏、加载失败、空库、搜索空态、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
+| `AdminPage` | 登录态、表格列表、状态徽章、发布、下架、删除确认、远程扫描、确认式本地清理 |
 | `NotFoundPage` | 空态图标、返回首页 |
 
 ## 布局与响应式

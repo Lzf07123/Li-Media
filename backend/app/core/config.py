@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     media_root: str = "./data/media"
     thumbnail_max_size: int = 1280
     thumbnail_quality: int = 82
+    media_derivative_version: str = "20260906-ratio-v1"
     baidu_api_base_url: str = "https://pan.baidu.com/rest/2.0/xpan"
     baidu_access_token: str = ""
     baidu_oauth_client_id: str = ""

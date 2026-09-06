@@ -19,6 +19,7 @@ from app.models.memory import (
     MemoryStatus,
 )
 from app.schemas.memory import MemoryRead
+from app.services.memory_thumbnails import create_memory_derivative
 from app.services.memory_thumbnails import create_memory_thumbnail
 
 
@@ -51,18 +52,19 @@ def test_photo_thumbnail_is_downscaled_and_served(tmp_path: Path, monkeypatch) -
     source_path = source_dir / "photo.png"
     Image.new("RGB", (2400, 1200), "white").save(source_path)
 
-    thumbnail_path = create_memory_thumbnail(
+    thumbnail_path = create_memory_derivative(
         source_path,
         media_root,
         kind=MemoryKind.PHOTO,
         memory_id=uuid.uuid4(),
+        max_size=480,
     )
 
     assert thumbnail_path is not None
     thumbnail_file = media_root / thumbnail_path
     with Image.open(thumbnail_file) as thumbnail:
         assert thumbnail.format == "WEBP"
-        assert thumbnail.size == (1280, 640)
+        assert thumbnail.size == (480, 240)
 
     session_factory = create_database(tmp_path)
     with session_factory.begin() as session:
@@ -118,7 +120,10 @@ def test_video_poster_uses_ffmpeg_and_scales_long_edge(tmp_path: Path, monkeypat
         assert "-ss" in command
         assert "1.00" in command
         assert str(source_path) in command
-        assert f"scale='min({settings.thumbnail_max_size},iw)':-2" in command
+        assert (
+            "scale='if(gt(iw,ih),min(1280,iw),-2)':"
+            "'if(gt(iw,ih),-2,min(1280,ih))'" in command
+        )
         output_path = Path(command[-1])
         Image.new("RGB", (1600, 900), "white").save(output_path, format="WEBP")
         return CompletedProcess(command, 0)
@@ -135,7 +140,9 @@ def test_video_poster_uses_ffmpeg_and_scales_long_edge(tmp_path: Path, monkeypat
         duration_seconds=10,
     )
 
-    assert thumbnail_path == f"thumbnails/{memory_id}.webp"
+    assert thumbnail_path == (
+        f"thumbnails/{memory_id}/{settings.media_derivative_version}/1280.webp"
+    )
     assert (media_root / thumbnail_path).is_file()
 
 
@@ -156,3 +163,38 @@ def test_thumbnail_url_is_absent_without_derivative() -> None:
         updated_at="2026-09-05T00:00:00Z",
     )
     assert memory.thumbnail_url is None
+
+
+def test_memory_derivative_isolates_cached_sizes(tmp_path: Path, monkeypatch) -> None:
+    settings = configure_test_settings(monkeypatch, tmp_path)
+    media_root = Path(settings.media_root)
+    source_path = media_root / "photos" / "photo.png"
+    source_path.parent.mkdir(parents=True)
+    Image.new("RGB", (1600, 900), "white").save(source_path)
+    memory_id = uuid.uuid4()
+
+    small_path = create_memory_derivative(
+        source_path,
+        media_root,
+        kind=MemoryKind.PHOTO,
+        memory_id=memory_id,
+        max_size=480,
+    )
+    large_path = create_memory_derivative(
+        source_path,
+        media_root,
+        kind=MemoryKind.PHOTO,
+        memory_id=memory_id,
+        max_size=1280,
+    )
+
+    assert small_path == (
+        f"thumbnails/{memory_id}/{settings.media_derivative_version}/480.webp"
+    )
+    assert large_path == (
+        f"thumbnails/{memory_id}/{settings.media_derivative_version}/1280.webp"
+    )
+    with Image.open(media_root / small_path) as small:
+        assert small.size == (480, 270)
+    with Image.open(media_root / large_path) as large:
+        assert large.size == (1280, 720)

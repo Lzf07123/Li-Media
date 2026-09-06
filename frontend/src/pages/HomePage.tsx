@@ -3,8 +3,9 @@ import { Images, Search, X } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
+import MediaViewer from "@/components/MediaViewer";
 import { brand } from "@/lib/brand";
-import { getMemories, type Memory } from "@/lib/api";
+import { getMemoryById, getMemories, type Memory } from "@/lib/api";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import IconButton from "@/components/ui/IconButton";
@@ -14,6 +15,7 @@ import Pagination from "@/components/ui/Pagination";
 
 const PAGE_SIZE = 24;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
+let scrollBeforeViewer = 0;
 
 export default function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -22,8 +24,11 @@ export default function HomePage() {
   const keyword = searchParams.get("keyword") ?? "";
   const page = Number(searchParams.get("page") ?? "1");
   const sort = searchParams.get("sort") ?? "captured_desc";
+  const viewerId = searchParams.get("viewer");
   const [searchInput, setSearchInput] = useState(keyword);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [directMemory, setDirectMemory] = useState<Memory | null>(null);
+  const [viewerMissing, setViewerMissing] = useState(false);
   const [counts, setCounts] = useState({ photo: 0, video: 0 });
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,6 +59,7 @@ export default function HomePage() {
       setTotal(data.total);
       setCounts(data.counts ?? { photo: 0, video: 0 });
       setError(null);
+      setViewerMissing(false);
     } catch {
       setError(brand.copy.loadFailed);
     } finally {
@@ -73,6 +79,31 @@ export default function HomePage() {
       active = false;
     };
   }, [loadMemories, page]);
+
+  useEffect(() => {
+    if (!viewerId || memories.some((memory) => memory.id === viewerId)) {
+      return;
+    }
+
+    let active = true;
+    setDirectMemory(null);
+    setViewerMissing(false);
+    getMemoryById(viewerId)
+      .then((memory) => {
+        if (active) {
+          setDirectMemory(memory);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setViewerMissing(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [memories, viewerId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -114,9 +145,26 @@ export default function HomePage() {
     }
 
     window.requestAnimationFrame(() => {
-      window.scrollTo({ behavior: "auto", top: previousScroll });
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ behavior: "auto", top: previousScroll });
+      });
     });
   }, [isLoading, pathname]);
+
+  useEffect(() => {
+    if (viewerId) {
+      return;
+    }
+
+    const previousScroll = scrollBeforeViewer;
+    if (!Number.isFinite(previousScroll) || previousScroll <= 0 || pathname !== "/") {
+      return;
+    }
+
+    window.setTimeout(() => {
+      window.scrollTo({ behavior: "auto", top: previousScroll });
+    }, 100);
+  }, [pathname, viewerId]);
 
   useEffect(() => {
     setSearchInput(keyword);
@@ -165,6 +213,29 @@ export default function HomePage() {
     next.delete("page");
     updateParams(next);
   };
+
+  const openViewer = (memoryId: string) => {
+    const next = new URLSearchParams(searchParams);
+    scrollBeforeViewer = window.scrollY;
+    next.set("viewer", memoryId);
+    updateParams(next);
+  };
+
+  const closeViewer = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("viewer");
+    setDirectMemory(null);
+    setViewerMissing(false);
+    updateParams(next);
+    const previousScroll = scrollBeforeViewer;
+    window.setTimeout(() => {
+      if (Number.isFinite(previousScroll) && previousScroll > 0) {
+        window.scrollTo({ behavior: "auto", top: previousScroll });
+      }
+    }, 100);
+  };
+
+  const activeMemory = memories.find((memory) => memory.id === viewerId) ?? directMemory;
 
   return (
     <section aria-labelledby="library-title">
@@ -267,12 +338,25 @@ export default function HomePage() {
         <>
           <div className="masonry">
             {memories.map((memory, index) => (
-              <MemoryCard key={memory.id} memory={memory} priority={index === 0} />
+              <MemoryCard
+                key={memory.id}
+                memory={memory}
+                onOpen={openViewer}
+                priority={index === 0}
+              />
             ))}
           </div>
           <Pagination onPageChange={changePage} page={page} pageSize={PAGE_SIZE} total={total} />
         </>
       )}
+      {viewerMissing ? (
+        <Notice className="mt-8" tone="error">
+          {brand.copy.notFoundText}
+        </Notice>
+      ) : null}
+      {activeMemory ? (
+        <MediaViewer memory={activeMemory} onClose={closeViewer} />
+      ) : null}
     </section>
   );
 }

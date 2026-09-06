@@ -102,6 +102,22 @@ export type RemoteConfig = {
   token_expires_at: string | null;
 };
 
+export type CleanupStats = {
+  memories: number;
+  remote_file_indexes: number;
+  scan_tasks: number;
+  thumbnail_files: number;
+  estimated_bytes_to_free: number;
+};
+
+export type CleanupResult = {
+  dry_run: boolean;
+  stats: CleanupStats;
+  duration_seconds: number;
+  completed_at: string | null;
+  file_cleanup_error: string | null;
+};
+
 export type BaiduAuthorizeResponse = {
   authorize_url: string;
   expires_at: string;
@@ -143,6 +159,19 @@ export function resolveThumbnailUrl(
   const url = resolveMediaUrl(path);
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}ratio=1&size=${size}`;
+}
+
+export async function requestLocalMediaCleanup(
+  confirm: boolean,
+): Promise<CleanupResult> {
+  return request<CleanupResult>("/admin/cleanup", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ confirm }),
+  });
 }
 
 class ApiError extends Error {
@@ -229,8 +258,9 @@ export function getMemoryById(memoryId: string): Promise<Memory> {
 
 export async function getMediaDirectLink(
   memoryId: string,
+  purpose: "play" | "download" = "play",
 ): Promise<MediaDirectLink> {
-  return request<MediaDirectLink>(`/memories/${memoryId}/direct-url`, {
+  return request<MediaDirectLink>(`/memories/${memoryId}/direct-url?purpose=${purpose}`, {
     headers: {
       "Cache-Control": "no-store",
     },

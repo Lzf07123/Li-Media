@@ -106,6 +106,26 @@ class AdminRemoteConfigResponse(BaseModel):
     token_expires_at: datetime | None
 
 
+class AdminCleanupRequest(BaseModel):
+    confirm: bool = False
+
+
+class AdminCleanupStats(BaseModel):
+    memories: int
+    remote_file_indexes: int
+    scan_tasks: int
+    thumbnail_files: int
+    estimated_bytes_to_free: int
+
+
+class AdminCleanupResponse(BaseModel):
+    dry_run: bool
+    stats: AdminCleanupStats
+    duration_seconds: float = 0
+    completed_at: datetime | None = None
+    file_cleanup_error: str | None = None
+
+
 class AdminBaiduAuthorizeResponse(BaseModel):
     authorize_url: str
     expires_at: datetime

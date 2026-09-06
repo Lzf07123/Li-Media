@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 from app.models.memory import MemoryKind
 from app.services.baidu_pan import BaiduStreamResponse
-from app.services.memory_thumbnails import create_memory_thumbnail
+from app.services.memory_thumbnails import create_memory_derivative
 
 
 def create_remote_thumbnail(
@@ -13,6 +13,7 @@ def create_remote_thumbnail(
     *,
     kind: MemoryKind,
     memory_id: UUID,
+    max_size: int,
     duration_seconds: int | None = None,
 ) -> str | None:
     """Create a cached aspect-preserving thumbnail without storing source media."""
@@ -38,11 +39,12 @@ def create_remote_thumbnail(
         if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
             return None
 
-        return create_memory_thumbnail(
+        return create_memory_derivative(
             temporary_path,
             media_root,
             kind=kind,
             memory_id=memory_id,
+            max_size=max_size,
             duration_seconds=duration_seconds,
         )
     except Exception:

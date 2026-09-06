@@ -24,7 +24,12 @@ from app.schemas.responses import (
     MemoryDirectLinkResponse,
     MemoryListResponse,
 )
-from app.services.memory_thumbnails import read_image_dimensions, resolve_media_path
+from app.services.memory_thumbnails import (
+    derivative_cache_path,
+    create_memory_derivative,
+    read_image_dimensions,
+    resolve_media_path,
+)
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.remote_thumbnails import create_remote_thumbnail
@@ -122,6 +127,7 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> Memory:
 def get_memory_direct_url(
     memory_id: uuid.UUID,
     response: Response,
+    purpose: Literal["play", "download"] = Query(default="play"),
     db: Session = Depends(get_db),
 ) -> MemoryDirectLinkResponse:
     memory = db.get(Memory, memory_id)
@@ -163,6 +169,13 @@ def get_memory_direct_url(
             detail=str(exc) or "远程媒体直链暂时不可用",
         ) from exc
 
+    record_admin_operation(
+        db,
+        action="direct_url_requested",
+        target_type="memory",
+        target_id=memory.id,
+        detail=f"purpose={purpose};remote_resource=untouched",
+    )
     # Direct URLs are short-lived and must not be persisted by browsers.
     response.headers["Cache-Control"] = "no-store"
     return MemoryDirectLinkResponse(
@@ -259,7 +272,7 @@ def stream_memory(
 def get_memory_thumbnail(
     memory_id: uuid.UUID,
     request: Request,
-    size: Literal["small", "medium", "large", "detail"] = Query(default="medium"),
+    size: Literal["small", "medium", "large", "detail"] = Query(default="small"),
     db: Session = Depends(get_db),
 ) -> FileResponse | Response:
     memory = db.get(Memory, memory_id)
@@ -290,26 +303,60 @@ def get_memory_thumbnail(
         )
 
     settings = get_settings()
+    media_root = Path(settings.media_root)
+    max_size = 480 if size in {"small", "medium"} else 1280
     cache_headers = {
-        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
-        "ETag": f'"{memory_id}-{size}"',
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "ETag": f'"{memory_id}-{settings.media_derivative_version}-{max_size}"',
     }
 
     if request.headers.get("if-none-match") == cache_headers["ETag"]:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=cache_headers)
 
-    target_path = (
-        resolve_media_path(Path(settings.media_root), memory.thumbnail_path)
-        if memory.thumbnail_path
-        else None
+    target_path = derivative_cache_path(
+        media_root,
+        memory.id,
+        max_size=max_size,
+        version=settings.media_derivative_version,
     )
 
     if target_path is not None and target_path.is_file():
+        if memory.width is None or memory.height is None:
+            dimensions = read_image_dimensions(target_path.read_bytes())
+            if dimensions is not None:
+                memory.width, memory.height = dimensions
+                db.commit()
+
         return FileResponse(
             target_path,
             media_type=mimetypes.guess_type(target_path.name)[0] or "image/webp",
             headers=cache_headers,
         )
+
+    if memory_file is not None:
+        local_source_path = resolve_media_path(media_root, memory_file.source_path)
+        if local_source_path is not None and local_source_path.is_file():
+            generated_path = create_memory_derivative(
+                local_source_path,
+                media_root,
+                kind=memory.kind,
+                memory_id=memory.id,
+                max_size=max_size,
+                duration_seconds=memory.duration_seconds,
+            )
+            if generated_path:
+                memory.thumbnail_path = generated_path
+                memory_file.thumbnail_state = RemoteThumbnailState.READY
+                if memory.width is None or memory.height is None:
+                    dimensions = read_image_dimensions(target_path.read_bytes())
+                    if dimensions is not None:
+                        memory.width, memory.height = dimensions
+                db.commit()
+                return FileResponse(
+                    target_path,
+                    media_type=mimetypes.guess_type(target_path.name)[0] or "image/webp",
+                    headers=cache_headers,
+                )
 
     if memory_file is None or not memory_file.remote_id:
         raise HTTPException(
@@ -321,9 +368,10 @@ def get_memory_thumbnail(
         generated_path = create_remote_thumbnail(
             client,
             memory_file.remote_id,
-            Path(settings.media_root),
+            media_root,
             kind=memory.kind,
             memory_id=memory.id,
+            max_size=max_size,
             duration_seconds=memory.duration_seconds,
         )
     except BaiduPanError:
@@ -332,49 +380,34 @@ def get_memory_thumbnail(
     if generated_path:
         memory.thumbnail_path = generated_path
         memory_file.thumbnail_state = RemoteThumbnailState.READY
-        target_path = resolve_media_path(
-            Path(settings.media_root), memory.thumbnail_path
+        served_target = derivative_cache_path(
+            media_root,
+            memory.id,
+            max_size=max_size,
+            version=settings.media_derivative_version,
         )
-        if target_path is not None and target_path.is_file():
+        if served_target.is_file():
             if memory.width is None or memory.height is None:
-                dimensions = read_image_dimensions(target_path.read_bytes())
+                dimensions = read_image_dimensions(served_target.read_bytes())
                 if dimensions is not None:
                     memory.width, memory.height = dimensions
             db.commit()
             return FileResponse(
-                target_path,
-                media_type=mimetypes.guess_type(target_path.name)[0] or "image/webp",
+                served_target,
+                media_type=mimetypes.guess_type(served_target.name)[0] or "image/webp",
                 headers=cache_headers,
             )
 
-    try:
-        content, content_type = client.get_thumbnail(
-            memory_file.remote_id,
-            requested_size=size,
-        )
-    except BaiduPanError as exc:
-        memory_file.thumbnail_state = RemoteThumbnailState.FAILED
-        record_admin_operation(
-            db,
-            action="thumbnail_proxy_failed",
-            target_type="memory",
-            target_id=memory.id,
-            detail=str(exc),
-        )
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc) or "远程缩略图暂时无法加载",
-        ) from exc
-
-    memory_file.thumbnail_state = RemoteThumbnailState.READY
-    if memory.width is None or memory.height is None:
-        dimensions = read_image_dimensions(content)
-        if dimensions is not None:
-            memory.width, memory.height = dimensions
+    memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+    record_admin_operation(
+        db,
+        action="thumbnail_derivation_failed",
+        target_type="memory",
+        target_id=memory.id,
+        detail="服务端派生失败，未回退到方形缩略图",
+    )
     db.commit()
-    return Response(
-        content=content,
-        media_type=content_type,
-        headers=cache_headers,
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="远程媒体派生暂时无法加载",
     )

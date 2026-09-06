@@ -39,6 +39,18 @@ def remove_media_file(media_root: Path, relative_path: str | None) -> None:
         target_path.unlink()
 
 
+def derivative_cache_path(
+    media_root: Path,
+    memory_id: UUID,
+    *,
+    max_size: int,
+    version: str,
+) -> Path:
+    """Return the isolated cache path for one aspect-preserving derivative."""
+
+    return media_root / "thumbnails" / str(memory_id) / version / f"{max_size}.webp"
+
+
 def _cleanup_output(output_path: Path, temporary_path: Path) -> None:
     temporary_path.unlink(missing_ok=True)
     output_path.unlink(missing_ok=True)
@@ -88,12 +100,59 @@ def _create_video_poster(
         "-map",
         "v:0",
         "-vf",
-        f"scale='min({max_size},iw)':-2",
+        (
+            f"scale='if(gt(iw,ih),min({max_size},iw),-2)':"
+            f"'if(gt(iw,ih),-2,min({max_size},ih))'"
+        ),
         str(temporary_path),
     ]
 
     subprocess.run(command, check=True, capture_output=True, timeout=30)
     temporary_path.replace(output_path)
+
+
+def create_memory_derivative(
+    source_path: Path,
+    media_root: Path,
+    *,
+    kind: MemoryKind,
+    memory_id: UUID,
+    max_size: int,
+    duration_seconds: int | None = None,
+) -> str | None:
+    settings = get_settings()
+    output_path = derivative_cache_path(
+        media_root,
+        memory_id,
+        max_size=max_size,
+        version=settings.media_derivative_version,
+    )
+    output_dir = output_path.parent
+    temporary_path = output_dir / f".{memory_id}.{uuid4().hex}.tmp.webp"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if kind == MemoryKind.PHOTO:
+            _create_photo_thumbnail(
+                source_path,
+                output_path,
+                temporary_path,
+                max_size=max_size,
+                quality=settings.thumbnail_quality,
+            )
+        else:
+            _create_video_poster(
+                source_path,
+                output_path,
+                temporary_path,
+                duration_seconds=duration_seconds,
+                max_size=max_size,
+            )
+    except Exception:
+        _cleanup_output(output_path, temporary_path)
+        return None
+
+    return output_path.relative_to(media_root).as_posix()
 
 
 def create_memory_thumbnail(
@@ -104,31 +163,13 @@ def create_memory_thumbnail(
     memory_id: UUID,
     duration_seconds: int | None = None,
 ) -> str | None:
-    settings = get_settings()
-    output_dir = media_root / "thumbnails"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{memory_id}.webp"
-    temporary_path = output_dir / f".{memory_id}.{uuid4().hex}.tmp.webp"
+    """Compatibility wrapper for callers that use the configured maximum size."""
 
-    try:
-        if kind == MemoryKind.PHOTO:
-            _create_photo_thumbnail(
-                source_path,
-                output_path,
-                temporary_path,
-                max_size=settings.thumbnail_max_size,
-                quality=settings.thumbnail_quality,
-            )
-        else:
-            _create_video_poster(
-                source_path,
-                output_path,
-                temporary_path,
-                duration_seconds=duration_seconds,
-                max_size=settings.thumbnail_max_size,
-            )
-    except Exception:
-        _cleanup_output(output_path, temporary_path)
-        return None
-
-    return output_path.relative_to(media_root).as_posix()
+    return create_memory_derivative(
+        source_path,
+        media_root,
+        kind=kind,
+        memory_id=memory_id,
+        max_size=get_settings().thumbnail_max_size,
+        duration_seconds=duration_seconds,
+    )
