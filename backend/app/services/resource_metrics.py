@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import resource
 from pathlib import Path
 
 
@@ -54,7 +55,40 @@ def _read_memory_events() -> dict[str, int]:
     return events
 
 
-def collect_resource_metrics(media_root: Path) -> dict[str, object]:
+def _read_stack_limits() -> dict[str, int | None]:
+    soft, hard = resource.getrlimit(resource.RLIMIT_STACK)
+    return {
+        "soft_kbytes": soft if soft != resource.RLIM_INFINITY else None,
+        "hard_kbytes": hard if hard != resource.RLIM_INFINITY else None,
+    }
+
+
+def _read_disk(temporary_dir: Path) -> dict[str, int | None]:
+    try:
+        usage = shutil.disk_usage(temporary_dir)
+    except OSError:
+        return {
+            "free_bytes": None,
+            "total_bytes": None,
+            "used_bytes": None,
+            "usage_ratio": None,
+        }
+
+    return {
+        "free_bytes": usage.free,
+        "total_bytes": usage.total,
+        "used_bytes": usage.used,
+        "usage_ratio": round(usage.used / usage.total, 4) if usage.total else None,
+    }
+
+
+def collect_resource_metrics(
+    media_root: Path,
+    *,
+    backend_memory_limit_bytes: int | None = None,
+    temp_disk_quota_bytes: int | None = None,
+    temp_max_files: int | None = None,
+) -> dict[str, object]:
     process = _read_proc_status()
     temporary_dir = media_root / "tmp"
     temp_paths = list(temporary_dir.rglob("*")) if temporary_dir.exists() else []
@@ -62,11 +96,7 @@ def collect_resource_metrics(media_root: Path) -> dict[str, object]:
     temp_bytes = sum(
         path.stat().st_size for path in temp_files if path.is_file()
     )
-    disk_free_bytes: int | None = None
-    try:
-        disk_free_bytes = shutil.disk_usage(temporary_dir).free
-    except OSError:
-        disk_free_bytes = None
+    disk = _read_disk(temporary_dir)
 
     return {
         "process": {
@@ -76,12 +106,20 @@ def collect_resource_metrics(media_root: Path) -> dict[str, object]:
         "cgroup": {
             "memory_current_bytes": _read_int("/sys/fs/cgroup/memory.current"),
             "memory_peak_bytes": _read_int("/sys/fs/cgroup/memory.peak"),
+            "memory_max_bytes": _read_int("/sys/fs/cgroup/memory.max"),
             "pids_current": _read_int("/sys/fs/cgroup/pids.current"),
+            "pids_max": _read_int("/sys/fs/cgroup/pids.max"),
             **_read_memory_events(),
         },
         "temporary": {
             "files": len(temp_files),
             "bytes": temp_bytes,
-            "disk_free_bytes": disk_free_bytes,
+            **disk,
+        },
+        "stack": _read_stack_limits(),
+        "limits": {
+            "backend_memory_bytes": backend_memory_limit_bytes,
+            "temp_disk_quota_bytes": temp_disk_quota_bytes,
+            "temp_max_files": temp_max_files,
         },
     }

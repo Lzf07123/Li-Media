@@ -161,6 +161,107 @@ export type BaiduAuthorizeResponse = {
   expires_at: string;
 };
 
+export type ServiceStatus = {
+  status: "ok" | "unavailable";
+  detail: string | null;
+  pool_status: string | null;
+  dialect: string | null;
+  used_memory_bytes: number | null;
+  max_memory_bytes: number | null;
+  connected_clients: number | null;
+};
+
+export type BackendRuntimeStatus = {
+  app_name: string;
+  version: string;
+  python_version: string;
+  platform: string;
+  pid: number;
+  database: ServiceStatus;
+  redis: ServiceStatus;
+  task_thread_pool_size: number;
+  stack_guard: string;
+};
+
+export type RemoteStorageCounts = {
+  total: number;
+  remote_ready: number;
+  remote_missing: number;
+  remote_failed: number;
+  thumbnail_ready: number;
+  thumbnail_missing: number;
+  thumbnail_failed: number;
+  stream_ready: number;
+  stream_failed: number;
+};
+
+export type RemoteStorageStatus = {
+  provider: string;
+  configured: boolean;
+  oauth_configured: boolean;
+  authorized: boolean;
+  scan_dir: string;
+  token_expires_at: string | null;
+  direct_link_cache_entries: number;
+  counts: RemoteStorageCounts;
+  last_scan: RemoteScanTask | null;
+};
+
+export type TaskQueueStatus = {
+  active: number;
+  queued: number;
+  limit: number;
+  queue_limit: number;
+};
+
+export type SystemStatus = {
+  generated_at: string;
+  backend: BackendRuntimeStatus;
+  remote_storage: RemoteStorageStatus;
+  tasks: Record<keyof typeof TASK_KEYS, TaskQueueStatus>;
+  metrics: Record<string, number>;
+  resources: {
+    process: {
+      rss_kbytes: number | null;
+      threads: number | null;
+      pss_kbytes: number | null;
+    };
+    cgroup: {
+      memory_current_bytes: number | null;
+      memory_peak_bytes: number | null;
+      memory_max_bytes: number | null;
+      pids_current: number | null;
+      pids_max: number | null;
+      oom: number | null;
+      oom_kill: number | null;
+    };
+    temporary: {
+      files: number | null;
+      bytes: number | null;
+      free_bytes: number | null;
+      total_bytes: number | null;
+      used_bytes: number | null;
+      usage_ratio: number | null;
+    };
+    stack: {
+      soft_kbytes: number | null;
+      hard_kbytes: number | null;
+    };
+    limits: {
+      backend_memory_bytes: number | null;
+      temp_disk_quota_bytes: number | null;
+      temp_max_files: number | null;
+    };
+  };
+};
+
+const TASK_KEYS = {
+  scan: true,
+  direct_probe: true,
+  derivative: true,
+  stream: true,
+} as const;
+
 export type MediaDirectLink = {
   direct_url: string;
   expires_at: string | null;
@@ -393,6 +494,14 @@ export async function retryRemoteEntry(memoryFileId: string): Promise<Memory> {
 
 export async function getRemoteConfig(): Promise<RemoteConfig> {
   return request<RemoteConfig>("/admin/remote-config");
+}
+
+export async function getSystemStatus(): Promise<SystemStatus> {
+  return request<SystemStatus>("/admin/system/status", {
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 export async function startBaiduAuthorization(): Promise<BaiduAuthorizeResponse> {

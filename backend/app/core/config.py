@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     stream_queue_limit: int = 32
     stream_wait_timeout_seconds: float = 1.0
     task_thread_pool_size: int = 24
+    backend_memory_limit_bytes: int = 256 * 1024 * 1024
     database_pool_size: int = 8
     database_pool_max_overflow: int = 8
     database_pool_timeout_seconds: int = 30
