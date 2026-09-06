@@ -43,7 +43,7 @@ export default function SiteHeader() {
     <header className="site-header sticky top-0 z-20 border-b border-border bg-surface/80 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
         <Link className="brand flex min-h-11 items-center gap-2 rounded-md text-lg font-semibold" to="/">
-          <Camera aria-hidden="true" className="size-5 text-primary" />
+          <Camera aria-hidden="true" className="brand-halo size-5 text-primary" />
           <span className="brand-name-text">{brand.name}</span>
         </Link>
 

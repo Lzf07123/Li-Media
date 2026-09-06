@@ -12,6 +12,8 @@ import IconButton from "@/components/ui/IconButton";
 import MediaSkeleton from "@/components/ui/MediaSkeleton";
 import Notice from "@/components/ui/Notice";
 import Pagination from "@/components/ui/Pagination";
+import BlurText from "@/components/ui/BlurText";
+import SearchSkeleton from "@/components/ui/SearchSkeleton";
 
 const PAGE_SIZE = 24;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
@@ -246,10 +248,14 @@ export default function HomePage() {
       : null;
 
   return (
-    <section aria-labelledby="library-title">
-      <h1 className="page-title text-3xl font-semibold" id="library-title">
-        {brand.copy.libraryTitle}
-      </h1>
+    <section aria-labelledby="library-title" className="page-enter">
+      <BlurText
+        as="h1"
+        className="page-title text-3xl font-semibold"
+        id="library-title"
+        text={brand.copy.libraryTitle}
+      />
+      <div aria-hidden="true" className="flow-rule mx-auto mt-3 w-16" />
       <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
 
       <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
@@ -308,7 +314,7 @@ export default function HomePage() {
         <label className="sort-cluster">
           <select
             aria-label={brand.copy.sortLabel}
-            className="input"
+            className="select"
             onChange={(event) => changeSort(event.target.value)}
             value={activeSort}
           >
@@ -319,10 +325,14 @@ export default function HomePage() {
         </label>
       </div>
 
-      <p aria-live="polite" className="result-meta mx-auto mt-3 w-full max-w-6xl">
-        {brand.copy.resultSummary.replace("{total}", String(total))}
-        {keyword ? ` · ${brand.copy.activeKeyword} ${keyword}` : ""}
-      </p>
+      {isLoading ? (
+        <SearchSkeleton className="mx-auto mt-3 w-full max-w-6xl" />
+      ) : (
+        <p aria-live="polite" className="result-meta mx-auto mt-3 w-full max-w-6xl">
+          {brand.copy.resultSummary.replace("{total}", String(total))}
+          {keyword ? ` · ${brand.copy.activeKeyword} ${keyword}` : ""}
+        </p>
+      )}
 
       {isLoading ? (
         <>

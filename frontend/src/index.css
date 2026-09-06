@@ -1348,7 +1348,7 @@
     filter: blur(8px);
     will-change: transform, opacity, filter;
     animation: blur-in 450ms var(--limedia-ease-out) both;
-    animation-delay: calc(var(--limedia-blur-index, 0) * 35ms);
+    animation-delay: calc(var(--blur-index, 0) * 35ms);
   }
 
   @keyframes blur-in {
@@ -1700,13 +1700,13 @@
 }
 
 /* 呼吸光点：7px 圆点 + 辉光；颜色默认 secondary，可经
-   --limedia-tech-dot-color 覆盖（Blog 用六强调色做实体→色相稳定哈希） */
+   --tech-dot-color 覆盖（Blog 用六强调色做实体→色相稳定哈希） */
 .tech-dot {
   position: absolute;
   width: 7px;
   height: 7px;
   border-radius: 9999px;
-  background: var(--limedia-tech-dot-color, var(--limedia-secondary));
+  background: var(--tech-dot-color, var(--limedia-secondary));
   box-shadow: 0 0 14px 3px var(--limedia-tech-dot-glow);
   opacity: 0.55;
   animation: tech-dot-pulse 6s ease-in-out infinite;
@@ -1827,6 +1827,14 @@ html {
 .project-card,
 .post-card {
   padding: 24px 28px;
+}
+.journey-panel {
+  padding: 24px 28px;
+}
+.post-list {
+  display: grid;
+  gap: 24px;
+  margin-top: 24px;
 }
 
 .masonry {
@@ -2088,6 +2096,11 @@ html {
 .site-menu-item[aria-current="page"] {
   color: var(--limedia-primary);
   font-weight: 600;
+}
+.site-menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--limedia-border);
 }
 @keyframes limedia-mobile-menu-in {
   from {
