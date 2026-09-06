@@ -1,16 +1,36 @@
-import { Image as ImageIcon, Video } from "lucide-react";
+import { Image as ImageIcon, Play, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { brand } from "@/lib/brand";
-import { resolveMediaUrl, type Memory } from "@/lib/api";
+import { resolveThumbnailUrl, type Memory } from "@/lib/api";
 
-export default function MemoryCard({ memory }: { memory: Memory }) {
+type MemoryCardProps = {
+  memory: Memory;
+  priority?: boolean;
+};
+
+export default function MemoryCard({ memory, priority = false }: MemoryCardProps) {
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, priority ? "medium" : "small");
+  const srcSet = memory.thumbnail_url
+    ? [
+      `${resolveThumbnailUrl(memory.thumbnail_url, "small")} 320w`,
+      `${resolveThumbnailUrl(memory.thumbnail_url, "medium")} 640w`,
+      `${resolveThumbnailUrl(memory.thumbnail_url, "large")} 1280w`,
+    ].join(", ")
+    : undefined;
+  const aspectRatio = memory.width && memory.height
+    ? `${memory.width} / ${memory.height}`
+    : "4 / 3";
 
   useEffect(() => {
+    setLoadState("loading");
     setThumbnailFailed(false);
   }, [memory.thumbnail_url]);
+
+  const showError = thumbnailFailed || loadState === "error";
 
   return (
     <Link
@@ -18,23 +38,39 @@ export default function MemoryCard({ memory }: { memory: Memory }) {
       className="post-card block overflow-hidden"
       to={`/memories/${memory.id}`}
     >
-      {memory.thumbnail_url && !thumbnailFailed ? (
-        <span className="post-cover-link block">
+      {thumbnailUrl && !thumbnailFailed ? (
+        <span className="post-cover-link block media-frame" style={{ aspectRatio }}>
           <img
             alt={brand.copy.detailPreviewAlt}
-            className="post-cover"
-            loading="lazy"
-            onError={() => setThumbnailFailed(true)}
-            src={resolveMediaUrl(memory.thumbnail_url)}
+            className={`post-cover media-reveal ${loadState === "ready" ? "is-loaded" : ""}`}
+            decoding="async"
+            fetchPriority={priority ? "high" : "auto"}
+            height={memory.height ?? undefined}
+            loading={priority ? "eager" : "lazy"}
+            onError={() => {
+              setLoadState("error");
+              setThumbnailFailed(true);
+            }}
+            onLoad={() => setLoadState("ready")}
+            sizes="(max-width: 360px) 88vw, (max-width: 640px) 92vw, (max-width: 768px) 45vw, (max-width: 1024px) 31vw, (max-width: 1280px) 24vw, 21vw"
+            src={thumbnailUrl}
+            srcSet={srcSet}
+            width={memory.width ?? undefined}
           />
         </span>
       ) : (
         <span
           aria-hidden="true"
-          className="flex items-center justify-center rounded-xl bg-surface-2 text-muted"
-          style={{ aspectRatio: "4 / 3" }}
+          className="media-frame flex items-center justify-center rounded-xl bg-surface-2 text-muted"
+          style={{ aspectRatio }}
         >
-          {memory.kind === "video" ? <Video className="size-8" /> : <ImageIcon className="size-8" />}
+          {showError && memory.thumbnail_url ? (
+            <ImageIcon className="size-8" />
+          ) : memory.kind === "video" ? (
+            <Play className="size-8" />
+          ) : (
+            <ImageIcon className="size-8" />
+          )}
         </span>
       )}
       {memory.kind === "video" ? (

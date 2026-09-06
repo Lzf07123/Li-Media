@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Images, Search, X } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
 import { brand } from "@/lib/brand";
@@ -13,17 +13,27 @@ import Notice from "@/components/ui/Notice";
 import Pagination from "@/components/ui/Pagination";
 
 const PAGE_SIZE = 24;
+const SCROLL_STORAGE_KEY = "limedia:home-scroll";
 
 export default function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
   const kind = searchParams.get("kind") ?? undefined;
   const keyword = searchParams.get("keyword") ?? "";
   const page = Number(searchParams.get("page") ?? "1");
+  const sort = searchParams.get("sort") ?? "captured_desc";
   const [searchInput, setSearchInput] = useState(keyword);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [counts, setCounts] = useState({ photo: 0, video: 0 });
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasRestoredScroll = useRef(false);
+  const requestPage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
+  const activeSort = ["captured_desc", "captured_asc", "updated_desc"].includes(sort)
+    ? sort
+    : "captured_desc";
 
   const updateParams = (next: URLSearchParams) => {
     const query = next.toString();
@@ -34,25 +44,25 @@ export default function HomePage() {
     setIsLoading(true);
     try {
       const data = await getMemories({
-        kind: kind === "photo" || kind === "video" ? kind : undefined,
+        kind: activeKind,
         keyword: keyword || undefined,
         page: activePage,
         page_size: PAGE_SIZE,
+        sort: activeSort,
       });
       setMemories(data.items);
       setTotal(data.total);
+      setCounts(data.counts ?? { photo: 0, video: 0 });
       setError(null);
     } catch {
       setError(brand.copy.loadFailed);
     } finally {
       setIsLoading(false);
     }
-  }, [kind, keyword]);
+  }, [activeKind, activeSort, keyword]);
 
   useEffect(() => {
     let active = true;
-    const requestPage = Number.isFinite(page) && page > 0 ? page : 1;
-
     void loadMemories(requestPage).then(() => {
       if (!active) {
         return;
@@ -65,15 +75,58 @@ export default function HomePage() {
   }, [loadMemories, page]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (searchInput.trim() === keyword) {
+        return;
+      }
+
+      const next = new URLSearchParams(searchParams);
+      if (searchInput.trim()) {
+        next.set("keyword", searchInput.trim());
+      } else {
+        next.delete("keyword");
+      }
+      next.delete("page");
+      updateParams(next);
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [keyword, searchInput, searchParams]);
+
+  useEffect(() => {
+    const saveScroll = () => {
+      window.sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY));
+    };
+
+    window.addEventListener("scroll", saveScroll, { passive: true });
+    return () => window.removeEventListener("scroll", saveScroll);
+  }, []);
+
+  useEffect(() => {
+    if (isLoading || hasRestoredScroll.current) {
+      return;
+    }
+
+    hasRestoredScroll.current = true;
+    const previousScroll = Number(window.sessionStorage.getItem(SCROLL_STORAGE_KEY) ?? "0");
+    if (!Number.isFinite(previousScroll) || previousScroll <= 0 || pathname !== "/") {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ behavior: "auto", top: previousScroll });
+    });
+  }, [isLoading, pathname]);
+
+  useEffect(() => {
     setSearchInput(keyword);
   }, [keyword]);
 
-  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const updateSearch = (value: string) => {
     const next = new URLSearchParams(searchParams);
 
-    if (searchInput) {
-      next.set("keyword", searchInput);
+    if (value.trim()) {
+      next.set("keyword", value.trim());
     } else {
       next.delete("keyword");
     }
@@ -95,6 +148,24 @@ export default function HomePage() {
     updateParams(next);
   };
 
+  const changeKind = (nextKind: "photo" | "video" | undefined) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextKind) {
+      next.set("kind", nextKind);
+    } else {
+      next.delete("kind");
+    }
+    next.delete("page");
+    updateParams(next);
+  };
+
+  const changeSort = (nextSort: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("sort", nextSort);
+    next.delete("page");
+    updateParams(next);
+  };
+
   return (
     <section aria-labelledby="library-title">
       <h1 className="page-title text-3xl font-semibold" id="library-title">
@@ -102,30 +173,77 @@ export default function HomePage() {
       </h1>
       <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
 
-      <form className="list-filters mx-auto mt-6 w-full max-w-lg flex-col justify-center sm:flex-row sm:items-center" onSubmit={submitSearch}>
-        <div className="relative w-full sm:w-72">
-          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-          <input
-            aria-label={brand.copy.searchLabel}
-            className="input pl-10"
-            id="library-search"
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder={brand.copy.searchPlaceholder}
-            type="search"
-            value={searchInput}
-          />
+      <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
+        <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
+          <button
+            aria-pressed={!activeKind}
+            data-active={!activeKind ? "true" : "false"}
+            onClick={() => changeKind(undefined)}
+            type="button"
+          >
+            {brand.copy.allKinds}
+          </button>
+          <button
+            aria-pressed={activeKind === "photo"}
+            data-active={activeKind === "photo" ? "true" : "false"}
+            onClick={() => changeKind("photo")}
+            type="button"
+          >
+            {brand.copy.photoKind}
+            <span className="segmented-count">{counts.photo}</span>
+          </button>
+          <button
+            aria-pressed={activeKind === "video"}
+            data-active={activeKind === "video" ? "true" : "false"}
+            onClick={() => changeKind("video")}
+            type="button"
+          >
+            {brand.copy.videoKind}
+            <span className="segmented-count">{counts.video}</span>
+          </button>
         </div>
-        {keyword ? (
-          <Button onClick={clearSearch} variant="secondary">
-            <X aria-hidden="true" className="size-4" />
-            {brand.copy.clearSearch}
-          </Button>
-        ) : null}
-        <Button className="w-full sm:w-auto" type="submit">
-          <Search aria-hidden="true" className="size-4" />
-          {brand.copy.searchLabel}
-        </Button>
-      </form>
+
+        <form className="search-cluster" onSubmit={(event) => {
+          event.preventDefault();
+          updateSearch(searchInput);
+        }}>
+          <div className="relative w-full min-w-56">
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <input
+              aria-label={brand.copy.searchLabel}
+              className="input pl-10"
+              id="library-search"
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder={brand.copy.searchPlaceholder}
+              type="search"
+              value={searchInput}
+            />
+          </div>
+          {keyword ? (
+            <Button aria-label={brand.copy.clearSearch} onClick={clearSearch} variant="secondary">
+              <X aria-hidden="true" className="size-4" />
+            </Button>
+          ) : null}
+        </form>
+
+        <label className="sort-cluster">
+          <select
+            aria-label={brand.copy.sortLabel}
+            className="input"
+            onChange={(event) => changeSort(event.target.value)}
+            value={activeSort}
+          >
+            <option value="captured_desc">{brand.copy.sortCapturedDesc}</option>
+            <option value="captured_asc">{brand.copy.sortCapturedAsc}</option>
+            <option value="updated_desc">{brand.copy.sortUpdatedDesc}</option>
+          </select>
+        </label>
+      </div>
+
+      <p aria-live="polite" className="result-meta mx-auto mt-3 w-full max-w-6xl">
+        {brand.copy.resultSummary.replace("{total}", String(total))}
+        {keyword ? ` · ${brand.copy.activeKeyword} ${keyword}` : ""}
+      </p>
 
       {isLoading ? (
         <>
@@ -148,8 +266,8 @@ export default function HomePage() {
       ) : (
         <>
           <div className="masonry">
-            {memories.map((memory) => (
-              <MemoryCard key={memory.id} memory={memory} />
+            {memories.map((memory, index) => (
+              <MemoryCard key={memory.id} memory={memory} priority={index === 0} />
             ))}
           </div>
           <Pagination onPageChange={changePage} page={page} pageSize={PAGE_SIZE} total={total} />

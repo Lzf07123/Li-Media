@@ -153,15 +153,26 @@ class BaiduPanClient:
 
         return self._to_remote_item(files[0])
 
-    def get_thumbnail(self, remote_id: str) -> tuple[bytes, str]:
+    def get_thumbnail(
+        self,
+        remote_id: str,
+        *,
+        requested_size: str = "medium",
+    ) -> tuple[bytes, str]:
         metadata = self.get_file_metadata(remote_id)
 
         if not metadata.thumbnail_url:
             raise BaiduPanError("远程缩略图不可用")
 
+        size_map = {
+            "small": "c320_u320",
+            "medium": "c640_u640",
+            "large": "c1280_u1280",
+            "detail": "c1600_u1600",
+        }
         thumbnail_url = self._with_requested_thumbnail_size(
             metadata.thumbnail_url,
-            self._settings.baidu_thumbnail_size,
+            size_map.get(requested_size, self._settings.baidu_thumbnail_size),
         )
         try:
             response = httpx.get(

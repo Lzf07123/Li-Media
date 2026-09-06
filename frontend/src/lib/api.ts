@@ -39,6 +39,10 @@ export type MemoryListResponse = {
   total: number;
   page: number;
   page_size: number;
+  counts: {
+    photo: number;
+    video: number;
+  };
 };
 
 export type MemoryAdminListResponse = {
@@ -128,6 +132,18 @@ export function resolveMediaUrl(path: string): string {
   }
 }
 
+export function resolveThumbnailUrl(
+  path: string | null | undefined,
+  size: "small" | "medium" | "large" | "detail",
+): string | null {
+  if (!path) {
+    return null;
+  }
+
+  const url = resolveMediaUrl(path);
+  return `${url}${url.includes("?") ? "&" : "?"}size=${size}`;
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -177,6 +193,7 @@ export async function getMemories(params: {
   kind?: string;
   page?: number;
   page_size?: number;
+  sort?: string;
 } = {}): Promise<MemoryListResponse> {
   const search = new URLSearchParams();
 
@@ -194,6 +211,10 @@ export async function getMemories(params: {
 
   if (params.page_size) {
     search.set("page_size", String(params.page_size));
+  }
+
+  if (params.sort) {
+    search.set("sort", params.sort);
   }
 
   const query = search.toString();

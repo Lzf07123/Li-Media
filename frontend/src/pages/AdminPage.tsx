@@ -43,6 +43,7 @@ export default function AdminPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRetryingRemote, setIsRetryingRemote] = useState<string | null>(null);
   const [scanTask, setScanTask] = useState<RemoteScanTask | null>(null);
+  const [lastDeleted, setLastDeleted] = useState(0);
   const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -236,6 +237,7 @@ export default function AdminPage() {
     try {
       const result = await syncMemories(resumeTaskId);
       setError(null);
+      setLastDeleted(result.deleted);
       pushToast(
         result.scan_task.status === "running"
           ? brand.copy.adminScanQueued
@@ -362,7 +364,7 @@ export default function AdminPage() {
             tone={scanTask.status === "failed" ? "danger" : "primary"}
             value={(scanTask.processed_items / scanTask.max_items) * 100}
           />
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
               <dd className="text-sm">
@@ -394,6 +396,20 @@ export default function AdminPage() {
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminScanSkipped}</dt>
               <dd className="text-sm">{scanTask.skipped}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.statusDeletedCount}</dt>
+              <dd className="text-sm">{lastDeleted}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.statusCompletionTime}</dt>
+              <dd className="text-sm">
+                {scanTask.completed_at
+                  ? formatDateTime(scanTask.completed_at)
+                  : scanTask.status === "running"
+                    ? brand.copy.adminScanRunning
+                    : brand.copy.adminNeverSynced}
+              </dd>
             </div>
           </dl>
           {scanTask.failure_reason ? (

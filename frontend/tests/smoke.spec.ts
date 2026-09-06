@@ -63,6 +63,7 @@ const memoryList = {
   total: 1,
   page: 1,
   page_size: 24,
+  counts: { photo: 1, video: 0 },
 };
 
 async function mockPublicMemoryRoutes(page: Page) {
@@ -121,6 +122,7 @@ test("home waterfall card opens detail", async ({ page }) => {
 
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
   await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "状态详情" }).click();
   await expect(page.getByRole("list", { name: "状态" })).toBeVisible();
   await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
 });
@@ -135,6 +137,7 @@ test("detail shows status strip without resource data", async ({ page }) => {
   );
   await expect(page.getByText("湖边清晨")).toHaveCount(0);
   await expect(page.getByText("2400 × 1200")).toHaveCount(0);
+  await page.getByRole("button", { name: "状态详情" }).click();
   await expect(page.getByRole("list", { name: "状态" })).toBeVisible();
   await expect(page.getByText("文件状态")).toBeVisible();
   await expect(page.getByText("远程状态")).toBeVisible();

@@ -1,5 +1,6 @@
 import mimetypes
 import uuid
+from typing import Literal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -18,7 +19,11 @@ from app.models.memory import (
     RemoteThumbnailState,
 )
 from app.schemas.memory import MemoryRead, to_memory_read
-from app.schemas.responses import MemoryDirectLinkResponse, MemoryListResponse
+from app.schemas.responses import (
+    MemoryCounts,
+    MemoryDirectLinkResponse,
+    MemoryListResponse,
+)
 from app.services.memory_thumbnails import resolve_media_path
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
@@ -32,6 +37,10 @@ def list_memories(
     keyword: str | None = Query(default=None, max_length=100),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=100),
+    sort: str = Query(
+        default="captured_desc",
+        pattern="^(captured_desc|captured_asc|updated_desc)$",
+    ),
     db: Session = Depends(get_db),
 ) -> MemoryListResponse:
     statement = (
@@ -54,12 +63,31 @@ def list_memories(
             | (Memory.location.ilike(f"%{keyword}%"))
         )
 
-    count_statement = select(func.count()).select_from(statement.subquery())
-    total = db.scalar(count_statement) or 0
+    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    photo_count = (
+        db.scalar(
+            select(func.count()).select_from(
+                statement.where(Memory.kind == MemoryKind.PHOTO).subquery()
+            )
+        )
+        or 0
+    )
+    video_count = total - photo_count
+
+    if sort == "captured_asc":
+        primary_order = Memory.captured_at.asc().nulls_last()
+        secondary_order = Memory.updated_at.asc()
+    elif sort == "updated_desc":
+        primary_order = Memory.updated_at.desc()
+        secondary_order = Memory.captured_at.desc().nulls_last()
+    else:
+        primary_order = Memory.captured_at.desc().nulls_last()
+        secondary_order = Memory.updated_at.desc()
 
     memories = db.scalars(
-        statement.order_by(Memory.captured_at.desc().nulls_last())
-        .order_by(Memory.updated_at.desc())
+        statement.order_by(primary_order)
+        .order_by(secondary_order)
+        .order_by(Memory.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -69,6 +97,7 @@ def list_memories(
         total=total,
         page=page,
         page_size=page_size,
+        counts=MemoryCounts(photo=photo_count, video=video_count),
     )
 
 
@@ -228,6 +257,8 @@ def stream_memory(
 @router.get("/{memory_id}/thumbnail", response_model=None)
 def get_memory_thumbnail(
     memory_id: uuid.UUID,
+    request: Request,
+    size: Literal["small", "medium", "large", "detail"] = Query(default="medium"),
     db: Session = Depends(get_db),
 ) -> FileResponse | Response:
     memory = db.get(Memory, memory_id)
@@ -258,6 +289,14 @@ def get_memory_thumbnail(
         )
 
     settings = get_settings()
+    cache_headers = {
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+        "ETag": f'"{memory_id}-{size}"',
+    }
+
+    if request.headers.get("if-none-match") == cache_headers["ETag"]:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=cache_headers)
+
     target_path = (
         resolve_media_path(Path(settings.media_root), memory.thumbnail_path)
         if memory.thumbnail_path
@@ -268,6 +307,7 @@ def get_memory_thumbnail(
         return FileResponse(
             target_path,
             media_type=mimetypes.guess_type(target_path.name)[0] or "image/webp",
+            headers=cache_headers,
         )
 
     if memory_file is None or not memory_file.remote_id:
@@ -276,8 +316,9 @@ def get_memory_thumbnail(
         )
 
     try:
-        content, content_type = BaiduPanClient(settings).get_thumbnail(
-            memory_file.remote_id
+            content, content_type = BaiduPanClient(settings).get_thumbnail(
+                memory_file.remote_id,
+                requested_size=size,
         )
     except BaiduPanError as exc:
         memory_file.thumbnail_state = RemoteThumbnailState.FAILED
@@ -299,5 +340,5 @@ def get_memory_thumbnail(
     return Response(
         content=content,
         media_type=content_type,
-        headers={"Cache-Control": "private, max-age=300"},
+        headers=cache_headers,
     )

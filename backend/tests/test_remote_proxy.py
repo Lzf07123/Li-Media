@@ -36,6 +36,7 @@ class FakeResponse:
 class FakeProxyClient:
     def __init__(self, *, thumbnail_fails: bool = False) -> None:
         self.thumbnail_fails = thumbnail_fails
+        self.thumbnail_sizes: list[str] = []
 
     def open_stream(self, remote_id: str, *, range_header: str | None):
         assert remote_id == "remote-1"
@@ -62,7 +63,8 @@ class FakeProxyClient:
             raw_metadata_summary={},
         )
 
-    def get_thumbnail(self, remote_id: str) -> tuple[bytes, str]:
+    def get_thumbnail(self, remote_id: str, *, requested_size: str = "medium") -> tuple[bytes, str]:
+        self.thumbnail_sizes.append(requested_size)
         if self.thumbnail_fails:
             raise BaiduPanError("远程缩略图不可用")
         return b"thumb", "image/webp"
@@ -165,6 +167,8 @@ def test_remote_thumbnail_is_proxied_for_published_memory(
         assert response.status_code == 200
         assert response.content == b"thumb"
         assert response.headers["content-type"] == "image/webp"
+        assert response.headers["cache-control"].startswith("public, max-age=86400")
+        assert response.headers["etag"] == f'"{memory_id}-medium"'
         assert "private-thumbnail" not in response.text
     finally:
         app.dependency_overrides.clear()
