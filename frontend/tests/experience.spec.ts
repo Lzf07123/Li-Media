@@ -187,6 +187,12 @@ test("kind, keyword, sort and scroll restore after opening detail", async ({ pag
 });
 
 test("waterfall remains stable across acceptance viewports", async ({ page }) => {
+  const expectedColumns: Record<number, string> = {
+    360: "2",
+    768: "3",
+    1280: "5",
+    1600: "6",
+  };
   const items = Array.from({ length: 24 }, (_, index) => ({
     ...memory,
     id: `${memoryId.slice(0, -1)}${String(index).padStart(1, "0")}`,
@@ -217,6 +223,10 @@ test("waterfall remains stable across acceptance viewports", async ({ page }) =>
     await page.setViewportSize(viewport);
     await page.goto("/");
     await expect(page.locator(".masonry .post-card")).toHaveCount(24);
+    const columnCount = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".masonry")!).columnCount,
+    );
+    expect(columnCount).toBe(expectedColumns[viewport.width]);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
