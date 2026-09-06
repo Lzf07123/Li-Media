@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 from app.core.config import get_settings
 from app.models.memory import MemoryKind
 from app.services.task_limits import (
+    is_temporary_path_active,
     register_temporary_path,
     unregister_temporary_path,
 )
@@ -97,3 +98,18 @@ def _temporary_directory_has_capacity(temporary_dir: Path) -> bool:
             return False
 
     return used_bytes < settings.remote_thumbnail_disk_quota_bytes
+
+
+def cleanup_stale_remote_temporary_files(media_root: Path) -> int:
+    """Remove orphaned temp files left by a killed worker before startup."""
+
+    temporary_dir = media_root / "tmp"
+    if not temporary_dir.exists():
+        return 0
+
+    removed = 0
+    for path in temporary_dir.glob("*.tmp"):
+        if path.is_file() and not is_temporary_path_active(path):
+            path.unlink(missing_ok=True)
+            removed += 1
+    return removed

@@ -177,6 +177,29 @@ def test_remote_thumbnail_enforces_source_and_temporary_file_limits(
     assert seen_sizes == [300]
 
 
+def test_startup_removes_orphaned_remote_temporary_files(tmp_path) -> None:
+    from app.services.remote_thumbnails import (
+        cleanup_stale_remote_temporary_files,
+        register_temporary_path,
+        unregister_temporary_path,
+    )
+
+    temporary_dir = tmp_path / "media" / "tmp"
+    temporary_dir.mkdir(parents=True)
+    stale = temporary_dir / "stale.tmp"
+    active = (temporary_dir / "active.tmp").resolve()
+    stale.write_bytes(b"a")
+    active.write_bytes(b"b")
+    register_temporary_path(active)
+
+    try:
+        assert cleanup_stale_remote_temporary_files(tmp_path / "media") == 1
+        assert not stale.exists()
+        assert active.exists()
+    finally:
+        unregister_temporary_path(active)
+
+
 def test_same_derivative_id_merges_concurrent_ffmpeg_work(
     tmp_path, monkeypatch
 ) -> None:

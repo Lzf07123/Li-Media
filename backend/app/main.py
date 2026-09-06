@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,11 +7,13 @@ from anyio import to_thread
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.services.remote_thumbnails import cleanup_stale_remote_temporary_files
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
+    cleanup_stale_remote_temporary_files(Path(settings.media_root))
     to_thread.current_default_thread_limiter().total_tokens = (
         settings.task_thread_pool_size
     )
