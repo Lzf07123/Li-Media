@@ -7,6 +7,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       NGINX_CACHE_ROOT: /app/data/nginx_cache
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      BACKEND_MEMORY_LIMIT_BYTES: ${BACKEND_MEMORY_LIMIT_BYTES:-268435456}
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     mem_limit: 256m
     cpus: 1.0

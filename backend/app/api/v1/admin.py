@@ -49,6 +49,7 @@ from app.schemas.responses import (
     AdminRemoteConfigResponse,
     AdminSyncRequest,
     AdminSyncResponse,
+    AdminSystemStatusResponse,
     RemoteScanTaskRead,
 )
 from app.services.memory_thumbnails import (
@@ -81,6 +82,7 @@ from app.services.baidu_sync import (
     run_remote_scan_task,
 )
 from app.services.task_limits import is_temporary_path_active, task_limiter, task_metrics
+from app.services.system_status import collect_system_status
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -504,6 +506,17 @@ def get_task_metrics(
         "metrics": task_metrics.snapshot(),
         "resources": collect_resource_metrics(Path(get_settings().media_root)),
     }
+
+
+@router.get("/system/status", response_model=AdminSystemStatusResponse)
+def get_system_status(
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminSystemStatusResponse:
+    """Show backend runtime, remote storage health and bounded resource usage."""
+
+    settings = get_settings()
+    return collect_system_status(db, settings=settings)
 
 
 @router.post("/remote-entries/{memory_file_id}/retry", response_model=MemoryRead)

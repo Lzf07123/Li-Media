@@ -103,7 +103,7 @@ async function mockMemoryRoutes(page: Page, listResponse = memoryList) {
 test("photo viewer supports keyboard zoom and restores scroll lock", async ({ page }) => {
   await mockMemoryRoutes(page);
   await page.goto("/");
-  await page.locator(".masonry .post-card").click();
+  await page.locator(".masonry .post-card").first().click();
 
   const viewer = page.locator(".photo-viewer");
   await expect(viewer).toBeVisible();

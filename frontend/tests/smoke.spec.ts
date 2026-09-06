@@ -58,6 +58,80 @@ const scanTask = {
   completed_at: "2026-01-01T08:31:00Z",
 };
 
+const systemStatus = {
+  generated_at: "2026-09-07T08:00:00Z",
+  backend: {
+    app_name: "Li&Media",
+    version: "0.1.0",
+    python_version: "3.12.0",
+    platform: "Linux",
+    pid: 100,
+    database: { status: "ok", detail: null, pool_status: "Pool size: 8", dialect: "postgresql", used_memory_bytes: null, max_memory_bytes: null, connected_clients: null },
+    redis: { status: "ok", detail: "7.0", pool_status: null, dialect: null, used_memory_bytes: 1024, max_memory_bytes: 201326592, connected_clients: 2 },
+    task_thread_pool_size: 24,
+    stack_guard: "task thread pool + cgroup memory + pids limit",
+  },
+  remote_storage: {
+    provider: "baidupan",
+    configured: true,
+    oauth_configured: true,
+    authorized: true,
+    scan_dir: "/apps/Li&Media",
+    token_expires_at: null,
+    direct_link_cache_entries: 1,
+    counts: {
+      total: 1,
+      remote_ready: 1,
+      remote_missing: 0,
+      remote_failed: 0,
+      thumbnail_ready: 1,
+      thumbnail_missing: 0,
+      thumbnail_failed: 0,
+      stream_ready: 1,
+      stream_failed: 0,
+    },
+    last_scan: scanTask,
+  },
+  tasks: {
+    scan: { active: 0, queued: 0, limit: 1, queue_limit: 1 },
+    direct_probe: { active: 0, queued: 0, limit: 4, queue_limit: 16 },
+    derivative: { active: 0, queued: 0, limit: 2, queue_limit: 32 },
+    stream: { active: 0, queued: 0, limit: 16, queue_limit: 32 },
+  },
+  metrics: {
+    active_jobs: 0,
+    queue_depth: 0,
+    queue_wait_total_ms: 12,
+    child_peak_kbytes: 64096,
+  },
+  resources: {
+    process: { rss_kbytes: 59080, threads: 8, pss_kbytes: 49960 },
+    cgroup: {
+      memory_current_bytes: 47366144,
+      memory_peak_bytes: 80941056,
+      memory_max_bytes: 268435456,
+      pids_current: 8,
+      pids_max: 64,
+      oom: 0,
+      oom_kill: 0,
+    },
+    temporary: {
+      files: 0,
+      bytes: 0,
+      free_bytes: 1024,
+      total_bytes: 4096,
+      used_bytes: 3072,
+      usage_ratio: 0.75,
+    },
+    stack: { soft_kbytes: null, hard_kbytes: null },
+    limits: {
+      backend_memory_bytes: 268435456,
+      temp_disk_quota_bytes: 536870912,
+      temp_max_files: 8,
+    },
+  },
+};
+
 const memoryList = {
   items: [memory],
   total: 1,
@@ -145,6 +219,7 @@ test("old detail address redirects to viewer", async ({ page }) => {
 });
 
 test("admin table is visible in dark mode", async ({ page }) => {
+  let statusRequests = 0;
   await page.route("**/api/v1/admin/memories", async (route) => {
     await route.fulfill({ json: { items: [memory], total: 1 } });
   });
@@ -160,6 +235,10 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
     await route.fulfill({ json: scanTask });
   });
+  await page.route("**/api/v1/admin/system/status", async (route) => {
+    statusRequests += 1;
+    await route.fulfill({ json: systemStatus });
+  });
   await page.goto("/admin");
 
   await expect(page.getByRole("heading", { name: "回忆管理" })).toBeVisible();
@@ -167,7 +246,13 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "百度网盘接入步骤" })).toBeVisible();
   await expect(page.getByText("/apps/Li&Media").first()).toBeVisible();
   await expect(page.getByText("远程索引扫描")).toBeVisible();
+  await expect(page.getByText("后端栈与资源状态")).toBeVisible();
+  await expect(page.getByText("远端存储状态")).toBeVisible();
+  await expect(page.getByText("百度网盘", { exact: true })).toBeVisible();
+  await expect(page.getByText("资源与队列")).toBeVisible();
   await expect(page.getByText("预览就绪").first()).toBeVisible();
+  await page.getByRole("button", { name: "刷新状态" }).click();
+  await expect.poll(() => statusRequests).toBeGreaterThan(1);
   await page.getByRole("button", { name: "切换到深色主题" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(

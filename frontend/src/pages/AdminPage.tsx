@@ -5,6 +5,7 @@ import { LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import AdminLoginCard from "@/components/AdminLoginCard";
+import AdminStatusDashboard from "@/components/AdminStatusDashboard";
 import BaiduSetupCard from "@/components/BaiduSetupCard";
 import FileStatusBadge from "@/components/FileStatusBadge";
 import RemoteStateBadge from "@/components/RemoteStateBadge";
@@ -14,6 +15,7 @@ import {
   deleteMemory,
   getAdminMemories,
   getRemoteConfig,
+  getSystemStatus,
   getLatestRemoteScan,
   requestLocalMediaCleanup,
   startBaiduAuthorization,
@@ -29,6 +31,7 @@ import {
   type RemoteScanTask,
   type CleanupResult,
   type CleanupStats,
+  type SystemStatus,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import Button from "@/components/ui/Button";
@@ -52,6 +55,8 @@ export default function AdminPage() {
   const [scanTask, setScanTask] = useState<RemoteScanTask | null>(null);
   const [lastDeleted, setLastDeleted] = useState(0);
   const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -82,6 +87,11 @@ export default function AdminPage() {
       setScanTask(scan);
       const config = await getRemoteConfig();
       setRemoteConfig(config);
+      try {
+        setSystemStatus(await getSystemStatus());
+      } catch {
+        setSystemStatus(null);
+      }
       setError(null);
     } catch (loadError) {
       setIsAdmin(false);
@@ -320,6 +330,18 @@ export default function AdminPage() {
     }
   };
 
+  const refreshSystemStatus = async () => {
+    setIsRefreshingStatus(true);
+    try {
+      setSystemStatus(await getSystemStatus());
+      setError(null);
+    } catch {
+      setError(brand.copy.adminStatusRefreshFailed);
+    } finally {
+      setIsRefreshingStatus(false);
+    }
+  };
+
   const retryRemote = async (memory: Memory) => {
     if (!memory.primary_file) {
       return;
@@ -389,6 +411,12 @@ export default function AdminPage() {
           tokenExpiresAt={remoteConfig.token_expires_at}
         />
       ) : null}
+
+      <AdminStatusDashboard
+        isRefreshing={isRefreshingStatus}
+        onRefresh={() => void refreshSystemStatus()}
+        status={systemStatus}
+      />
 
       <h2 className="section-title mt-12 flex flex-wrap items-center justify-between gap-3">
         <span>{brand.copy.adminAllMemories}</span>

@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 
 from app.models.memory import MemoryStatus, RemoteScanStatus
@@ -148,3 +149,84 @@ class AdminBaiduCallbackRequest(BaseModel):
 class AdminBaiduCallbackResponse(BaseModel):
     authorized: bool
     expires_at: datetime | None
+
+
+class ServiceStatus(BaseModel):
+    status: Literal["ok", "unavailable"]
+    detail: str | None = None
+    pool_status: str | None = None
+    dialect: str | None = None
+    used_memory_bytes: int | None = None
+    max_memory_bytes: int | None = None
+    connected_clients: int | None = None
+
+
+class BackendRuntimeStatus(BaseModel):
+    app_name: str
+    version: str
+    python_version: str
+    platform: str
+    pid: int
+    database: ServiceStatus
+    redis: ServiceStatus
+    task_thread_pool_size: int
+    stack_guard: str
+
+
+class RemoteStorageCounts(BaseModel):
+    total: int
+    remote_ready: int
+    remote_missing: int
+    remote_failed: int
+    thumbnail_ready: int
+    thumbnail_missing: int
+    thumbnail_failed: int
+    stream_ready: int
+    stream_failed: int
+
+
+class RemoteStorageStatus(BaseModel):
+    provider: str
+    configured: bool
+    oauth_configured: bool
+    authorized: bool
+    scan_dir: str
+    token_expires_at: datetime | None
+    direct_link_cache_entries: int
+    counts: RemoteStorageCounts
+    last_scan: RemoteScanTaskRead | None
+
+
+class TaskQueueStatus(BaseModel):
+    active: int
+    queued: int
+    limit: int
+    queue_limit: int
+
+
+class ResourceStackStatus(BaseModel):
+    soft_kbytes: int | None
+    hard_kbytes: int | None
+
+
+class ResourceLimitStatus(BaseModel):
+    backend_memory_bytes: int | None
+    temp_disk_quota_bytes: int | None
+    temp_max_files: int | None
+
+
+class ResourceStatus(BaseModel):
+    process: dict[str, int | None]
+    cgroup: dict[str, int | None]
+    temporary: dict[str, float | int | None]
+    stack: ResourceStackStatus
+    limits: ResourceLimitStatus
+
+
+class AdminSystemStatusResponse(BaseModel):
+    generated_at: datetime
+    backend: BackendRuntimeStatus
+    remote_storage: RemoteStorageStatus
+    tasks: dict[str, TaskQueueStatus]
+    metrics: dict[str, int]
+    resources: ResourceStatus
