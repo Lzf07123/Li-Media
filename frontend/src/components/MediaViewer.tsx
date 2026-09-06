@@ -15,6 +15,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 
 import VideoPlayer from "@/components/VideoPlayer";
 import {
@@ -440,7 +441,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     };
   }, [memory.id]);
 
-  return (
+  return createPortal(
     <div
       aria-label={memory.title || brand.copy.detailPreviewAlt}
       aria-modal="true"
@@ -628,6 +629,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
           <X aria-hidden="true" />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
