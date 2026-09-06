@@ -210,6 +210,7 @@ def _process_pair(
                 memory=memory,
                 max_size=max_size,
                 duration_seconds=memory.duration_seconds,
+                priority=60,
             )
         else:
             client = BaiduPanClient(settings)
@@ -220,6 +221,7 @@ def _process_pair(
                 memory=memory,
                 max_size=max_size,
                 duration_seconds=memory.duration_seconds,
+                priority=60,
             )
     except TaskRejected:
         task_metrics.record_failed(TaskType.DERIVATIVE)

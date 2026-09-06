@@ -407,7 +407,7 @@ test("thumbnail image loads are queued with bounded concurrency", async ({ page 
   await expect(page.locator(".masonry .post-card")).toHaveCount(24);
   await expect.poll(() => activeThumbnailRequests).toBe(0);
   expect(maxActiveThumbnailRequests).toBeGreaterThan(1);
-  expect(maxActiveThumbnailRequests).toBeLessThanOrEqual(4);
+  expect(maxActiveThumbnailRequests).toBeLessThanOrEqual(2);
 });
 
 test("recommendations render first inside the canvas without a separate rail", async ({ page }) => {

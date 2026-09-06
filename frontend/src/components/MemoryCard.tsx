@@ -65,6 +65,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
 
     loadQueuedImage(thumbnailUrl, {
       priority: priority ? "high" : "normal",
+      retries: 4,
       signal: controller.signal,
     })
       .then((image) => {

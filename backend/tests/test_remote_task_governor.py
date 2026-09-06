@@ -132,6 +132,7 @@ def test_remote_thumbnail_enforces_source_and_temporary_file_limits(
         monkeypatch,
         tmp_path,
         remote_thumbnail_source_max_bytes=250,
+        remote_thumbnail_video_source_max_bytes=250,
         remote_thumbnail_max_temp_files=0,
     )
     seen_sizes: list[int] = []
@@ -161,6 +162,7 @@ def test_remote_thumbnail_enforces_source_and_temporary_file_limits(
         lambda: Settings(
             media_root=str(tmp_path / "media"),
             remote_thumbnail_source_max_bytes=250,
+            remote_thumbnail_video_source_max_bytes=250,
         ),
     )
     client = FakeClient([b"x" * 100, b"x" * 100, b"x" * 100, b"x" * 100])

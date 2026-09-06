@@ -195,6 +195,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     const controller = new AbortController();
     loadQueuedImage(largeSrc, {
       priority: "high",
+      retries: 4,
       signal: controller.signal,
     })
       .then(() => {
@@ -223,6 +224,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     const controller = new AbortController();
     loadQueuedImage(smallSrc, {
       priority: "normal",
+      retries: 4,
       signal: controller.signal,
     })
       .then(() => {
@@ -252,6 +254,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     const controller = new AbortController();
     loadQueuedImage(posterSource, {
       priority: "high",
+      retries: 4,
       signal: controller.signal,
     })
       .then(() => {

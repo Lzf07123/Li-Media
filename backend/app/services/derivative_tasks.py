@@ -27,6 +27,7 @@ def run_local_derivative(
     memory: Memory,
     max_size: int,
     duration_seconds: int | None = None,
+    priority: int | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -34,7 +35,9 @@ def run_local_derivative(
     def operation() -> str | None:
         with task_limiter.slot(
             TaskType.DERIVATIVE,
-            priority=derivative_priority(max_size),
+            priority=(
+                derivative_priority(max_size) if priority is None else priority
+            ),
         ):
             return create_memory_derivative(
                 source_path,
@@ -61,6 +64,7 @@ def run_remote_derivative(
     memory: Memory,
     max_size: int,
     duration_seconds: int | None = None,
+    priority: int | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -68,7 +72,9 @@ def run_remote_derivative(
     def operation() -> str | None:
         with task_limiter.slot(
             TaskType.DERIVATIVE,
-            priority=derivative_priority(max_size),
+            priority=(
+                derivative_priority(max_size) if priority is None else priority
+            ),
         ):
             return create_remote_thumbnail(
                 client,
