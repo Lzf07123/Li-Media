@@ -9,7 +9,13 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://media:change-me@db:5432/media}
+      # Compose 只用 POSTGRES_* 生成连接串，避免 DATABASE_URL 与数据库密码失配。
+      DATABASE_URL: ""
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-media}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-media}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       NGINX_CACHE_ROOT: /app/data/nginx_cache
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
