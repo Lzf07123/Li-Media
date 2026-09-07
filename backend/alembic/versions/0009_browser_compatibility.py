@@ -5,7 +5,7 @@ import sqlalchemy as sa
 
 
 revision = "0009_browser_compatibility"
-down_revision = "0008_thumbnail_failure_kind"
+down_revision = "0008_thumbnail_failure"
 branch_labels = None
 depends_on = None
 
