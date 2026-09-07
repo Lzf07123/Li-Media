@@ -1214,7 +1214,7 @@ export default function AdminPage() {
           <table>
             <tbody>
               <tr className="table-empty-row">
-                <td>{brand.copy.adminEmpty}</td>
+                <td colSpan={11}>{brand.copy.adminEmpty}</td>
               </tr>
             </tbody>
           </table>
