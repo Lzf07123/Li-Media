@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.models.memory import (
+    BrowserCompatibilityState,
     Memory,
     MemoryFileStatus,
     MemoryKind,
@@ -13,7 +14,10 @@ from app.models.memory import (
     RemoteThumbnailState,
 )
 
-from app.services.display_health import get_media_display_state
+from app.services.display_health import (
+    get_media_display_state,
+    get_public_visibility_state,
+)
 
 
 class MemoryFileRead(BaseModel):
@@ -35,6 +39,10 @@ class MemoryFileRead(BaseModel):
     thumbnail_state: RemoteThumbnailState
     thumbnail_failure_kind: str | None
     stream_state: RemoteStreamState
+    browser_compatibility: BrowserCompatibilityState
+    browser_format_summary: dict[str, object]
+    browser_compatibility_error: str | None
+    browser_compatibility_checked_at: datetime | None
     last_synced_at: datetime | None
     sync_error: str | None
 
@@ -66,6 +74,7 @@ class MemorySummaryRead(BaseModel):
     kind: MemoryKind
     status: MemoryStatus
     media_display_state: MediaDisplayState = "excluded"
+    public_display_state: MediaDisplayState = "excluded"
     captured_at: datetime | None
     location: str | None
     thumbnail_path: str | None
@@ -101,6 +110,7 @@ class MemoryRead(BaseModel):
     kind: MemoryKind
     status: MemoryStatus
     media_display_state: MediaDisplayState = "excluded"
+    public_display_state: MediaDisplayState = "excluded"
     captured_at: datetime | None
     location: str | None
     thumbnail_path: str | None
@@ -142,6 +152,7 @@ def to_memory_read(memory: Memory) -> MemoryRead:
         MemoryFileRead.model_validate(memory.files[0]) if memory.files else None
     )
     payload.media_display_state = get_media_display_state(memory)
+    payload.public_display_state = get_public_visibility_state(memory)
     return payload
 
 
@@ -151,4 +162,5 @@ def to_memory_summary(memory: Memory) -> MemorySummaryRead:
         MemoryCardFileRead.model_validate(memory.files[0]) if memory.files else None
     )
     payload.media_display_state = get_media_display_state(memory)
+    payload.public_display_state = get_public_visibility_state(memory)
     return payload

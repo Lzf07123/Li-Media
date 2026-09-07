@@ -30,7 +30,16 @@ import {
   updateMemory,
   batchUpdateMemories,
   exportMemories,
+  previewBatchStatusChange,
+  startBatchStatusChange,
+  getLatestBatchStatusJob,
+  cancelBatchStatusJob,
+  startBrowserCompatibilityProbe,
+  getLatestBrowserCompatibilityProbe,
+  cancelBrowserCompatibilityProbe,
   type Memory,
+  type AdminBackgroundJob,
+  type AdminBatchPreview,
   type RemoteConfig,
   type RemoteScanTask,
   type CleanupResult,
@@ -74,6 +83,8 @@ export default function AdminPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [adminKind, setAdminKind] = useState("");
   const [adminDisplay, setAdminDisplay] = useState("");
+  const [adminCompatibility, setAdminCompatibility] = useState("");
+  const [adminStatus, setAdminStatus] = useState("");
   const [adminSearch, setAdminSearch] = useState("");
   const [adminSearchInput, setAdminSearchInput] = useState("");
   const [adminPage, setAdminPage] = useState(1);
@@ -83,6 +94,27 @@ export default function AdminPage() {
     displayable: 0,
     excluded: 0,
   });
+  const [globalCounts, setGlobalCounts] = useState({ photo: 0, video: 0 });
+  const [statusCounts, setStatusCounts] = useState({
+    published: 0,
+    unpublished: 0,
+  });
+  const [browserCounts, setBrowserCounts] = useState({
+    supported: 0,
+    unsupported: 0,
+    unknown: 0,
+  });
+  const [batchJob, setBatchJob] = useState<AdminBackgroundJob | null>(null);
+  const [pendingBatchAction, setPendingBatchAction] = useState<
+    "published" | "hidden" | null
+  >(null);
+  const [pendingBatchPreview, setPendingBatchPreview] =
+    useState<AdminBatchPreview | null>(null);
+  const [isPreparingBatch, setIsPreparingBatch] = useState(false);
+  const [isStartingBatch, setIsStartingBatch] = useState(false);
+  const [isCancellingBatch, setIsCancellingBatch] = useState(false);
+  const [probeJob, setProbeJob] = useState<AdminBackgroundJob | null>(null);
+  const [isProbing, setIsProbing] = useState(false);
   const [isBatchEditing, setIsBatchEditing] = useState(false);
   const [batchTitle, setBatchTitle] = useState("");
   const [batchDescription, setBatchDescription] = useState("");
@@ -105,12 +137,19 @@ export default function AdminPage() {
         keyword: adminSearch || undefined,
         kind: adminKind || undefined,
         display: adminDisplay || undefined,
+        compatibility: adminCompatibility || undefined,
+        status: adminStatus || undefined,
         page: adminPage,
         page_size: adminPageSize,
       });
       setMemories(data.items);
       setAdminTotal(data.total);
       setDisplayCounts(data.display_counts);
+      setGlobalCounts(data.global_counts ?? { photo: 0, video: 0 });
+      setStatusCounts(data.status_counts ?? { published: 0, unpublished: 0 });
+      setBrowserCounts(
+        data.browser_counts ?? { supported: 0, unsupported: 0, unknown: 0 },
+      );
       setIsAdmin(true);
       const scan = await getLatestRemoteScan();
       setScanTask(scan);
@@ -126,6 +165,16 @@ export default function AdminPage() {
       } catch {
         setSystemStatus(null);
       }
+      try {
+        setBatchJob(await getLatestBatchStatusJob());
+      } catch {
+        setBatchJob(null);
+      }
+      try {
+        setProbeJob(await getLatestBrowserCompatibilityProbe());
+      } catch {
+        setProbeJob(null);
+      }
       setError(null);
     } catch (loadError) {
       setIsAdmin(false);
@@ -137,7 +186,15 @@ export default function AdminPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [adminDisplay, adminKind, adminPage, adminPageSize, adminSearch]);
+  }, [
+    adminCompatibility,
+    adminDisplay,
+    adminKind,
+    adminPage,
+    adminPageSize,
+    adminSearch,
+    adminStatus,
+  ]);
 
   useEffect(() => {
     void loadMemories();
@@ -176,6 +233,38 @@ export default function AdminPage() {
 
     return () => window.clearInterval(timer);
   }, [preheatJob?.status]);
+
+  useEffect(() => {
+    if (batchJob?.status !== "queued" && batchJob?.status !== "running") {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      const nextJob = await getLatestBatchStatusJob();
+      setBatchJob(nextJob);
+      if (nextJob?.status !== "queued" && nextJob?.status !== "running") {
+        await loadMemories();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [batchJob?.status, loadMemories]);
+
+  useEffect(() => {
+    if (probeJob?.status !== "queued" && probeJob?.status !== "running") {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      const nextJob = await getLatestBrowserCompatibilityProbe();
+      setProbeJob(nextJob);
+      if (nextJob?.status !== "queued" && nextJob?.status !== "running") {
+        await loadMemories();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [probeJob?.status, loadMemories]);
 
   useEffect(() => {
     const authorizationResult = searchParams.get("baidu_auth");
@@ -285,6 +374,120 @@ export default function AdminPage() {
       setBatchDescription("");
       setBatchLocation("");
       setBatchCapturedAt("");
+    }
+  };
+
+  const prepareBatchStatusChange = async (targetStatus: "published" | "hidden") => {
+    setIsPreparingBatch(true);
+    setPendingBatchAction(targetStatus);
+    try {
+      const preview = await previewBatchStatusChange({
+        kind: adminKind === "photo" || adminKind === "video" ? adminKind : undefined,
+        keyword: adminSearch || undefined,
+        display:
+          adminDisplay === "displayable" || adminDisplay === "excluded"
+            ? adminDisplay
+            : undefined,
+        compatibility:
+          adminCompatibility === "supported" ||
+          adminCompatibility === "unsupported" ||
+          adminCompatibility === "unknown"
+            ? adminCompatibility
+            : undefined,
+        status:
+          adminStatus === "published" || adminStatus === "hidden"
+            ? adminStatus
+            : undefined,
+      });
+      setPendingBatchPreview(preview);
+      setError(null);
+    } catch {
+      setPendingBatchAction(null);
+      setPendingBatchPreview(null);
+      setError(brand.copy.adminBatchFilterFailed);
+    } finally {
+      setIsPreparingBatch(false);
+    }
+  };
+
+  const confirmBatchStatusChange = async () => {
+    if (!pendingBatchAction) {
+      return;
+    }
+    setIsStartingBatch(true);
+    try {
+      const job = await startBatchStatusChange({
+        kind: adminKind === "photo" || adminKind === "video" ? adminKind : undefined,
+        keyword: adminSearch || undefined,
+        display:
+          adminDisplay === "displayable" || adminDisplay === "excluded"
+            ? adminDisplay
+            : undefined,
+        compatibility:
+          adminCompatibility === "supported" ||
+          adminCompatibility === "unsupported" ||
+          adminCompatibility === "unknown"
+            ? adminCompatibility
+            : undefined,
+        status:
+          adminStatus === "published" || adminStatus === "hidden"
+            ? adminStatus
+            : undefined,
+        target_status: pendingBatchAction,
+        confirm: true,
+      });
+      setBatchJob(job);
+      setPendingBatchAction(null);
+      setPendingBatchPreview(null);
+      setError(null);
+      pushToast(brand.copy.adminBatchFilterQueued, "success");
+    } catch {
+      setError(brand.copy.adminBatchFilterFailed);
+    } finally {
+      setIsStartingBatch(false);
+    }
+  };
+
+  const cancelBatchJob = async () => {
+    if (!batchJob) {
+      return;
+    }
+    setIsCancellingBatch(true);
+    try {
+      setBatchJob(await cancelBatchStatusJob(batchJob.id));
+      setError(null);
+    } catch {
+      setError(brand.copy.adminBatchFilterFailed);
+    } finally {
+      setIsCancellingBatch(false);
+    }
+  };
+
+  const startCompatibilityProbe = async () => {
+    setIsProbing(true);
+    try {
+      const job = await startBrowserCompatibilityProbe(25);
+      setProbeJob(job);
+      setError(null);
+      pushToast(brand.copy.adminCompatibilityProbeQueued, "success");
+    } catch {
+      setError(brand.copy.adminCompatibilityProbeFailed);
+    } finally {
+      setIsProbing(false);
+    }
+  };
+
+  const cancelCompatibilityProbe = async () => {
+    if (!probeJob) {
+      return;
+    }
+    setIsProbing(true);
+    try {
+      setProbeJob(await cancelBrowserCompatibilityProbe(probeJob.id));
+    } catch {
+      setError(brand.copy.adminCompatibilityProbeFailed);
+    } finally {
+      setIsProbing(false);
     }
   };
 
@@ -521,6 +724,91 @@ export default function AdminPage() {
         </Button>
       </h2>
 
+      <div className="mt-4 flex flex-wrap gap-3">
+        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminGlobalCountsLabel}>
+          <dt className="text-xs text-muted">{brand.copy.adminGlobalCountsLabel}</dt>
+          <dd className="mt-1 text-lg font-semibold">
+            {globalCounts.photo + globalCounts.video} / {globalCounts.photo} / {globalCounts.video}
+          </dd>
+        </dl>
+        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminDisplayHealthSummary}>
+          <dt className="text-xs text-muted">{brand.copy.adminDisplayHealthSummary}</dt>
+          <dd className="mt-1 text-lg font-semibold">
+            {displayCounts.displayable} / {displayCounts.excluded}
+          </dd>
+        </dl>
+        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminCompatibilitySummary}>
+          <dt className="text-xs text-muted">{brand.copy.adminCompatibilitySummary}</dt>
+          <dd className="mt-1 text-lg font-semibold">
+            {browserCounts.supported} / {browserCounts.unsupported} / {browserCounts.unknown}
+          </dd>
+        </dl>
+        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.statusPublished}>
+          <dt className="text-xs text-muted">{brand.copy.statusPublished} / {brand.copy.statusHidden}</dt>
+          <dd className="mt-1 text-lg font-semibold">
+            {statusCounts.published} / {statusCounts.unpublished}
+          </dd>
+        </dl>
+      </div>
+
+      <div className="card mt-4 flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <h3 className="text-sm font-semibold">
+            {brand.copy.adminCompatibilityProbeTitle}
+          </h3>
+          <p className="mt-1 text-xs text-muted">
+            {brand.copy.adminCompatibilityProbeDescription}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            disabled={isProbing || probeJob?.status === "running" || probeJob?.status === "queued"}
+            onClick={() => void startCompatibilityProbe()}
+          >
+            {isProbing
+              ? brand.copy.adminCompatibilityProbing
+              : brand.copy.adminCompatibilityProbe}
+          </Button>
+          {probeJob?.status === "running" || probeJob?.status === "queued" ? (
+            <Button
+              disabled={isProbing}
+              onClick={() => void cancelCompatibilityProbe()}
+              variant="secondary"
+            >
+              {brand.copy.adminBatchJobCancel}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {probeJob ? (
+        <div className="card mt-4 p-4">
+          <ProgressBar
+            label={brand.copy.adminCompatibilityProbeTitle}
+            tone={probeJob.status === "failed" ? "danger" : "primary"}
+            value={probeJob.total ? (probeJob.processed / probeJob.total) * 100 : 0}
+          />
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
+              <dd className="text-sm">{probeJob.status}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
+              <dd className="text-sm">{probeJob.processed} / {probeJob.total}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobChanged}</dt>
+              <dd className="text-sm">{probeJob.changed}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobFailed}</dt>
+              <dd className="text-sm">{probeJob.failed}</dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
+
       {scanTask ? (
         <div className="card mt-4 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -652,6 +940,22 @@ export default function AdminPage() {
         </dl>
       ) : null}
 
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button
+          disabled={isPreparingBatch || batchJob?.status === "running"}
+          onClick={() => void prepareBatchStatusChange("published")}
+        >
+          {brand.copy.adminBatchPublishFilter}
+        </Button>
+        <Button
+          disabled={isPreparingBatch || batchJob?.status === "running"}
+          onClick={() => void prepareBatchStatusChange("hidden")}
+          variant="secondary"
+        >
+          {brand.copy.adminBatchHideFilter}
+        </Button>
+      </div>
+
       {selectedIds.length > 0 ? (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="mr-auto text-sm text-muted">
@@ -684,7 +988,7 @@ export default function AdminPage() {
       ) : null}
 
       <form
-        className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_190px_150px]"
+        className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_190px_190px_170px_150px]"
         onSubmit={submitAdminSearch}
       >
         <Input
@@ -707,6 +1011,44 @@ export default function AdminPage() {
             <option value="">{brand.copy.adminAllMemories}</option>
             <option value="photo">{brand.copy.photoKind}</option>
             <option value="video">{brand.copy.videoKind}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-compatibility-filter">
+          {brand.copy.adminCompatibilityFilterLabel}
+          <select
+            className="select min-h-11"
+            id="admin-compatibility-filter"
+            onChange={(event) => {
+              setAdminCompatibility(event.target.value);
+              setAdminPage(1);
+            }}
+            value={adminCompatibility}
+          >
+            <option value="">
+              {brand.copy.adminCompatibilitySummary}: {browserCounts.supported}/
+              {browserCounts.unsupported}/{browserCounts.unknown}
+            </option>
+            <option value="supported">{brand.copy.adminCompatibilitySupported}</option>
+            <option value="unsupported">{brand.copy.adminCompatibilityUnsupported}</option>
+            <option value="unknown">{brand.copy.adminCompatibilityUnknown}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-status-filter">
+          {brand.copy.adminStatusHeader}
+          <select
+            className="select min-h-11"
+            id="admin-status-filter"
+            onChange={(event) => {
+              setAdminStatus(event.target.value);
+              setAdminPage(1);
+            }}
+            value={adminStatus}
+          >
+            <option value="">
+              {brand.copy.statusPublished} / {brand.copy.statusHidden}
+            </option>
+            <option value="published">{brand.copy.statusPublished}</option>
+            <option value="hidden">{brand.copy.statusHidden}</option>
           </select>
         </label>
         <label className="flex flex-col gap-2 text-sm" htmlFor="admin-display-filter">
@@ -783,6 +1125,7 @@ export default function AdminPage() {
                 <th scope="col">{brand.copy.adminRemoteStateHeader}</th>
                 <th scope="col">{brand.copy.adminPreviewStateHeader}</th>
                 <th scope="col">{brand.copy.adminStreamStateHeader}</th>
+                <th scope="col">{brand.copy.adminCompatibilityHeader}</th>
                 <th scope="col">{brand.copy.adminLastSyncedHeader}</th>
                 <th scope="col">{brand.copy.adminActionsHeader}</th>
               </tr>
@@ -860,6 +1203,29 @@ export default function AdminPage() {
                     ) : null}
                   </td>
                   <td>
+                    {memory.primary_file?.browser_compatibility === "supported" ? (
+                      <Badge tone="success">
+                        {brand.copy.adminCompatibilitySupported}
+                      </Badge>
+                    ) : memory.primary_file?.browser_compatibility === "unsupported" ? (
+                      <Badge tone="danger">
+                        {brand.copy.adminCompatibilityUnsupported}
+                      </Badge>
+                    ) : (
+                      <Badge tone="warning">
+                        {brand.copy.adminCompatibilityUnknown}
+                      </Badge>
+                    )}
+                    {memory.primary_file?.browser_compatibility_error ? (
+                      <p
+                        className="mt-1 max-w-32 truncate text-xs text-muted"
+                        title={memory.primary_file.browser_compatibility_error}
+                      >
+                        {memory.primary_file.browser_compatibility_error}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td>
                     <p className="text-sm">
                       {memory.primary_file?.last_synced_at
                         ? formatDateTime(memory.primary_file.last_synced_at)
@@ -917,6 +1283,55 @@ export default function AdminPage() {
         </div>
       ) : null}
 
+      {batchJob ? (
+        <div className="card mt-4 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">
+                {brand.copy.adminBatchJobTitle}
+              </h3>
+              <p className="mt-1 text-xs text-muted">{batchJob.action}</p>
+            </div>
+            {batchJob.status === "running" || batchJob.status === "queued" ? (
+              <Button
+                disabled={isCancellingBatch}
+                onClick={() => void cancelBatchJob()}
+                variant="secondary"
+              >
+                {brand.copy.adminBatchJobCancel}
+              </Button>
+            ) : null}
+          </div>
+          <ProgressBar
+            label={brand.copy.adminScanProgress}
+            tone={batchJob.status === "failed" ? "danger" : "primary"}
+            value={batchJob.total ? (batchJob.processed / batchJob.total) * 100 : 0}
+          />
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
+              <dd className="text-sm">{batchJob.status}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
+              <dd className="text-sm">{batchJob.processed} / {batchJob.total}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobChanged}</dt>
+              <dd className="text-sm">{batchJob.changed}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobSkipped}</dt>
+              <dd className="text-sm">{batchJob.skipped}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobFailed}</dt>
+              <dd className="text-sm">{batchJob.failed}</dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
+
       <Link className="mt-8 inline-flex min-h-11 items-center text-primary" to="/">
         {brand.copy.backHome}
       </Link>
@@ -971,6 +1386,82 @@ export default function AdminPage() {
           </Button>
           <Button disabled={isSyncing} onClick={() => void submitBatchEdit()}>
             {brand.copy.adminBatchSave}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        onClose={() => {
+          setPendingBatchAction(null);
+          setPendingBatchPreview(null);
+        }}
+        open={pendingBatchAction !== null && pendingBatchPreview !== null}
+        title={brand.copy.adminBatchFilterConfirmTitle}
+        tone={pendingBatchAction === "hidden" ? "danger" : "info"}
+      >
+        {pendingBatchPreview?.is_full_library ? (
+          <p className="mt-3 text-sm font-medium text-destructive">
+            {brand.copy.adminBatchFilterAllWarning}
+          </p>
+        ) : null}
+        <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-surface-2 p-3">
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminBatchFilterScope}</dt>
+            <dd className="text-sm">
+              {pendingBatchPreview?.filter_snapshot.kind as string} /{" "}
+              {pendingBatchPreview?.filter_snapshot.display as string}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminBatchFilterTotal}</dt>
+            <dd className="text-sm">{pendingBatchPreview?.total ?? 0}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminBatchFilterKind}</dt>
+            <dd className="text-sm">
+              {pendingBatchPreview?.counts.photo ?? 0} /{" "}
+              {pendingBatchPreview?.counts.video ?? 0}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminBatchFilterStatus}</dt>
+            <dd className="text-sm">
+              {pendingBatchPreview?.status_counts.published ?? 0} /{" "}
+              {pendingBatchPreview?.status_counts.unpublished ?? 0}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminBatchFilterDisplay}</dt>
+            <dd className="text-sm">
+              {pendingBatchPreview?.display_counts.displayable ?? 0} /{" "}
+              {pendingBatchPreview?.display_counts.excluded ?? 0}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminBatchFilterBrowser}</dt>
+            <dd className="text-sm">
+              {pendingBatchPreview?.browser_counts.supported ?? 0} /{" "}
+              {pendingBatchPreview?.browser_counts.unsupported ?? 0} /{" "}
+              {pendingBatchPreview?.browser_counts.unknown ?? 0}
+            </dd>
+          </div>
+        </dl>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button
+            onClick={() => {
+              setPendingBatchAction(null);
+              setPendingBatchPreview(null);
+            }}
+            variant="secondary"
+          >
+            {brand.copy.adminBatchFilterCancel}
+          </Button>
+          <Button
+            disabled={isStartingBatch}
+            onClick={() => void confirmBatchStatusChange()}
+            variant={pendingBatchAction === "hidden" ? "danger" : "primary"}
+          >
+            {brand.copy.adminBatchFilterConfirm}
           </Button>
         </div>
       </Modal>

@@ -18,6 +18,17 @@ class DisplayHealthCounts(BaseModel):
     excluded: int
 
 
+class BrowserCompatibilityCounts(BaseModel):
+    supported: int
+    unsupported: int
+    unknown: int
+
+
+class MemoryStatusCounts(BaseModel):
+    published: int
+    unpublished: int
+
+
 class MemoryListResponse(BaseModel):
     items: list[MemoryRead]
     total: int
@@ -34,6 +45,12 @@ class MemorySummaryListResponse(BaseModel):
     counts: MemoryCounts
 
 
+class PublicMediaCounts(BaseModel):
+    total: int
+    photo: int
+    video: int
+
+
 class MemoryDirectLinkResponse(BaseModel):
     direct_url: str
     expires_at: datetime | None
@@ -45,6 +62,12 @@ class AdminMemoryListResponse(BaseModel):
     items: list[MemoryRead]
     total: int
     display_counts: DisplayHealthCounts
+    filtered_display_counts: DisplayHealthCounts
+    global_counts: MemoryCounts
+    status_counts: MemoryStatusCounts
+    filtered_status_counts: MemoryStatusCounts
+    browser_counts: BrowserCompatibilityCounts
+    filtered_browser_counts: BrowserCompatibilityCounts
     page: int
     page_size: int
     counts: MemoryCounts
@@ -102,6 +125,49 @@ class AdminMemoryBatchUpdateRequest(BaseModel):
 
 class AdminMemoryBatchUpdateResponse(BaseModel):
     updated: int
+
+
+class AdminMemoryBatchPreviewRequest(BaseModel):
+    kind: MemoryKind | None = None
+    keyword: str | None = Field(default=None, max_length=100)
+    display: Literal["all", "displayable", "excluded"] = "all"
+    compatibility: Literal["all", "supported", "unsupported", "unknown"] = "all"
+    status: MemoryStatus | None = None
+
+
+class AdminMemoryBatchPreviewResponse(BaseModel):
+    filter_snapshot: dict[str, object]
+    total: int
+    counts: MemoryCounts
+    status_counts: MemoryStatusCounts
+    display_counts: DisplayHealthCounts
+    browser_counts: BrowserCompatibilityCounts
+    is_full_library: bool
+
+
+class AdminMemoryBatchStatusRequest(AdminMemoryBatchPreviewRequest):
+    target_status: MemoryStatus
+    confirm: bool = False
+
+
+class AdminBrowserCompatibilityProbeRequest(BaseModel):
+    limit: int = Field(default=25, ge=1, le=100)
+
+
+class AdminBackgroundJobRead(BaseModel):
+    id: uuid.UUID
+    action: str
+    status: Literal["queued", "running", "completed", "cancelled", "failed"]
+    filter_snapshot: dict[str, object]
+    total: int
+    processed: int
+    changed: int
+    skipped: int
+    failed: int
+    error_message: str | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
 
 
 class AdminMemoryExportRequest(BaseModel):

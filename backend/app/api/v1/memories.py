@@ -22,6 +22,7 @@ from app.models.memory import (
 )
 from app.schemas.memory import MemorySummaryRead, to_memory_summary
 from app.schemas.responses import (
+    PublicMediaCounts,
     MemoryCounts,
     MemoryDirectLinkResponse,
     MemorySummaryListResponse,
@@ -34,8 +35,8 @@ from app.services.memory_thumbnails import (
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.display_health import (
-    displayable_files_condition,
-    get_media_display_state,
+    get_public_visibility_state,
+    public_files_condition,
 )
 from app.services.derivative_tasks import (
     run_local_derivative,
@@ -75,7 +76,7 @@ def recommend_memories(
             Memory.files.any(
                 and_(
                     MemoryFile.source == "baidupan",
-                    displayable_files_condition(),
+                    public_files_condition(),
                 )
             ),
         )
@@ -109,7 +110,7 @@ def list_memories(
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
             MemoryFile.source == "baidupan",
-            displayable_files_condition(),
+            public_files_condition(),
         )
         .distinct()
     )
@@ -162,6 +163,36 @@ def list_memories(
     )
 
 
+@router.get("/public-counts", response_model=PublicMediaCounts)
+def get_public_media_counts(db: Session = Depends(get_db)) -> PublicMediaCounts:
+    """One authoritative count for every publicly browsable photo and video."""
+
+    statement = (
+        select(Memory)
+        .join(Memory.files)
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            MemoryFile.source == "baidupan",
+            public_files_condition(),
+        )
+        .distinct()
+    )
+    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    photo_count = (
+        db.scalar(
+            select(func.count()).select_from(
+                statement.where(Memory.kind == MemoryKind.PHOTO).subquery()
+            )
+        )
+        or 0
+    )
+    return PublicMediaCounts(
+        total=total,
+        photo=photo_count,
+        video=total - photo_count,
+    )
+
+
 @router.get("/{memory_id}", response_model=MemorySummaryRead)
 def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> MemorySummaryRead:
     memory = db.get(Memory, memory_id)
@@ -170,7 +201,7 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> MemorySum
         memory is None
         or memory.status != MemoryStatus.PUBLISHED
         or not any(memory_file.source == "baidupan" for memory_file in memory.files)
-        or get_media_display_state(memory) == "excluded"
+        or get_public_visibility_state(memory) == "excluded"
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
@@ -192,6 +223,7 @@ def get_memory_direct_url(
         memory is None
         or memory.status != MemoryStatus.PUBLISHED
         or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+        or get_public_visibility_state(memory) == "excluded"
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
@@ -267,6 +299,7 @@ def stream_memory(
         memory is None
         or memory.status != MemoryStatus.PUBLISHED
         or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+        or get_public_visibility_state(memory) == "excluded"
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"

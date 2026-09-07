@@ -10,6 +10,7 @@ const memory = {
   description: "安静的水面和缓慢亮起来的天。",
   kind: "photo",
   status: "published",
+  public_display_state: "displayable",
   captured_at: "2026-01-01T08:30:00Z",
   location: "杭州",
   file_url: `/api/v1/memories/${memoryId}/file`,
@@ -36,6 +37,10 @@ const memory = {
     modified_at: null,
     last_synced_at: null,
     sync_error: null,
+    browser_compatibility: "supported",
+    browser_format_summary: {},
+    browser_compatibility_error: null,
+    browser_compatibility_checked_at: null,
   },
   created_at: "2026-01-01T08:35:00Z",
   updated_at: "2026-01-01T08:35:00Z",
@@ -157,6 +162,12 @@ const adminListResponse = {
   items: [memory],
   total: 1,
   display_counts: { displayable: 1, excluded: 0 },
+  filtered_display_counts: { displayable: 1, excluded: 0 },
+  global_counts: { photo: 1, video: 0 },
+  status_counts: { published: 1, unpublished: 0 },
+  filtered_status_counts: { published: 1, unpublished: 0 },
+  browser_counts: { supported: 0, unsupported: 0, unknown: 0 },
+  filtered_browser_counts: { supported: 0, unsupported: 0, unknown: 0 },
   page: 1,
   page_size: 50,
   counts: { photo: 1, video: 0 },
@@ -170,9 +181,23 @@ const memoryList = {
   counts: { photo: 1, video: 0 },
 };
 
+async function mockAdminJobRoutes(page: Page) {
+  await page.route("**/api/v1/admin/memories/batch-status/latest", async (route) => {
+    await route.fulfill({ json: null });
+  });
+  await page.route("**/api/v1/admin/browser-compatibility/probe/latest", async (route) => {
+    await route.fulfill({ json: null });
+  });
+}
+
 async function mockPublicMemoryRoutes(page: Page) {
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
+
+    if (url.pathname === "/api/v1/memories/public-counts") {
+      await route.fulfill({ json: { total: 1, photo: 1, video: 0 } });
+      return;
+    }
 
     if (url.pathname === "/api/v1/memories") {
       await route.fulfill({ json: memoryList });
@@ -256,6 +281,7 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await page.route("**/api/v1/admin/memories**", async (route) => {
     await route.fulfill({ json: adminListResponse });
   });
+  await mockAdminJobRoutes(page);
   await page.route("**/api/v1/admin/remote-config", async (route) => {
     await route.fulfill({
       json: {
@@ -446,6 +472,7 @@ test("admin can retry a remote entry", async ({ page }) => {
   await page.route("**/api/v1/admin/memories**", async (route) => {
     await route.fulfill({ json: { ...adminListResponse, items: [remoteMemory] } });
   });
+  await mockAdminJobRoutes(page);
   await page.route("**/api/v1/admin/remote-config", async (route) => {
     await route.fulfill({
       json: {
@@ -476,6 +503,7 @@ test("admin cleanup confirms before clearing local index", async ({ page }) => {
       json: { ...adminListResponse, items: memories, total: memories.length },
     });
   });
+  await mockAdminJobRoutes(page);
   await page.route("**/api/v1/admin/remote-config", async (route) => {
     await route.fulfill({
       json: {

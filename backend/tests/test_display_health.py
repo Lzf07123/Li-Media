@@ -9,6 +9,7 @@ from app.db.session import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.memory import (
+    BrowserCompatibilityState,
     Memory,
     MemoryFile,
     MemoryKind,
@@ -56,6 +57,7 @@ def add_memory(
                 remote_state=remote_state,
                 thumbnail_state=thumbnail_state,
                 stream_state=stream_state,
+                browser_compatibility=BrowserCompatibilityState.SUPPORTED,
             )
         )
     return memory_id

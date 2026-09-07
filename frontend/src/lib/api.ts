@@ -5,6 +5,7 @@ export type Memory = {
   kind: "photo" | "video";
   status: "pending" | "draft" | "published" | "hidden" | "error";
   media_display_state: "displayable" | "excluded";
+  public_display_state: "displayable" | "excluded";
   captured_at: string | null;
   location: string | null;
   file_url: string;
@@ -29,6 +30,10 @@ export type Memory = {
     thumbnail_state: "missing" | "ready" | "failed";
     thumbnail_failure_kind: string | null;
     stream_state: "unavailable" | "ready" | "failed";
+    browser_compatibility: "supported" | "unsupported" | "unknown";
+    browser_format_summary: Record<string, unknown>;
+    browser_compatibility_error: string | null;
+    browser_compatibility_checked_at: string | null;
     last_synced_at: string | null;
     sync_error: string | null;
   } | null;
@@ -52,6 +57,10 @@ export type MemoryFileSummary = {
   thumbnail_state: MemoryThumbnailState;
   thumbnail_failure_kind: string | null;
   stream_state: MemoryStreamState;
+  browser_compatibility: "supported" | "unsupported" | "unknown";
+  browser_format_summary: Record<string, unknown>;
+  browser_compatibility_error: string | null;
+  browser_compatibility_checked_at: string | null;
 };
 
 export type MemorySummary = {
@@ -61,6 +70,7 @@ export type MemorySummary = {
   kind: Memory["kind"];
   status: Memory["status"];
   media_display_state: "displayable" | "excluded";
+  public_display_state: "displayable" | "excluded";
   captured_at: string | null;
   location: string | null;
   file_url: string;
@@ -90,8 +100,34 @@ export type MemoryAdminListResponse = {
   items: Memory[];
   total: number;
   display_counts: {
+  displayable: number;
+    excluded: number;
+  };
+  filtered_display_counts: {
     displayable: number;
     excluded: number;
+  };
+  global_counts: {
+    photo: number;
+    video: number;
+  };
+  status_counts: {
+    published: number;
+    unpublished: number;
+  };
+  filtered_status_counts: {
+    published: number;
+    unpublished: number;
+  };
+  browser_counts: {
+    supported: number;
+    unsupported: number;
+    unknown: number;
+  };
+  filtered_browser_counts: {
+    supported: number;
+    unsupported: number;
+    unknown: number;
   };
   page: number;
   page_size: number;
@@ -135,6 +171,55 @@ export type MemoryBatchUpdatePayload = {
   location?: string;
   captured_at?: string;
   status?: Memory["status"];
+};
+
+export type AdminBackgroundJob = {
+  id: string;
+  action: string;
+  status: "queued" | "running" | "completed" | "cancelled" | "failed";
+  filter_snapshot: Record<string, unknown>;
+  total: number;
+  processed: number;
+  changed: number;
+  skipped: number;
+  failed: number;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export type AdminBatchPreview = {
+  filter_snapshot: Record<string, unknown>;
+  total: number;
+  counts: {
+    photo: number;
+    video: number;
+  };
+  status_counts: {
+    published: number;
+    unpublished: number;
+  };
+  display_counts: {
+    displayable: number;
+    excluded: number;
+  };
+  browser_counts: {
+    supported: number;
+    unsupported: number;
+    unknown: number;
+  };
+  is_full_library: boolean;
+};
+
+export type AdminBatchStatusPayload = {
+  kind?: "photo" | "video";
+  keyword?: string;
+  display?: "all" | "displayable" | "excluded";
+  compatibility?: "all" | "supported" | "unsupported" | "unknown";
+  status?: Memory["status"];
+  target_status: "published" | "hidden";
+  confirm: boolean;
 };
 
 export type MemoryExportReport = {
@@ -481,6 +566,8 @@ export async function getAdminMemories(
     keyword?: string;
     kind?: string;
     display?: string;
+    compatibility?: string;
+    status?: string;
     page?: number;
     page_size?: number;
   } = {},
@@ -494,6 +581,15 @@ export async function getAdminMemories(
   }
   if (params.page) {
     search.set("page", String(params.page));
+  }
+  if (params.display) {
+    search.set("display", params.display);
+  }
+  if (params.compatibility) {
+    search.set("compatibility", params.compatibility);
+  }
+  if (params.status) {
+    search.set("status", params.status);
   }
   if (params.page_size) {
     search.set("page_size", String(params.page_size));
@@ -517,6 +613,83 @@ export async function loginAdmin(token: string): Promise<void> {
       },
       body: JSON.stringify({ token }),
     },
+  );
+}
+
+export async function getPublicMediaCounts(): Promise<{
+  total: number;
+  photo: number;
+  video: number;
+}> {
+  return request<{ total: number; photo: number; video: number }>(
+    "/memories/public-counts",
+  );
+}
+
+export async function previewBatchStatusChange(
+  payload: Omit<AdminBatchStatusPayload, "target_status" | "confirm">,
+): Promise<AdminBatchPreview> {
+  return request<AdminBatchPreview>("/admin/memories/batch-preview", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function startBatchStatusChange(
+  payload: AdminBatchStatusPayload,
+): Promise<AdminBackgroundJob> {
+  return request<AdminBackgroundJob>("/admin/memories/batch-status", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getLatestBatchStatusJob(): Promise<AdminBackgroundJob | null> {
+  return request<AdminBackgroundJob | null>("/admin/memories/batch-status/latest");
+}
+
+export async function cancelBatchStatusJob(
+  jobId: string,
+): Promise<AdminBackgroundJob> {
+  return request<AdminBackgroundJob>(
+    `/admin/memories/batch-status/${jobId}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export async function startBrowserCompatibilityProbe(
+  limit: number,
+): Promise<AdminBackgroundJob> {
+  return request<AdminBackgroundJob>("/admin/browser-compatibility/probe", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ limit }),
+  });
+}
+
+export async function getLatestBrowserCompatibilityProbe(): Promise<AdminBackgroundJob | null> {
+  return request<AdminBackgroundJob | null>(
+    "/admin/browser-compatibility/probe/latest",
+  );
+}
+
+export async function cancelBrowserCompatibilityProbe(
+  jobId: string,
+): Promise<AdminBackgroundJob> {
+  return request<AdminBackgroundJob>(
+    `/admin/browser-compatibility/probe/${jobId}/cancel`,
+    { method: "POST" },
   );
 }
 

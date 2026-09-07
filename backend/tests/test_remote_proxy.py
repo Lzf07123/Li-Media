@@ -12,6 +12,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import Base, get_db
 from app.main import app
 from app.models.memory import (
+    BrowserCompatibilityState,
     Memory,
     MemoryFile,
     MemoryFileStatus,
@@ -182,6 +183,7 @@ def add_remote_memory(
             remote_state=RemoteFileState.READY,
             thumbnail_state=RemoteThumbnailState.READY,
             stream_state=RemoteStreamState.READY,
+            browser_compatibility=BrowserCompatibilityState.SUPPORTED,
         )
         session.add_all([memory, memory_file])
     return memory.id

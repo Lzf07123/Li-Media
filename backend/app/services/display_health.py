@@ -8,6 +8,7 @@ from app.models.memory import (
     Memory,
     MemoryFile,
     MemoryKind,
+    BrowserCompatibilityState,
     RemoteFileState,
     RemoteStreamState,
     RemoteThumbnailState,
@@ -38,6 +39,31 @@ def displayable_files_condition() -> object:
     )
 
 
+def browser_playable_files_condition() -> object:
+    """Public condition excludes unsupported and unknown videos only."""
+
+    return and_(
+        MemoryFile.source == "baidupan",
+        or_(
+            Memory.kind == MemoryKind.PHOTO,
+            and_(
+                Memory.kind == MemoryKind.VIDEO,
+                MemoryFile.browser_compatibility
+                == BrowserCompatibilityState.SUPPORTED,
+            ),
+        ),
+    )
+
+
+def public_files_condition() -> object:
+    """Display health and browser compatibility must both pass for public media."""
+
+    return and_(
+        displayable_files_condition(),
+        browser_playable_files_condition(),
+    )
+
+
 def get_media_display_state(memory: Memory) -> MediaDisplayState:
     """Classify one memory for public rendering and admin diagnostics."""
 
@@ -64,3 +90,20 @@ def get_media_display_state(memory: Memory) -> MediaDisplayState:
         return "displayable"
 
     return "excluded"
+
+
+def get_public_visibility_state(memory: Memory) -> str:
+    """Classify the final public surface; excluded is intentionally opaque."""
+
+    if get_media_display_state(memory) != "displayable":
+        return "excluded"
+    if memory.kind != MemoryKind.VIDEO:
+        return "displayable"
+    primary_file = memory.files[0] if memory.files else None
+    if (
+        primary_file is None
+        or primary_file.browser_compatibility
+        != BrowserCompatibilityState.SUPPORTED
+    ):
+        return "excluded"
+    return "displayable"

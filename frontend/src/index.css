@@ -264,6 +264,7 @@
 
   body {
     overflow-x: hidden;
+    padding-bottom: 112px;
     @apply bg-background font-sans text-foreground antialiased;
   }
 
@@ -1272,7 +1273,11 @@
        必须在页脚以同/更高优先级显式覆盖为 muted。
        来源：实例化项目实测——全局 a{color:primary} 泄漏导致备案文字呈青色，已修复回写。 */
   .site-footer {
-    @apply relative mt-auto border-t border-border/60 bg-surface/60 backdrop-blur;
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 30;
+    @apply border-t border-border/60 bg-surface/85 backdrop-blur;
   }
   .site-footer-inner {
     @apply mx-auto flex min-h-14 max-w-7xl flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 py-5 text-xs text-muted lg:px-8;
@@ -1855,13 +1860,46 @@ html {
   overflow: hidden;
   border-radius: 16px;
 }
-.media-placeholder {
+  .media-placeholder {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--limedia-surface-2);
+    background: var(--limedia-surface-2);
+}
+
+.card-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--limedia-glass-shine) 45%,
+    transparent 100%
+  );
+  opacity: 0.58;
+  animation: card-sheen 1.6s linear infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-shimmer::after {
+    animation: none;
+    transform: none;
+    opacity: 0.22;
+  }
+}
+
+@keyframes card-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
 }
 .post-cover-link {
   display: block;

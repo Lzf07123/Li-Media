@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.memory import (
+    BrowserCompatibilityState,
     Memory,
     MemoryFile,
     MemoryFileStatus,
@@ -26,6 +27,7 @@ from app.models.memory import (
 )
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
+from app.services.browser_compatibility import apply_persisted_compatibility
 from app.services.memory_files import guess_mime_type, infer_memory_kind_or_none
 from app.services.task_limits import TaskRejected, TaskType, task_limiter, task_metrics
 
@@ -341,10 +343,15 @@ def _upsert_remote_file(
             RemoteThumbnailState.READY if item.thumbnail_url else RemoteThumbnailState.MISSING
         ),
         stream_state=RemoteStreamState.READY,
+        browser_compatibility=(
+            BrowserCompatibilityState.UNKNOWN if kind == MemoryKind.VIDEO else BrowserCompatibilityState.SUPPORTED
+        ),
         last_synced_at=now,
         last_scan_task_id=task.id,
     )
     db.add(memory_file)
+    if kind == MemoryKind.VIDEO:
+        apply_persisted_compatibility(memory_file)
     task.discovered += 1
 
 
@@ -364,6 +371,14 @@ def _apply_remote_metadata(memory_file: MemoryFile, item: BaiduRemoteItem) -> No
         RemoteThumbnailState.READY if item.thumbnail_url else RemoteThumbnailState.MISSING
     )
     memory_file.thumbnail_failure_kind = None
+    if (
+        memory_file.memory_id is not None
+        and (memory_file.memory.kind if memory_file.memory else None) is not None
+    ):
+        # Only videos carry a browser compatibility verdict; photos are untouched.
+        memory = memory_file.memory
+        if memory is not None and str(memory.kind) == MemoryKind.VIDEO.value:
+            apply_persisted_compatibility(memory_file)
 
 
 def _fill_memory_from_remote(
