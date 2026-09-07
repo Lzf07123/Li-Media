@@ -5,10 +5,21 @@ FROM ${IMAGE_REGISTRY}node:22-alpine AS build
 WORKDIR /app
 
 ARG NPM_CONFIG_REGISTRY=https://npmreg.mirrors.ustc.edu.cn/
-ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
+ARG NPM_FALLBACK_REGISTRY=https://registry.npmmirror.com/
+ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY \
+    NPM_FALLBACK_REGISTRY=$NPM_FALLBACK_REGISTRY \
+    NPM_CONFIG_FETCH_RETRIES=5 \
+    NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
 
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN set -eux; \
+    if ! node -e "fetch(process.env.NPM_CONFIG_REGISTRY, { signal: AbortSignal.timeout(5000) }).catch(() => process.exit(1));"; then \
+      echo "primary npm registry unreachable; falling back to $NPM_FALLBACK_REGISTRY"; \
+      export NPM_CONFIG_REGISTRY="$NPM_FALLBACK_REGISTRY"; \
+    fi; \
+    npm ci --registry="$NPM_CONFIG_REGISTRY" --no-audit --no-fund
 
 COPY . .
 
