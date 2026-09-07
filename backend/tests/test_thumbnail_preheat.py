@@ -1,15 +1,105 @@
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-import time
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.session import get_session_factory
+from app.db.session import Base, get_session_factory
 from app.main import app
-from app.models.memory import Memory, MemoryFile
+from app.models.memory import (
+    DerivativeFailureKind,
+    Memory,
+    MemoryFile,
+    MemoryKind,
+    MemoryStatus,
+    RemoteThumbnailState,
+    RemoteStreamState,
+    RemoteFileState,
+)
+from app.services.thumbnail_preheat import _candidate_pairs
 from tests.test_admin_security import configure_admin_app
+
+
+def create_database(tmp_path: Path) -> sessionmaker[Session]:
+    engine = create_engine(f"sqlite:///{tmp_path / 'preheat.db'}")
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def add_memory(
+    session_factory: sessionmaker[Session],
+    *,
+    memory_id: UUID,
+    title: str,
+    kind: MemoryKind,
+    captured_at: datetime,
+    thumbnail_state: RemoteThumbnailState = RemoteThumbnailState.MISSING,
+    failure_kind: str | None = None,
+) -> None:
+    with session_factory.begin() as session:
+        memory = Memory(
+            id=memory_id,
+            title=title,
+            kind=kind,
+            status=MemoryStatus.PUBLISHED,
+            captured_at=captured_at,
+        )
+        memory_file = MemoryFile(
+            memory_id=memory.id,
+            source="baidupan",
+            remote_id=f"remote-{memory_id}",
+            remote_path=f"/cloud/{memory_id}.jpg",
+            parent_path="/cloud",
+            filename=f"{memory_id}.jpg",
+            mime_type="image/jpeg",
+            remote_state=RemoteFileState.READY,
+            thumbnail_state=thumbnail_state,
+            thumbnail_failure_kind=failure_kind,
+            stream_state=RemoteStreamState.READY,
+        )
+        session.add_all([memory, memory_file])
+
+
+def test_candidate_pairs_follow_home_order_and_skip_non_retryable(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_database(tmp_path)
+    add_memory(
+        session_factory,
+        memory_id=UUID("00000000-0000-0000-0000-000000000003"),
+        title="new video",
+        kind=MemoryKind.VIDEO,
+        captured_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        thumbnail_state=RemoteThumbnailState.FAILED,
+        failure_kind=DerivativeFailureKind.SOURCE_TRUNCATED.value,
+    )
+    add_memory(
+        session_factory,
+        memory_id=UUID("00000000-0000-0000-0000-000000000002"),
+        title="retryable photo",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        thumbnail_state=RemoteThumbnailState.FAILED,
+        failure_kind=DerivativeFailureKind.REMOTE_UNAVAILABLE.value,
+    )
+    add_memory(
+        session_factory,
+        memory_id=UUID("00000000-0000-0000-0000-000000000001"),
+        title="older photo",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    with session_factory() as db:
+        pairs = _candidate_pairs(db, kind=None, limit=10)
+
+    assert len(pairs) == 2
+    assert pairs[0][0] == UUID("00000000-0000-0000-0000-000000000002")
+    assert pairs[1][0] == UUID("00000000-0000-0000-0000-000000000001")
 
 
 def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> None:
@@ -25,8 +115,8 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
         memory = Memory(
             id=memory_id,
             title="预热样例",
-            kind="photo",
-            status="published",
+            kind=MemoryKind.PHOTO,
+            status=MemoryStatus.PUBLISHED,
         )
         memory_file = MemoryFile(
             memory_id=memory_id,
@@ -37,7 +127,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             filename="photo.png",
             mime_type="image/png",
             source_path="photos/photo.png",
-            thumbnail_state="missing",
+            thumbnail_state=RemoteThumbnailState.MISSING,
         )
         session.add_all([memory, memory_file])
 
@@ -79,6 +169,6 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             assert memory.thumbnail_path is not None
             assert memory.thumbnail_path.endswith("480.webp")
             assert (media_root / memory.thumbnail_path).is_file()
-            assert memory_file.thumbnail_state == "ready"
+            assert memory_file.thumbnail_state == RemoteThumbnailState.READY
     finally:
         app.dependency_overrides.clear()
