@@ -278,6 +278,7 @@ test("old detail address redirects to viewer", async ({ page }) => {
 test("admin table is visible in dark mode", async ({ page }) => {
   let statusRequests = 0;
   let preheatRequests = 0;
+  let preheatPayload: { kind?: string; limit: number } | null = null;
   await page.route("**/api/v1/admin/memories**", async (route) => {
     await route.fulfill({ json: adminListResponse });
   });
@@ -305,6 +306,7 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await page.route("**/api/v1/admin/thumbnails/preheat", async (route) => {
     if (route.request().method() === "POST") {
       preheatRequests += 1;
+      preheatPayload = route.request().postDataJSON();
       await route.fulfill({ json: preheatJob });
       return;
     }
@@ -325,7 +327,11 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await expect(page.getByText("单帧派生")).toBeVisible();
   await expect(page.getByText("预热缩略图")).toBeVisible();
   await expect(page.getByText("预览就绪").first()).toBeVisible();
+  await page.locator("#preheat-kind").selectOption({ label: "图片资源" });
   await page.getByRole("button", { name: "开始预热" }).click();
+  await expect
+    .poll(() => preheatPayload)
+    .toEqual({ max_size: "240", kind: "photo", limit: 0 });
   await expect.poll(() => preheatRequests).toBeGreaterThan(1);
   await page.getByRole("button", { name: "刷新状态" }).click();
   await expect.poll(() => statusRequests).toBeGreaterThan(1);

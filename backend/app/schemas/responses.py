@@ -326,7 +326,7 @@ class AdminSystemStatusResponse(BaseModel):
 class ThumbnailPreheatRequest(BaseModel):
     max_size: Literal["240", "480", "768", "1280"] = "480"
     kind: MemoryKind | None = None
-    limit: int = Field(default=24, ge=1, le=200)
+    limit: int = Field(default=0, ge=0, le=5000)
 
 
 class ThumbnailPreheatJobRead(BaseModel):

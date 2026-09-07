@@ -97,6 +97,24 @@ test("home public count, loading feedback and persistent footer", async ({ page 
   await expect(firstCard.locator(".card-shimmer")).toBeVisible();
   await expect(firstCard.locator("img")).toBeVisible();
   await expect(firstCard.locator(".card-shimmer")).toHaveCount(0);
+  await expect(firstCard.locator("img")).toHaveCSS("opacity", "1");
+
+  await page.evaluate(() => window.scrollTo(0, 1800));
+  await expect
+    .poll(() =>
+      firstCard
+        .locator("img")
+        .evaluate((element) => getComputedStyle(element).opacity),
+    )
+    .toBe("0");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect
+    .poll(() =>
+      firstCard
+        .locator("img")
+        .evaluate((element) => getComputedStyle(element).opacity),
+    )
+    .toBe("1");
 
   await expect(page.locator(".site-footer")).toHaveCSS("position", "fixed");
   const footerHeight = (await page.locator(".site-footer").boundingBox())?.height ?? 0;

@@ -96,8 +96,13 @@ def test_candidate_pairs_follow_home_order_and_skip_non_retryable(
 
     with session_factory() as db:
         pairs = _candidate_pairs(db, kind=None, limit=10)
+    unlimited_pairs = _candidate_pairs(db, kind=None, limit=0)
+    photo_pairs = _candidate_pairs(db, kind=MemoryKind.PHOTO, limit=0)
 
     assert len(pairs) == 2
+    assert len(unlimited_pairs) == 2
+    assert len(photo_pairs) == 2
+    assert photo_pairs[0][0] == UUID("00000000-0000-0000-0000-000000000002")
     assert pairs[0][0] == UUID("00000000-0000-0000-0000-000000000002")
     assert pairs[1][0] == UUID("00000000-0000-0000-0000-000000000001")
 
@@ -141,7 +146,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
 
             response = client.post(
                 "/api/v1/admin/thumbnails/preheat",
-                json={"max_size": "480", "kind": "photo", "limit": 1},
+                json={"max_size": "480", "kind": "photo", "limit": 0},
             )
             assert response.status_code == 202
             assert response.json()["status"] in {"queued", "running", "completed"}

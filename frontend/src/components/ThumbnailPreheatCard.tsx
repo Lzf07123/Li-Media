@@ -3,7 +3,6 @@ import { Images } from "lucide-react";
 
 import Button from "@/components/ui/Button";
 import ProgressBar from "@/components/ui/ProgressBar";
-import { Input } from "@/components/ui/Input";
 import { brand } from "@/lib/brand";
 import type { ThumbnailPreheatJob } from "@/lib/api";
 
@@ -37,8 +36,13 @@ export default function ThumbnailPreheatCard({
 }: ThumbnailPreheatCardProps) {
   const [maxSize, setMaxSize] = useState<(typeof sizes)[number]>("240");
   const [kind, setKind] = useState<"" | "photo" | "video">("");
-  const [limit, setLimit] = useState("24");
   const isJobActive = job?.status === "queued" || job?.status === "running";
+  const scopeCopy =
+    kind === "photo"
+      ? brand.copy.adminPreheatPhoto
+      : kind === "video"
+        ? brand.copy.adminPreheatVideo
+        : brand.copy.adminPreheatAllKinds;
 
   return (
     <div className="card mt-4 p-4">
@@ -72,7 +76,7 @@ export default function ThumbnailPreheatCard({
               void onStart({
                 max_size: maxSize,
                 kind: kind || undefined,
-                limit: Math.min(200, Math.max(1, Number(limit) || 24)),
+                limit: 0,
               })
             }
           >
@@ -83,7 +87,7 @@ export default function ThumbnailPreheatCard({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-2 text-sm" htmlFor="preheat-size">
           {brand.copy.adminPreheatSize}
           <select
@@ -117,17 +121,11 @@ export default function ThumbnailPreheatCard({
             <option value="video">{brand.copy.adminPreheatVideo}</option>
           </select>
         </label>
-
-        <Input
-          id="preheat-limit"
-          label={brand.copy.adminPreheatLimit}
-          max={200}
-          min={1}
-          onChange={(event) => setLimit(event.target.value)}
-          type="number"
-          value={limit}
-        />
       </div>
+
+      <p className="mt-3 text-xs text-muted">
+        {brand.copy.adminPreheatScope}: {scopeCopy}
+      </p>
 
       {job ? (
         <div className="mt-4">
@@ -142,7 +140,9 @@ export default function ThumbnailPreheatCard({
           <ProgressBar
             label={brand.copy.adminPreheatTitle}
             tone={job.status === "failed" ? "danger" : "primary"}
-            value={(job.processed / (job.total || job.limit)) * 100}
+            value={
+              job.total > 0 ? (job.processed / job.total) * 100 : 0
+            }
           />
           <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
