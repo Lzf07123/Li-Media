@@ -113,6 +113,11 @@ def run_browser_compatibility_probe(
 
             job.status = "completed"
             job.completed_at = datetime.now(timezone.utc)
+            if job.failed:
+                job.error_message = (
+                    "failed={0};reason=bounded_probe_unavailable;"
+                    "retry=later_or_refresh_remote_entry"
+                ).format(job.failed)
             db.commit()
             _record_job_log(
                 db,
@@ -152,6 +157,7 @@ def _record_job_log(
             target_id=None,
             detail=(
                 f"job={job.id};status={job.status};total={job.total};"
+                f"session={operator_session_id or 'unknown'};"
                 f"processed={job.processed};changed={job.changed};"
                 f"skipped={job.skipped};failed={job.failed};"
                 f"nginx_cache_files={invalidated_cache_files};"

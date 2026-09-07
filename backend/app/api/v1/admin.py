@@ -828,7 +828,10 @@ def start_batch_status_change(
         target_type="memory_batch_job",
         target_id=None,
         client_ip=_client_ip(request),
-        detail=f"action={job.action};total={job.total};filters={job.filter_snapshot}",
+        detail=(
+            f"action={job.action};total={job.total};"
+            f"session={admin_session.id};filters={job.filter_snapshot}"
+        ),
     )
     db.commit()
     return job
@@ -913,7 +916,10 @@ def start_browser_compatibility_probe(
         target_type="memory_batch_job",
         target_id=None,
         client_ip=_client_ip(request),
-        detail=f"limit={payload.limit};mode=bounded-prefix",
+        detail=(
+            f"limit={payload.limit};session={admin_session.id};"
+            "mode=bounded-prefix"
+        ),
     )
     db.commit()
     return job

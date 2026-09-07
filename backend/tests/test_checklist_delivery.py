@@ -222,6 +222,7 @@ def test_admin_counts_filters_batch_preview_and_idempotent_batch(
             ).all()
             assert len(logs) == 1
             assert all("resource_ids=" in log.detail for log in logs)
+            assert all("session=" in log.detail for log in logs)
 
             repeat_job = AdminBackgroundJob(
                 action="batch_status_hidden",

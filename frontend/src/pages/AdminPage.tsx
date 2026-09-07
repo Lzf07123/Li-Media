@@ -104,6 +104,9 @@ export default function AdminPage() {
     unsupported: 0,
     unknown: 0,
   });
+  const [countsState, setCountsState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
   const [batchJob, setBatchJob] = useState<AdminBackgroundJob | null>(null);
   const [pendingBatchAction, setPendingBatchAction] = useState<
     "published" | "hidden" | null
@@ -132,6 +135,7 @@ export default function AdminPage() {
 
   const loadMemories = useCallback(async () => {
     setIsLoading(true);
+    setCountsState("loading");
     try {
       const data = await getAdminMemories({
         keyword: adminSearch || undefined,
@@ -151,6 +155,7 @@ export default function AdminPage() {
         data.browser_counts ?? { supported: 0, unsupported: 0, unknown: 0 },
       );
       setIsAdmin(true);
+      setCountsState("ready");
       const scan = await getLatestRemoteScan();
       setScanTask(scan);
       const config = await getRemoteConfig();
@@ -178,6 +183,7 @@ export default function AdminPage() {
       setError(null);
     } catch (loadError) {
       setIsAdmin(false);
+      setCountsState("error");
       setError(
         loadError instanceof Error && loadError.message.includes("401")
           ? null
@@ -579,6 +585,16 @@ export default function AdminPage() {
     return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
   };
 
+  const countValue = (value: string | number) => {
+    if (countsState === "loading") {
+      return brand.copy.adminCountsLoading;
+    }
+    if (countsState === "error") {
+      return brand.copy.adminCountsUnavailable;
+    }
+    return String(value);
+  };
+
   const startAuthorization = async () => {
     setIsAuthorizing(true);
     try {
@@ -728,25 +744,35 @@ export default function AdminPage() {
         <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminGlobalCountsLabel}>
           <dt className="text-xs text-muted">{brand.copy.adminGlobalCountsLabel}</dt>
           <dd className="mt-1 text-lg font-semibold">
-            {globalCounts.photo + globalCounts.video} / {globalCounts.photo} / {globalCounts.video}
+            {countValue(
+              `${globalCounts.photo + globalCounts.video} / ${globalCounts.photo} / ${globalCounts.video}`,
+            )}
           </dd>
         </dl>
         <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminDisplayHealthSummary}>
           <dt className="text-xs text-muted">{brand.copy.adminDisplayHealthSummary}</dt>
           <dd className="mt-1 text-lg font-semibold">
-            {displayCounts.displayable} / {displayCounts.excluded}
+            {countValue(
+              `${displayCounts.displayable} / ${displayCounts.excluded}`,
+            )}
           </dd>
         </dl>
         <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminCompatibilitySummary}>
           <dt className="text-xs text-muted">{brand.copy.adminCompatibilitySummary}</dt>
           <dd className="mt-1 text-lg font-semibold">
-            {browserCounts.supported} / {browserCounts.unsupported} / {browserCounts.unknown}
+            {countValue(
+              `${browserCounts.supported} / ${browserCounts.unsupported} / ${browserCounts.unknown}`,
+            )}
           </dd>
         </dl>
         <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.statusPublished}>
-          <dt className="text-xs text-muted">{brand.copy.statusPublished} / {brand.copy.statusHidden}</dt>
+          <dt className="text-xs text-muted">
+            {brand.copy.statusPublished} / {brand.copy.adminUnpublished}
+          </dt>
           <dd className="mt-1 text-lg font-semibold">
-            {statusCounts.published} / {statusCounts.unpublished}
+            {countValue(
+              `${statusCounts.published} / ${statusCounts.unpublished}`,
+            )}
           </dd>
         </dl>
       </div>
@@ -1329,6 +1355,14 @@ export default function AdminPage() {
               <dd className="text-sm">{batchJob.failed}</dd>
             </div>
           </dl>
+          {batchJob.error_message ? (
+            <p className="mt-3 text-sm text-muted">
+              <span className="font-medium">
+                {brand.copy.adminBatchJobRetryReason}:{" "}
+              </span>
+              {batchJob.error_message}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

@@ -124,7 +124,8 @@ CHECKLIST.md          当前版本验收基线
 - 已完成：缩略图手动预热与任务队列拒绝指标展示。
 - 已完成：前端缩略图全局排队加载，公开页面冷缓存时不再瞬时打满派生队列。
 - 已完成：分层并发限制、请求合并、任务指标、单帧派生资源边界、容器资源硬上限和清理中的活动临时文件保护。
-- 待完成：后台审核、发布流程增强和线上部署验收。
+- 已完成：后台媒体盘点、筛选一致计数、浏览器兼容筛选、批量发布/下线任务、页脚常驻和公开收录总量展示。
+- 待完成：线上部署验收和真实大目录扫描观测。
 
 ## 公开接口
 
@@ -138,6 +139,19 @@ CHECKLIST.md          当前版本验收基线
 | `GET /api/v1/memories/:id/thumbnail` | 派生图；`size=240|480|768|1280` |
 | `GET /api/v1/memories/:id/direct-url` | 播放或下载短链；响应 `no-store` |
 | `GET /api/v1/memories/:id/stream` | 直链失败时的流式回退 |
+| `GET /api/v1/memories/public-counts` | 公开可浏览总数；使用与公开列表/推荐/详情相同的谓词 |
+
+## 浏览器兼容矩阵
+
+公开照片只需要展示健康；公开视频必须同时满足已发布、展示健康和浏览器可播放。兼容状态持久化在 `memory_files.browser_compatibility`，摘要、失败原因、探测时间和矩阵版本持久化在 `memory_files.browser_format_summary` / `browser_compatibility_error` / `browser_compatibility_checked_at` / `browser_compatibility_version`。
+
+| 状态 | 判定 | 假设与来源 |
+| --- | --- | --- |
+| `supported` | MP4/M4V + H.264/AVC1；音频为 AAC/MP4A 或无音轨 | 依据当前主流浏览器对 HTML5 媒体的通用基线；profile 只作为摘要记录，不放宽到浏览器专属能力。 |
+| `unsupported` | AVI、FLV、Matroska/MKV、MOV、MPEG-TS、WebM、WMV，或 HEVC/H.265/HVC1、MPEG-4 Part 2、MPEG-2、ProRes、VP8/VP9、AV1 | 保守矩阵按“无浏览器专属配置可播放”判定；Safari HEVC 等能力必须由后续客户端能力查询细化，不能默认放宽全站谓词。 |
+| `unknown` | 容器/编码/音轨证据不足，或受控探测数据不足 | 默认不进入公开画布和推荐；只在管理员触发探测时使用远程前缀和 `ffprobe`，不完整下载源媒体，也不转码。 |
+
+兼容状态变化会同步刷新计数、列表、详情、推荐和 Nginx 代理缓存。探测结果不保存源媒体副本、完整直链、Token 或 Cookie。
 
 ## 管理入口
 

@@ -93,6 +93,11 @@ def run_batch_status_job(
 
             job.status = "completed"
             job.completed_at = datetime.now(timezone.utc)
+            if job.failed:
+                job.error_message = (
+                    "failed={0};reason=memory_or_remote_index_missing;"
+                    "retry=rescan_remote_directory"
+                ).format(job.failed)
             db.commit()
             invalidated_cache_files = invalidate_nginx_proxy_cache()
             _record_job_log(
@@ -140,6 +145,7 @@ def _record_job_log(
             target_id=None,
             detail=(
                 f"job={job.id};status={job.status};total={job.total};"
+                f"session={operator_session_id or 'unknown'};"
                 f"processed={job.processed};changed={job.changed};"
                 f"skipped={job.skipped};failed={job.failed};"
                 f"nginx_cache_files={invalidated_cache_files};"
