@@ -76,6 +76,20 @@ export default function AdminStatusDashboard({
       ? status.resources.temporary.bytes /
         status.resources.limits.temp_disk_quota_bytes
       : null;
+  const filesystemRatio = status.resources.filesystem.usage_ratio;
+  const filesystemTone =
+    filesystemRatio !== null && filesystemRatio >= 0.9
+      ? "danger"
+      : filesystemRatio !== null && filesystemRatio >= 0.8
+        ? "warning"
+        : "primary";
+  const configuration = status.backend.configuration;
+  const cacheStatus = {
+    ok: "",
+    unavailable: brand.copy.adminCacheUnavailable,
+    truncated: brand.copy.adminCacheTruncated,
+    timeout: brand.copy.adminCacheTimeout,
+  };
   const queueLabels: Record<string, string> = {
     scan: brand.copy.adminQueueScan,
     direct_probe: brand.copy.adminQueueDirectProbe,
@@ -227,6 +241,14 @@ export default function AdminStatusDashboard({
           </div>
 
           <div className="mt-3 space-y-3">
+            {filesystemRatio !== null ? (
+              <ProgressBar
+                label={brand.copy.adminResourceFilesystem}
+                tone={filesystemTone}
+                value={filesystemRatio * 100}
+              />
+            ) : null}
+
             {memoryCurrent !== null && memoryLimit ? (
               <ProgressBar
                 label={brand.copy.adminResourceMemory}
@@ -254,7 +276,7 @@ export default function AdminStatusDashboard({
               />
               <Metric
                 label={brand.copy.adminResourceDisk}
-                value={formatBytes(status.resources.temporary.free_bytes) ?? "-"}
+                value={`${formatBytes(status.resources.filesystem.used_bytes) ?? "-"} / ${formatBytes(status.resources.filesystem.total_bytes) ?? "-"}`}
               />
               <Metric
                 label={brand.copy.adminResourceActiveJobs}
@@ -269,6 +291,68 @@ export default function AdminStatusDashboard({
                 value={status.resources.cgroup.oom_kill ?? 0}
               />
             </dl>
+
+            <div>
+              <h4 className="text-sm font-semibold">
+                {brand.copy.adminCacheTitle}
+              </h4>
+              <dl className="mt-2 grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ["derived_thumbnails", brand.copy.adminCacheDerived],
+                    ["temporary", brand.copy.adminCacheTemporary],
+                    ["nginx", brand.copy.adminCacheNginx],
+                  ] as const
+                ).map(([key, label]) => {
+                  const cache = status.resources.caches[key];
+                  const statusText = cacheStatus[cache.status];
+                  return (
+                    <div className="rounded-lg border border-border p-3" key={key}>
+                      <dt className="text-xs text-muted">{label}</dt>
+                      <dd className="mt-1 text-sm font-medium">
+                        {cache.files} {brand.copy.adminCacheFiles} ·{" "}
+                        {formatBytes(cache.bytes) ?? 0}
+                      </dd>
+                      {statusText ? (
+                        <p className="mt-1 text-xs text-muted">{statusText}</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </dl>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-semibold">
+                {brand.copy.adminConfigurationTitle}
+              </h4>
+              <dl className="mt-2 grid grid-cols-2 gap-2">
+                <Metric
+                  label={brand.copy.adminConfigPreheatConcurrency}
+                  value={`${configuration.preheat_concurrency_limit} / ${configuration.preheat_queue_limit}`}
+                />
+                <Metric
+                  label={brand.copy.adminConfigDerivative}
+                  value={`${configuration.derivative_concurrency_limit} / ${configuration.derivative_queue_limit}`}
+                />
+                <Metric
+                  label={brand.copy.adminConfigDirectProbe}
+                  value={`${configuration.direct_probe_concurrency_limit} / ${configuration.direct_probe_queue_limit}`}
+                />
+                <Metric
+                  label={brand.copy.adminConfigScan}
+                  value={configuration.scan_concurrency_limit}
+                />
+                <Metric
+                  label={brand.copy.adminConfigStreamGlobal}
+                  value={`${configuration.stream_global_concurrency_limit} / ${configuration.stream_user_concurrency_limit}`}
+                />
+                <Metric
+                  label={brand.copy.adminConfigTemp}
+                  value={`${configuration.temp_max_files} / ${formatBytes(configuration.temp_disk_quota_bytes) ?? "-"}`}
+                />
+              </dl>
+            </div>
 
             <div>
               <h4 className="text-sm font-semibold">

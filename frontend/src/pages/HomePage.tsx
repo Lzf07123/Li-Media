@@ -10,7 +10,9 @@ import {
   getMemories,
   getPublicMediaCounts,
   getMemoryRecommendations,
+  getPublicPreheatStatus,
   type MemorySummary,
+  type PublicPreheatStatus,
 } from "@/lib/api";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
@@ -74,6 +76,10 @@ export default function HomePage() {
     video: number;
   } | null>(null);
   const [publicCountState, setPublicCountState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [preheatSummary, setPreheatSummary] = useState<PublicPreheatStatus | null>(null);
+  const [preheatState, setPreheatState] = useState<
     "loading" | "ready" | "error"
   >("loading");
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
@@ -179,6 +185,35 @@ export default function HomePage() {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPreheatStatus = () => {
+      getPublicPreheatStatus()
+        .then((summary) => {
+          if (!active) {
+            return;
+          }
+          setPreheatSummary(summary);
+          setPreheatState("ready");
+        })
+        .catch(() => {
+          if (active) {
+            setPreheatSummary(null);
+            setPreheatState("error");
+          }
+        });
+    };
+
+    loadPreheatStatus();
+    const pollTimer = window.setInterval(loadPreheatStatus, 20000);
+
+    return () => {
+      active = false;
+      window.clearInterval(pollTimer);
     };
   }, []);
 
@@ -408,6 +443,32 @@ export default function HomePage() {
               {publicCounts?.video ?? 0}
             </span>
           </>
+        )}
+      </p>
+
+      <p
+        aria-live="polite"
+        className="mt-2 text-center text-sm text-muted"
+        data-testid="preheat-status"
+      >
+        {preheatState === "loading" ? (
+          brand.copy.preheatStatusLoading
+        ) : preheatState === "error" ? (
+          brand.copy.preheatStatusUnavailable
+        ) : preheatSummary?.status === "running" ? (
+          <>
+            {brand.copy.preheatStatusRunning}
+            <span className="ml-2">
+              {brand.copy.preheatStatusProgress}{" "}
+              {preheatSummary.processed}/{preheatSummary.total}
+            </span>
+          </>
+        ) : preheatSummary?.status === "not_preheated" ? (
+          brand.copy.preheatStatusNotPreheated
+        ) : preheatSummary?.status === "degraded" ? (
+          brand.copy.preheatStatusDegraded
+        ) : (
+          brand.copy.preheatStatusReady
         )}
       </p>
 

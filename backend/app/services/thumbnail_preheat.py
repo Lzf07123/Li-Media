@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event, Lock
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.core.config import Settings
@@ -30,6 +30,7 @@ from app.services.memory_thumbnails import (
     derivative_cache_path,
     resolve_media_path,
 )
+from app.services.display_health import public_files_condition
 from app.services.task_limits import TaskCancelled, TaskRejected, task_metrics
 from app.services.task_limits import TaskType
 from app.services.task_limits import task_limiter
@@ -219,6 +220,50 @@ def _candidate_pairs(
         (memory_id, file_id)
         for memory_id, file_id in db.execute(ordered_statement).all()
     ]
+
+
+def count_public_derivative_candidates(db: Session) -> int:
+    """Count the same public display surface without leaking per-item data."""
+
+    statement = (
+        select(func.count(MemoryFile.id))
+        .join(Memory, MemoryFile.memory_id == Memory.id)
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            MemoryFile.source == "baidupan",
+            MemoryFile.remote_id.is_not(None),
+            public_files_condition(),
+        )
+    )
+    return int(db.scalar(statement) or 0)
+
+
+def collect_public_preheat_status(
+    db: Session,
+    *,
+    latest_job: ThumbnailPreheatJob | None,
+) -> dict[str, int | str]:
+    total = count_public_derivative_candidates(db)
+
+    if latest_job is None:
+        return {
+            "status": "ready" if total == 0 else "not_preheated",
+            "processed": 0,
+            "total": total,
+        }
+
+    processed = max(0, latest_job.processed)
+    if latest_job.status in {"queued", "running"}:
+        status = "running"
+    elif latest_job.status == "completed":
+        is_full_result = (
+            latest_job.limit == 0 or processed >= max(1, total)
+        ) and latest_job.failed == 0
+        status = "ready" if is_full_result else "degraded"
+    else:
+        status = "degraded"
+
+    return {"status": status, "processed": processed, "total": total}
 
 
 def _process_pair(

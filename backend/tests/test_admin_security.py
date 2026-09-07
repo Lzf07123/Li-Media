@@ -44,6 +44,7 @@ def configure_admin_app(tmp_path: Path, monkeypatch) -> sessionmaker[Session]:
     settings = Settings(
         admin_token="test-token",
         media_root=str(media_root),
+        nginx_cache_root=str(tmp_path / "nginx-cache"),
         admin_login_base_delay=0,
         admin_login_max_delay=0,
     )

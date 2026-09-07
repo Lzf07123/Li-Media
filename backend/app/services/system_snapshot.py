@@ -33,6 +33,7 @@ def collect_system_snapshot(
     media_root: Path,
     *,
     preheat_latest: dict[str, object] | None = None,
+    nginx_cache_root: Path | None = None,
 ) -> dict[str, object]:
     kind_rows = db.execute(
         select(Memory.kind, func.count())
@@ -113,5 +114,8 @@ def collect_system_snapshot(
         ),
         "preheat_latest": preheat_latest,
         "source_zero": collect_source_zero_status(db, media_root),
-        "resources": collect_resource_metrics(media_root),
+        "resources": collect_resource_metrics(
+            media_root,
+            nginx_cache_root=nginx_cache_root,
+        ),
     }

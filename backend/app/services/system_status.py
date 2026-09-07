@@ -25,6 +25,7 @@ from app.schemas.responses import (
     RemoteStorageCounts,
     RemoteStorageStatus,
     ResourceStatus,
+    ResourceRuntimeConfiguration,
     ServiceStatus,
     SourceZeroStatus,
     TaskQueueStatus,
@@ -216,6 +217,21 @@ def collect_system_status(
             redis=redis_status or get_redis_status(settings.redis_url),
             task_thread_pool_size=settings.task_thread_pool_size,
             stack_guard="task thread pool + cgroup memory + pids limit",
+            configuration=ResourceRuntimeConfiguration(
+                preheat_concurrency_limit=settings.preheat_concurrency_limit,
+                preheat_queue_limit=settings.preheat_queue_limit,
+                preheat_wait_timeout_seconds=settings.preheat_wait_timeout_seconds,
+                derivative_concurrency_limit=settings.derivative_concurrency_limit,
+                derivative_queue_limit=settings.derivative_queue_limit,
+                derivative_wait_timeout_seconds=settings.derivative_wait_timeout_seconds,
+                direct_probe_concurrency_limit=settings.direct_probe_concurrency_limit,
+                direct_probe_queue_limit=settings.direct_probe_queue_limit,
+                scan_concurrency_limit=settings.scan_concurrency_limit,
+                stream_global_concurrency_limit=settings.stream_global_concurrency_limit,
+                stream_user_concurrency_limit=settings.stream_user_concurrency_limit,
+                temp_max_files=settings.remote_thumbnail_max_temp_files,
+                temp_disk_quota_bytes=settings.remote_thumbnail_disk_quota_bytes,
+            ),
         ),
         remote_storage=_remote_storage_status(db, settings),
         source_zero=SourceZeroStatus(
@@ -229,6 +245,7 @@ def collect_system_status(
                 backend_memory_limit_bytes=settings.backend_memory_limit_bytes,
                 temp_disk_quota_bytes=settings.remote_thumbnail_disk_quota_bytes,
                 temp_max_files=settings.remote_thumbnail_max_temp_files,
+                nginx_cache_root=Path(settings.nginx_cache_root),
             )
         ),
     )

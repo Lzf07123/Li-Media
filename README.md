@@ -105,11 +105,14 @@ CHECKLIST.md          当前版本验收基线
 - 管理清理会移除本地索引、派生缓存、临时文件和 Nginx 派生图缓存，但不修改百度网盘资源。
 - 扫描、直链探测、单帧派生和流回退分别受独立并发与队列上限治理；重复派生请求会合并，队列满时返回 `429`。运维指标位于 `GET /api/v1/admin/tasks/metrics`。
 - 管理后台会汇总显示后端栈（API / 数据库 / Redis / 任务治理）、远端存储索引状态以及内存 / 线程 / PID / 临时文件 / 磁盘 / 队列资源状态；数据来自 `GET /api/v1/admin/system/status`。
+- 公开首页读取 `GET /api/v1/memories/preheat-status` 的服务端预热摘要；访客只能看到运行中、未预热、就绪、降级和安全的已处理 / 总数进度，看不到任务 ID、远端路径或失败原因。
 - 管理后台可按尺寸和类型（全部 / 图片 / 视频）手动预热缩略图；所选范围内的全部候选都会进入任务，`limit=0` 表示不设数量上限。预热使用有界工作线程和调度队列（`PREHEAT_CONCURRENCY_LIMIT` / `PREHEAT_QUEUE_LIMIT`），单帧派生仍受全局并发上限约束，避免公开首页冷缓存时集中触发派生。
 - 首页媒体卡片在滚动进入/离开视口时交叉淡入淡出：缩略图就绪后淡入图片，未就绪时淡入占位符；动画只使用透明度和 transform，并尊重 `prefers-reduced-motion`。
+- 后台资源状态额外显示文件系统总 / 已用 / 可用空间，以及派生图、临时文件和 Nginx 缓存的文件数与字节数；目录扫描有数量与超时边界，不可读路径会显示不可用而不是误导性的零。
 - 后台媒体工作台采用分区卡片布局；筛选、当前范围操作、选中记录操作和横向滚动表格分离，窄屏时字段自动换行且不重叠。
 - 前端对可见缩略图使用全局加载队列，最多同时发起 4 个图像请求；查看器大图高优先级，媒体切换或关闭时取消排队请求。
 - Compose 对 backend / PostgreSQL / Redis / Nginx 设置 CPU、内存、PID 和日志轮转边界；backend 内存硬上限为 256m。远程首帧源读取、临时目录配额和 FFmpeg 子进程资源也有独立保护。基线见 [docs/resource-baseline.md](docs/resource-baseline.md)。
+- 预热、派生、直链探测、扫描、流回退、临时文件数量和临时磁盘配额都在启动时从环境变量读取，并带上下限校验；`queue_limit=0` 表示不排队，临时文件/配额为 0 表示关闭。配置不会热更新，修改后需要重启 backend。扩大并发不会突破容器 `mem_limit` / `pids_limit`，可能增加派生子进程的峰值资源，务必重新运行资源基线。
 
 ## 当前进度
 
@@ -144,6 +147,7 @@ CHECKLIST.md          当前版本验收基线
 | `GET /api/v1/memories/:id/direct-url` | 播放或下载短链；响应 `no-store` |
 | `GET /api/v1/memories/:id/stream` | 直链失败时的流式回退 |
 | `GET /api/v1/memories/public-counts` | 公开可浏览总数；使用与公开列表/推荐/详情相同的谓词 |
+| `GET /api/v1/memories/preheat-status` | 公开预热状态摘要；响应 `no-store`，不包含内部任务标识 |
 
 ## 浏览器兼容矩阵
 

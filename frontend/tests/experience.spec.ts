@@ -98,6 +98,9 @@ async function mockMemoryRoutes(page: Page, listResponse = memoryList) {
 
     await route.fulfill({ status: 404, json: { detail: "not found" } });
   });
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    await route.fulfill({ json: { status: "ready", processed: 1, total: 1 } });
+  });
 }
 
 test("photo viewer supports keyboard zoom and restores scroll lock", async ({ page }) => {
@@ -128,6 +131,50 @@ test("photo viewer supports keyboard zoom and restores scroll lock", async ({ pa
 
   await page.keyboard.press("Escape");
   await expect(viewer).toHaveCount(0);
+});
+
+test("home preheat state is explicit and cards use responsive priority", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    await route.fulfill({ json: { status: "running", processed: 2, total: 5 } });
+  });
+  await page.route("**/thumbnail*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.fulfill({
+      body: Buffer.from(pngBase64, "base64"),
+      contentType: "image/webp",
+    });
+  });
+
+  await page.goto("/");
+  await expect(
+    page.locator(".masonry .post-card").first().locator(".card-shimmer"),
+  ).toBeVisible();
+  await expect(page.getByTestId("preheat-status")).toContainText(
+    "后台正在预热预览",
+  );
+  await expect(page.getByTestId("preheat-status")).toContainText("2/5");
+
+  const firstImage = page.locator(".masonry .post-card").first().locator("img");
+  await expect(firstImage).toHaveAttribute("srcset", /240w.*480w.*768w.*1280w/s);
+  await expect(firstImage).toHaveAttribute("fetchpriority", "high");
+  await expect(firstImage).toBeVisible();
+  await expect(
+    page.locator(".masonry .post-card").first().locator(".card-shimmer"),
+  ).toHaveCount(0);
+});
+
+test("home shows an independent preheat unavailable state", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    await route.fulfill({ status: 503, json: { detail: "unavailable" } });
+  });
+
+  await page.goto("/");
+  await expect(page.getByTestId("preheat-status")).toHaveText(
+    "预热状态不可用",
+  );
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
 });
 
 test("large viewer navigates with arrows and keyboard", async ({ page }) => {
@@ -520,7 +567,7 @@ test("video preparation shows one playback overlay", async ({ page }) => {
 
 test("waterfall remains stable across acceptance viewports", async ({ page }) => {
   const expectedColumns: Record<number, number> = {
-    360: 2,
+    375: 2,
     768: 3,
     1280: 5,
     1600: 6,
@@ -547,7 +594,7 @@ test("waterfall remains stable across acceptance viewports", async ({ page }) =>
   });
 
   for (const [index, viewport] of [
-    { width: 360, height: 740 },
+    { width: 375, height: 740 },
     { width: 768, height: 900 },
     { width: 1280, height: 900 },
     { width: 1600, height: 1000 },

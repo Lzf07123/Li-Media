@@ -76,6 +76,21 @@ const systemStatus = {
     redis: { status: "ok", detail: "7.0", pool_status: null, dialect: null, used_memory_bytes: 1024, max_memory_bytes: 201326592, connected_clients: 2 },
     task_thread_pool_size: 24,
     stack_guard: "task thread pool + cgroup memory + pids limit",
+    configuration: {
+      preheat_concurrency_limit: 2,
+      preheat_queue_limit: 64,
+      preheat_wait_timeout_seconds: 2,
+      derivative_concurrency_limit: 2,
+      derivative_queue_limit: 32,
+      derivative_wait_timeout_seconds: 15,
+      direct_probe_concurrency_limit: 4,
+      direct_probe_queue_limit: 16,
+      scan_concurrency_limit: 1,
+      stream_global_concurrency_limit: 16,
+      stream_user_concurrency_limit: 3,
+      temp_max_files: 8,
+      temp_disk_quota_bytes: 536870912,
+    },
   },
   remote_storage: {
     provider: "baidupan",
@@ -100,11 +115,11 @@ const systemStatus = {
     last_scan: scanTask,
   },
   tasks: {
-    scan: { active: 0, queued: 0, limit: 1, queue_limit: 1 },
-    direct_probe: { active: 0, queued: 0, limit: 4, queue_limit: 16 },
-    derivative: { active: 0, queued: 0, limit: 2, queue_limit: 32 },
-    preheat: { active: 0, queued: 0, limit: 2, queue_limit: 64 },
-    stream: { active: 0, queued: 0, limit: 16, queue_limit: 32 },
+    scan: { active: 0, queued: 0, limit: 1, queue_limit: 1, wait_timeout_seconds: 0 },
+    direct_probe: { active: 0, queued: 0, limit: 4, queue_limit: 16, wait_timeout_seconds: 3 },
+    derivative: { active: 0, queued: 0, limit: 2, queue_limit: 32, wait_timeout_seconds: 15 },
+    preheat: { active: 0, queued: 0, limit: 2, queue_limit: 64, wait_timeout_seconds: 2 },
+    stream: { active: 0, queued: 0, limit: 16, queue_limit: 32, wait_timeout_seconds: 1 },
   },
   metrics: {
     active_jobs: 0,
@@ -132,6 +147,17 @@ const systemStatus = {
       total_bytes: 4096,
       used_bytes: 3072,
       usage_ratio: 0.75,
+    },
+    filesystem: {
+      total_bytes: 5368709120,
+      used_bytes: 1073741824,
+      free_bytes: 4294967296,
+      usage_ratio: 0.2,
+    },
+    caches: {
+      derived_thumbnails: { files: 12, bytes: 245760, status: "ok" },
+      temporary: { files: 0, bytes: 0, status: "ok" },
+      nginx: { files: 8, bytes: 163840, status: "ok" },
     },
     stack: { soft_kbytes: null, hard_kbytes: null },
     limits: {
@@ -329,10 +355,10 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "任务队列" }),
   ).toBeVisible();
-  await expect(page.getByText("单帧派生")).toBeVisible();
+  await expect(page.getByText("单帧派生", { exact: true })).toBeVisible();
   await expect(page.getByText("预热调度")).toBeVisible();
   await expect(page.getByText("预热缩略图")).toBeVisible();
-  await expect(page.getByText("并发")).toBeVisible();
+  await expect(page.getByText("并发", { exact: true })).toBeVisible();
   await expect(page.getByText("预览就绪").first()).toBeVisible();
   await page.locator("#preheat-kind").selectOption({ label: "图片资源" });
   await page.getByRole("button", { name: "开始预热" }).click();

@@ -23,6 +23,7 @@ from app.models.memory import (
 from app.schemas.memory import MemorySummaryRead, to_memory_summary
 from app.schemas.responses import (
     PublicMediaCounts,
+    PublicPreheatStatusResponse,
     MemoryCounts,
     MemoryDirectLinkResponse,
     MemorySummaryListResponse,
@@ -41,6 +42,10 @@ from app.services.display_health import (
 from app.services.derivative_tasks import (
     run_local_derivative,
     run_remote_derivative,
+)
+from app.services.thumbnail_preheat import (
+    collect_public_preheat_status,
+    thumbnail_preheat_registry,
 )
 from app.services.task_limits import (
     TaskRejected,
@@ -191,6 +196,25 @@ def get_public_media_counts(db: Session = Depends(get_db)) -> PublicMediaCounts:
         photo=photo_count,
         video=total - photo_count,
     )
+
+
+@router.get(
+    "/preheat-status",
+    response_model=PublicPreheatStatusResponse,
+)
+def get_public_preheat_status(
+    response: Response,
+    db: Session = Depends(get_db),
+) -> PublicPreheatStatusResponse:
+    """Return an operationally safe summary; no task IDs or internal details."""
+
+    summary = collect_public_preheat_status(
+        db,
+        latest_job=thumbnail_preheat_registry.get_latest(),
+    )
+    # The task registry can change between page loads; never replay this summary.
+    response.headers["Cache-Control"] = "no-store"
+    return PublicPreheatStatusResponse(**summary)
 
 
 @router.get("/{memory_id}", response_model=MemorySummaryRead)
