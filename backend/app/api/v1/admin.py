@@ -95,6 +95,7 @@ from app.services.baidu_oauth import (
     build_baidu_authorize_url,
     create_baidu_oauth_state,
     exchange_baidu_code,
+    get_baidu_access_token,
     load_baidu_credentials,
     save_baidu_credentials,
     verify_baidu_oauth_state,
@@ -466,7 +467,7 @@ def trigger_baidu_sync(
     request_payload = payload or AdminSyncRequest()
     settings = get_settings()
 
-    if not settings.baidu_access_token:
+    if not get_baidu_access_token(settings):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="百度网盘访问凭证未配置",
