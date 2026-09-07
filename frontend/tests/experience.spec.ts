@@ -178,18 +178,10 @@ test("large viewer navigates with arrows and keyboard", async ({ page }) => {
   await expect(viewer).toHaveAttribute("aria-label", "第一张");
 });
 
-test("video direct link refreshes after playback failure", async ({ page }) => {
+test("video playback uses server stream and avoids direct links", async ({ page }) => {
   let directRequests = 0;
-  const recoveredDirectUrl = `${directUrl}&v=2`;
-  const recoveredRequest = page.waitForRequest(recoveredDirectUrl);
+  let serverRequests = 0;
 
-  await page.route("**/private-download**", async (route) => {
-    if (route.request().url() === recoveredDirectUrl) {
-      await route.fulfill({ body: Buffer.from("video"), contentType: "video/mp4" });
-      return;
-    }
-    await route.abort("failed");
-  });
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
 
@@ -216,16 +208,9 @@ test("video direct link refreshes after playback failure", async ({ page }) => {
       return;
     }
 
-    if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
-      directRequests += 1;
-      await route.fulfill({
-        json: {
-          direct_url: directRequests === 1 ? directUrl : recoveredDirectUrl,
-          expires_at: "2027-01-01T09:35:00Z",
-          mime_type: "video/mp4",
-          size_bytes: 5,
-        },
-      });
+    if (url.pathname === `/api/v1/memories/${memoryId}/file`) {
+      serverRequests += 1;
+      await route.fulfill({ body: Buffer.from("video"), contentType: "video/mp4" });
       return;
     }
 
@@ -235,8 +220,8 @@ test("video direct link refreshes after playback failure", async ({ page }) => {
   await page.goto("/");
   await page.locator(".masonry .post-card").click();
   await page.getByRole("button", { name: "播放视频" }).click();
-  await expect.poll(() => directRequests).toBeGreaterThan(1);
-  await recoveredRequest;
+  await expect.poll(() => serverRequests).toBe(1);
+  expect(directRequests).toBe(0);
 });
 
 test("kind and scroll restore after closing viewer", async ({ page }) => {
@@ -437,7 +422,6 @@ test("recommendations render first inside the canvas without a separate rail", a
 });
 
 test("video preparation shows one playback overlay", async ({ page }) => {
-  let resolveDirectLink: ((value: unknown) => void) | undefined;
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/memories") {
@@ -465,18 +449,9 @@ test("video preparation shows one playback overlay", async ({ page }) => {
       });
       return;
     }
-    if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
-      await new Promise<void>((resolve) => {
-        resolveDirectLink = resolve;
-      });
-      await route.fulfill({
-        json: {
-          direct_url: directUrl,
-          expires_at: "2027-01-01T09:35:00Z",
-          mime_type: "video/mp4",
-          size_bytes: 5,
-        },
-      });
+    if (url.pathname === `/api/v1/memories/${memoryId}/file`) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await route.fulfill({ body: Buffer.from("video"), contentType: "video/mp4" });
       return;
     }
     await route.fallback();
@@ -488,15 +463,14 @@ test("video preparation shows one playback overlay", async ({ page }) => {
   await expect(page.locator(".video-playback-overlay")).toBeVisible();
   expect(await page.locator(".video-playback-message").count()).toBe(1);
   expect(await page.locator(".viewer-fallback").count()).toBe(0);
-  resolveDirectLink?.();
 });
 
 test("waterfall remains stable across acceptance viewports", async ({ page }) => {
-  const expectedColumns: Record<number, string> = {
-    360: "2",
-    768: "3",
-    1280: "5",
-    1600: "6",
+  const expectedColumns: Record<number, number> = {
+    360: 2,
+    768: 3,
+    1280: 5,
+    1600: 6,
   };
   const items = Array.from({ length: 24 }, (_, index) => ({
     ...memory,
@@ -529,7 +503,10 @@ test("waterfall remains stable across acceptance viewports", async ({ page }) =>
     await page.goto("/");
     await expect(page.locator(".masonry .post-card")).toHaveCount(24);
     const columnCount = await page.evaluate(
-      () => getComputedStyle(document.querySelector(".masonry")!).columnCount,
+      () => getComputedStyle(document.querySelector(".masonry")!)
+        .gridTemplateColumns
+        .split(" ")
+        .length,
     );
     expect(columnCount).toBe(expectedColumns[viewport.width]);
     const overflow = await page.evaluate(
@@ -663,11 +640,6 @@ test("video does not request playback until play and can use server fallback", a
       });
       return;
     }
-    if (url.pathname === `/api/v1/memories/${memoryId}/direct-url`) {
-      directRequests += 1;
-      await route.fulfill({ status: 403, json: { detail: "forbidden" } });
-      return;
-    }
     if (url.pathname === `/api/v1/memories/${memoryId}/file`) {
       serverMediaRequests += 1;
       await route.fulfill({ body: Buffer.from("video"), contentType: "video/mp4" });
@@ -681,22 +653,30 @@ test("video does not request playback until play and can use server fallback", a
   await expect(page.locator(".photo-viewer")).toBeVisible();
   expect(directRequests).toBe(0);
   await page.getByRole("button", { name: "播放视频" }).click();
-  await expect.poll(() => directRequests).toBe(1);
-  await page.getByRole("button", { name: "回退服务器播放" }).click();
+  await expect.poll(() => directRequests).toBe(0);
   await expect.poll(() => serverMediaRequests).toBe(1);
 });
 
-test("download button requests a short-lived direct link", async ({ page }) => {
-  const purposes: string[] = [];
+test("download button uses the server media stream", async ({ page }) => {
   await mockMemoryRoutes(page);
-  await page.route(`**/api/v1/memories/${memoryId}/direct-url**`, async (route) => {
-    purposes.push(new URL(route.request().url()).searchParams.get("purpose") ?? "");
-    await route.fallback();
+  await page.addInitScript(() => {
+    const clickedHrefs: string[] = [];
+    (window as any).__clickedHrefs = clickedHrefs;
+    const originalClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function click() {
+      if (this.href) {
+        clickedHrefs.push(this.href);
+      }
+      return originalClick.call(this);
+    };
   });
 
   await page.goto("/");
   await page.locator(".masonry .post-card").click();
   await page.locator(".photo-viewer").getByRole("button", { name: "下载" }).click();
-  await expect.poll(() => purposes).toContain("download");
+  const clickedHrefs = await page.evaluate(
+    () => (window as any).__clickedHrefs as string[],
+  );
+  expect(clickedHrefs.some((href) => href.includes(`/memories/${memoryId}/file`))).toBe(true);
   await expect(page.locator(".viewer-status")).toContainText("可用");
 });

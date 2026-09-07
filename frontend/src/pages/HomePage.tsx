@@ -22,6 +22,40 @@ const RECOMMENDATION_COUNT = 8;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
 let scrollBeforeViewer = 0;
 
+type ColumnBreakpoint = {
+  query: string;
+  count: 2 | 3 | 4 | 5 | 6;
+};
+
+const columnBreakpoints: ColumnBreakpoint[] = [
+  { query: "(min-width: 1600px)", count: 6 },
+  { query: "(min-width: 1280px)", count: 5 },
+  { query: "(min-width: 1024px)", count: 4 },
+  { query: "(min-width: 768px)", count: 3 },
+] as const;
+
+function useCanvasColumnCount() {
+  const [columnCount, setColumnCount] = useState(2);
+
+  useEffect(() => {
+    const queries = columnBreakpoints.map(({ query }) =>
+      window.matchMedia(query),
+    );
+    const update = () => {
+      const matchedIndex = queries.findIndex((query) => query.matches);
+      setColumnCount(matchedIndex >= 0 ? columnBreakpoints[matchedIndex].count : 2);
+    };
+
+    update();
+    queries.forEach((query) => query.addEventListener("change", update));
+    return () => {
+      queries.forEach((query) => query.removeEventListener("change", update));
+    };
+  }, []);
+
+  return columnCount;
+}
+
 export default function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { pathname } = useLocation();
@@ -40,6 +74,7 @@ export default function HomePage() {
   const requestTokenRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
+  const columnCount = useCanvasColumnCount();
   const hasNextPage = memories.length > 0 && memories.length < total;
 
   const updateParams = (next: URLSearchParams) => {
@@ -139,6 +174,13 @@ export default function HomePage() {
   }, [recommendations, memories]);
 
   const viewerMemories = canvasMemories;
+  const canvasColumns = useMemo(() => {
+    const columns = Array.from({ length: columnCount }, () => [] as MemorySummary[]);
+    canvasMemories.forEach((memory, index) => {
+      columns[index % columnCount].push(memory);
+    });
+    return columns;
+  }, [canvasMemories, columnCount]);
   useEffect(() => {
     if (!viewerId || viewerMemories.some((memory) => memory.id === viewerId)) {
       return;
@@ -362,14 +404,21 @@ export default function HomePage() {
           aria-label={brand.copy.libraryTitle}
           className="infinite-canvas mx-auto w-full"
         >
-          <div className="masonry">
-            {canvasMemories.map((memory, index) => (
-              <MemoryCard
-                key={memory.id}
-                memory={memory}
-                onOpen={openViewer}
-                priority={index === 0}
-              />
+          <div
+            className="masonry"
+            style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}
+          >
+            {canvasColumns.map((column, columnIndex) => (
+              <div className="canvas-column" key={columnIndex}>
+                {column.map((memory) => (
+                  <MemoryCard
+                    key={memory.id}
+                    memory={memory}
+                    onOpen={openViewer}
+                    priority={columnIndex === 0 && memory.id === canvasColumns[0][0]?.id}
+                  />
+                ))}
+              </div>
             ))}
           </div>
           <div aria-hidden="true" className="canvas-sentinel" ref={sentinelRef} />

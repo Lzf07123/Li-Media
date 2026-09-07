@@ -100,6 +100,11 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     >
       {thumbnailUrl && !thumbnailFailed ? (
         <span className="post-cover-link block media-frame" style={mediaStyle}>
+          {loadState !== "ready" ? (
+            <span aria-hidden="true" className="media-placeholder">
+              <ImageIcon className="size-8 opacity-40" />
+            </span>
+          ) : null}
           <img
             alt={brand.copy.detailPreviewAlt}
             className={`post-cover media-reveal ${loadState === "ready" ? "is-loaded" : ""}`}
