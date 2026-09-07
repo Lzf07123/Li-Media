@@ -8,11 +8,12 @@ from pathlib import Path
 from threading import Lock
 from uuid import UUID, uuid4
 
-from sqlalchemy import case, select
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.core.config import Settings
 from app.models.memory import (
+    DerivativeFailureKind,
     Memory,
     MemoryFile,
     MemoryKind,
@@ -149,6 +150,15 @@ class ThumbnailPreheatRegistry:
 
 thumbnail_preheat_registry = ThumbnailPreheatRegistry()
 
+NON_RETRYABLE_FAILURE_KINDS = frozenset(
+    {
+        DerivativeFailureKind.SOURCE_TRUNCATED.value,
+        DerivativeFailureKind.MOV_MOOV.value,
+        DerivativeFailureKind.CODEC_UNSUPPORTED.value,
+        DerivativeFailureKind.FORMAT_UNSUPPORTED.value,
+    }
+)
+
 
 def _candidate_pairs(
     db: Session,
@@ -164,13 +174,20 @@ def _candidate_pairs(
             MemoryFile.source == "baidupan",
             MemoryFile.remote_id.is_not(None),
         )
-        .order_by(case((Memory.kind == MemoryKind.PHOTO, 0), else_=1))
-        .order_by(Memory.captured_at.desc().nulls_last())
-        .order_by(Memory.updated_at.desc())
-        .limit(limit)
     )
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
+
+    statement = statement.where(
+        MemoryFile.thumbnail_failure_kind.is_(None)
+        | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS)
+    )
+    statement = (
+        statement.order_by(Memory.captured_at.desc().nulls_last())
+        .order_by(Memory.updated_at.desc())
+        .order_by(Memory.id.desc())
+        .limit(limit)
+    )
 
     return [(memory_id, file_id) for memory_id, file_id in db.execute(statement).all()]
 
