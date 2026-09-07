@@ -23,6 +23,7 @@ def create_remote_thumbnail(
     duration_seconds: int | None = None,
     cancel_event: object | None = None,
     failure_sink: dict[str, str] | None = None,
+    source_mime_type: str | None = None,
 ) -> str | None:
     """Create a cached aspect-preserving thumbnail without storing source media."""
 
@@ -60,7 +61,11 @@ def create_remote_thumbnail(
             return None
 
         if content_length is not None and content_length > max_source_bytes:
-            record_failure(DerivativeFailureKind.SOURCE_TRUNCATED.value)
+            record_failure(
+                DerivativeFailureKind.MOV_MOOV.value
+                if source_mime_type == "video/quicktime"
+                else DerivativeFailureKind.SOURCE_TRUNCATED.value
+            )
             return None
 
         register_temporary_path(temporary_path.resolve())
@@ -79,7 +84,11 @@ def create_remote_thumbnail(
                 output.write(chunk)
                 written_bytes += len(chunk)
                 if written_bytes >= max_source_bytes:
-                    record_failure(DerivativeFailureKind.SOURCE_TRUNCATED.value)
+                    record_failure(
+                        DerivativeFailureKind.MOV_MOOV.value
+                        if source_mime_type == "video/quicktime"
+                        else DerivativeFailureKind.SOURCE_TRUNCATED.value
+                    )
                     return None
 
         if not temporary_path.is_file() or temporary_path.stat().st_size == 0:

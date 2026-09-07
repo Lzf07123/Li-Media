@@ -30,7 +30,6 @@ def run_local_derivative(
     duration_seconds: int | None = None,
     priority: int | None = None,
     failure_sink: dict[str, str] | None = None,
-    cancel_event: Event | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -71,6 +70,7 @@ def run_remote_derivative(
     priority: int | None = None,
     failure_sink: dict[str, str] | None = None,
     cancel_event: Event | None = None,
+    source_mime_type: str | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -91,6 +91,7 @@ def run_remote_derivative(
                 max_size=max_size,
                 duration_seconds=duration_seconds,
                 cancel_event=cancel_event or make_cancel_event(),
+                source_mime_type=source_mime_type,
                 failure_sink=failure_sink,
             )
 
