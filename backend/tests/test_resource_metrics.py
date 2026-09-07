@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from app.services.resource_metrics import collect_resource_metrics
+from app.services.resource_metrics import (
+    _read_directory_usage,
+    collect_resource_metrics,
+)
 
 
 def test_resource_metrics_report_filesystem_and_local_cache_usage(tmp_path: Path) -> None:
@@ -48,4 +51,22 @@ def test_unreadable_cache_path_is_marked_unavailable(tmp_path: Path) -> None:
         "files": 0,
         "bytes": 0,
         "status": "unavailable",
+    }
+
+
+def test_directory_scan_respects_file_count_boundary(tmp_path: Path) -> None:
+    cache = tmp_path / "thumbnails"
+    cache.mkdir()
+    for number in range(3):
+        (cache / f"{number}.webp").write_bytes(b"media")
+
+    assert _read_directory_usage(cache, max_files=2) == {
+        "files": 0,
+        "bytes": 0,
+        "status": "truncated",
+    }
+    assert _read_directory_usage(cache, max_files=3) == {
+        "files": 3,
+        "bytes": 15,
+        "status": "ok",
     }

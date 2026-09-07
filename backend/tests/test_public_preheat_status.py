@@ -72,6 +72,18 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
         latest_job=None,
     ) == {"status": "not_preheated", "processed": 0, "total": 1}
 
+    queued_job, _ = registry.start(
+        max_size=480,
+        kind=None,
+        limit=0,
+        concurrency=1,
+        queue_limit=0,
+    )
+    assert collect_public_preheat_status(
+        session_factory(),
+        latest_job=queued_job,
+    ) == {"status": "running", "processed": 0, "total": 1}
+
     running_job, _ = registry.start(
         max_size=480,
         kind=None,

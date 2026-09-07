@@ -164,6 +164,53 @@ test("home preheat state is explicit and cards use responsive priority", async (
   ).toHaveCount(0);
 });
 
+test("home preheat notice converges and stays clear at 375px", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    await route.fulfill({ json: { status: "not_preheated", processed: 0, total: 1 } });
+  });
+
+  await page.setViewportSize({ width: 375, height: 720 });
+  await page.goto("/");
+  const notice = page.getByTestId("preheat-status");
+  await expect(notice).toHaveText("预览缓存未预热，首次加载可能较慢");
+  await expect(notice).toHaveAttribute("aria-live", "polite");
+
+  const boxes = [
+    notice,
+    page.locator(".filter-toolbar"),
+    page.locator("h1"),
+    page.locator(".site-footer"),
+    page.locator(".masonry .post-card").first(),
+  ];
+  for (const box of boxes) {
+    await expect(box).toBeVisible();
+  }
+  const rects = await Promise.all(
+    boxes.map((locator) => locator.boundingBox()),
+  );
+  for (let left = 0; left < rects.length; left += 1) {
+    for (let right = left + 1; right < rects.length; right += 1) {
+      const a = rects[left]!;
+      const b = rects[right]!;
+      const overlapX = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+      const overlapY = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+      expect(overlapX * overlapY).toBeLessThanOrEqual(1);
+    }
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    await route.fulfill({ json: { status: "ready", processed: 1, total: 1 } });
+  });
+  await page.reload();
+  await expect(page.getByTestId("preheat-status")).toHaveText("预览已就绪");
+});
+
 test("home shows an independent preheat unavailable state", async ({ page }) => {
   await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories/preheat-status", async (route) => {
@@ -175,6 +222,30 @@ test("home shows an independent preheat unavailable state", async ({ page }) => 
     "预热状态不可用",
   );
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+});
+
+test("home card shimmer is disabled under reduced motion", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  await page.route("**/thumbnail*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({
+      body: Buffer.from(pngBase64, "base64"),
+      contentType: "image/webp",
+    });
+  });
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  const shimmer = page.locator(".masonry .post-card").first().locator(".card-shimmer");
+  await expect(shimmer).toBeVisible();
+  await expect
+    .poll(async () =>
+      shimmer.evaluate((element) => getComputedStyle(element, "::after").animationName),
+    )
+    .toBe("none");
+  await expect(shimmer.evaluate((element) => getComputedStyle(element, "::after").transform)).resolves.toBe(
+    "none",
+  );
 });
 
 test("large viewer navigates with arrows and keyboard", async ({ page }) => {
