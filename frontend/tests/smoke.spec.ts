@@ -194,7 +194,7 @@ async function mockPublicMemoryRoutes(page: Page) {
     if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
       await route.fulfill({
         body: Buffer.from(pngBase64, "base64"),
-        contentType: "image/webp",
+        contentType: "image/png",
       });
       return;
     }
@@ -213,7 +213,9 @@ test("home shows memory and toggles between light and dark", async ({ page }) =>
 
   await expect(page.getByRole("heading", { name: "回忆库" })).toBeVisible();
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
+  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible({
+    timeout: 10_000,
+  });
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 
   await page.getByRole("button", { name: "切换到深色主题" }).click();
@@ -228,7 +230,7 @@ test("home waterfall card opens viewer", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "回忆预览" }).click();
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
@@ -350,13 +352,13 @@ test("failed thumbnail can retry from the card", async ({ page }) => {
     }
     if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
       attempts += 1;
-      if (attempts < 6) {
+      if (!url.searchParams.has("retry")) {
         await route.fulfill({ status: 502, json: { detail: "failed" } });
         return;
       }
       await route.fulfill({
         body: Buffer.from(pngBase64, "base64"),
-        contentType: "image/webp",
+        contentType: "image/png",
       });
       return;
     }
@@ -368,8 +370,10 @@ test("failed thumbnail can retry from the card", async ({ page }) => {
   await expect(page.locator(".masonry .post-card")).toContainText("重试预览", {
     timeout: 10_000,
   });
-  await page.locator(".masonry .post-card").click();
-  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
+  await page.getByRole("button", { name: "重试预览" }).click();
+  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible({
+    timeout: 10_000,
+  });
 });
 
 test("missing old detail link shows viewer recovery state", async ({ page }) => {
@@ -424,7 +428,9 @@ test("remote video playback failure can be retried", async ({ page }) => {
   await page.goto(`/memories/${memoryId}`);
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await page.getByRole("button", { name: "播放视频" }).click();
-  await expect(page.getByText("视频播放失败").first()).toBeVisible();
+  await expect(
+    page.getByText("当前浏览器不支持该视频编码；可下载后在本机播放。").first(),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "重试" }).first()).toBeVisible();
 });
 

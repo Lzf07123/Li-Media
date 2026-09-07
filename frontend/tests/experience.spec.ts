@@ -219,7 +219,7 @@ test("video playback uses server stream and avoids direct links", async ({ page 
 
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "回忆预览" }).click();
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect.poll(() => serverRequests).toBe(1);
   expect(directRequests).toBe(0);
@@ -335,6 +335,58 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
   releasePageTwo?.();
   await expect(page.locator(".masonry .post-card")).toHaveCount(36);
   await expect(page.locator(".pagination")).toHaveCount(0);
+});
+
+test("infinite canvas keeps content when appending fails", async ({ page }) => {
+  const requestedPages: number[] = [];
+  const items = Array.from({ length: 54 }, (_, index) => ({
+    ...memory,
+    id: `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`,
+    width: 1200,
+    height: 1600,
+  }));
+
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      const pageNumber = Number(url.searchParams.get("page") ?? "1");
+      if (url.searchParams.get("page")) {
+        requestedPages.push(pageNumber);
+      }
+      if (pageNumber >= 3) {
+        await route.fulfill({ status: 429, json: { detail: "rate limited" } });
+        return;
+      }
+      await route.fulfill({
+        json: {
+          items: items.slice((pageNumber - 1) * 18, pageNumber * 18),
+          total: items.length,
+          page: pageNumber,
+          page_size: 18,
+          counts: { photo: items.length, video: 0 },
+        },
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    await route.fulfill({
+      body: Buffer.from(pngBase64, "base64"),
+      contentType: "image/webp",
+    });
+  });
+
+  await page.goto("/");
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(page.locator(".masonry .post-card")).toHaveCount(36);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(page.getByText("更多回忆加载失败")).toBeVisible();
+  await expect
+    .poll(() => requestedPages.filter((pageNumber) => pageNumber === 3).length)
+    .toBe(1);
+  await expect(page.getByRole("button", { name: "重试加载" })).toBeVisible();
 });
 
 test("thumbnail image loads are queued with bounded concurrency", async ({ page }) => {
@@ -459,7 +511,7 @@ test("video preparation shows one playback overlay", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "回忆预览" }).click();
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect(page.locator(".video-playback-overlay")).toBeVisible();
   expect(await page.locator(".video-playback-message").count()).toBe(1);
@@ -594,7 +646,7 @@ test("photo viewer selects card and viewer sizes by viewport", async ({ page }) 
   await expect.poll(() => thumbnailSizes).toContain("240");
   expect(thumbnailSizes).not.toContain("1280");
 
-  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "回忆预览" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect.poll(() => thumbnailSizes).toContain("1280");
 });
@@ -609,7 +661,7 @@ test("mobile viewer uses 480px poster instead of desktop large image", async ({ 
 
   await page.setViewportSize({ width: 360, height: 700 });
   await page.goto("/");
-  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "回忆预览" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect.poll(() => thumbnailSizes).toContain("480");
   expect(thumbnailSizes).not.toContain("1280");
@@ -650,7 +702,7 @@ test("video does not request playback until play and can use server fallback", a
   });
 
   await page.goto("/");
-  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "回忆预览" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   expect(directRequests).toBe(0);
   await page.getByRole("button", { name: "播放视频" }).click();
@@ -673,7 +725,7 @@ test("download button uses the server media stream", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.locator(".masonry .post-card").click();
+  await page.getByRole("button", { name: "回忆预览" }).click();
   await page.locator(".photo-viewer").getByRole("button", { name: "下载" }).click();
   const clickedHrefs = await page.evaluate(
     () => (window as any).__clickedHrefs as string[],

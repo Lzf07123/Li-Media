@@ -63,6 +63,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
 
   const [playbackSource, setPlaybackSource] = useState<PlaybackSource | null>(null);
   const [playbackState, setPlaybackState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [playbackUnsupported, setPlaybackUnsupported] = useState(false);
   const [downloadState, setDownloadState] = useState<"idle" | "loading" | "error">("idle");
   const [posterSize, setPosterSize] = useState<"480" | "1280">(() => {
     return window.matchMedia("(max-width: 767px)").matches ? "480" : "1280";
@@ -357,7 +358,10 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     isStartingPlayback.current = false;
   };
 
-  const handleVideoSourceError = (source: PlaybackSource) => {
+  const handleVideoSourceError = (source: PlaybackSource, error?: MediaError) => {
+    setPlaybackUnsupported(
+      error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED,
+    );
     setPlaybackState("error");
   };
 
@@ -392,6 +396,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     downloadRetried.current = false;
     setPlaybackSource(null);
     setPlaybackState("idle");
+    setPlaybackUnsupported(false);
     setDownloadState("idle");
 
     return () => {
@@ -420,7 +425,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
               <VideoPlayer
                 key={memory.id}
                 onReady={() => setPlaybackState("ready")}
-                onSourceError={() => handleVideoSourceError(playbackSource)}
+                onSourceError={(error) => handleVideoSourceError(playbackSource, error)}
                 poster={queuedPosterSrc ?? queuedSmallSrc ?? undefined}
                 src={playbackSource.src}
               />
@@ -457,7 +462,11 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
                 </p>
               ) : (
                 <>
-                  <p>{brand.copy.detailPlaybackFailed}</p>
+                  <p>
+                    {playbackUnsupported
+                      ? brand.copy.videoCodecUnsupported
+                      : brand.copy.detailPlaybackFailed}
+                  </p>
                   <button
                     onClick={() => void startPlayback()}
                     type="button"

@@ -70,7 +70,9 @@ export default function HomePage() {
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const hasRestoredScroll = useRef(false);
+  const isLoadingMoreRef = useRef(false);
   const requestTokenRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
@@ -122,10 +124,15 @@ export default function HomePage() {
       setTotal(data.total);
       setCounts(data.counts ?? { photo: 0, video: 0 });
       setError(null);
+      setLoadMoreError(null);
       return true;
     } catch {
       if (requestToken === requestTokenRef.current) {
-        setError(brand.copy.loadFailed);
+        if (mode === "replace") {
+          setError(brand.copy.loadFailed);
+        } else {
+          setLoadMoreError(brand.copy.loadMoreFailed);
+        }
       }
       return false;
     } finally {
@@ -249,23 +256,27 @@ export default function HomePage() {
   }, [pathname, viewerId]);
 
   const loadNextPage = useCallback(() => {
-    if (isLoadingInitial || isLoadingMore || error || !hasNextPage) {
+    if (isLoadingInitial || isLoadingMore || isLoadingMoreRef.current || error || loadMoreError || !hasNextPage) {
       return;
     }
 
-    void loadPage(Math.floor(memories.length / PAGE_SIZE) + 1, "append");
+    isLoadingMoreRef.current = true;
+    void loadPage(Math.floor(memories.length / PAGE_SIZE) + 1, "append").finally(() => {
+      isLoadingMoreRef.current = false;
+    });
   }, [
     error,
     hasNextPage,
     isLoadingInitial,
     isLoadingMore,
+    loadMoreError,
     loadPage,
     memories.length,
   ]);
 
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || isLoadingInitial || isLoadingMore || error || !hasNextPage) {
+    if (!node || isLoadingInitial || isLoadingMore || error || loadMoreError || !hasNextPage) {
       return;
     }
 
@@ -422,9 +433,27 @@ export default function HomePage() {
             ))}
           </div>
           <div aria-hidden="true" className="canvas-sentinel" ref={sentinelRef} />
-          <p aria-live="polite" className="canvas-loading">
-            {isLoadingMore ? brand.copy.loadingMoreLibrary : ""}
-          </p>
+          {loadMoreError ? (
+            <div className="canvas-loading flex justify-center">
+              <span aria-live="assertive" className="text-sm text-muted">
+                {loadMoreError}
+              </span>
+              <Button
+                className="ml-2"
+                onClick={() => {
+                  setLoadMoreError(null);
+                  loadNextPage();
+                }}
+                variant="secondary"
+              >
+                {brand.copy.retryLoadMore}
+              </Button>
+            </div>
+          ) : (
+            <p aria-live="polite" className="canvas-loading">
+              {isLoadingMore ? brand.copy.loadingMoreLibrary : ""}
+            </p>
+          )}
         </section>
       )}
 
