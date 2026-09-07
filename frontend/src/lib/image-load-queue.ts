@@ -83,7 +83,6 @@ class ImageLoadQueue {
           return;
         }
         finish();
-
         if (task.attempt < task.retries && !signal?.aborted) {
           task.attempt += 1;
           image.src = "";
@@ -177,4 +176,27 @@ export function loadQueuedImage(
   options: ImageLoadOptions = {},
 ): Promise<HTMLImageElement> {
   return imageLoadQueue.load(src, options);
+}
+
+export function loadImageWithoutQueue(
+  src: string,
+  options: ImageLoadOptions = {},
+): Promise<HTMLImageElement> {
+  const { signal } = options;
+
+  if (signal?.aborted) {
+    return Promise.reject(createAbortError());
+  }
+
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image load failed"));
+    signal?.addEventListener("abort", () => {
+      image.src = "";
+      reject(createAbortError());
+    }, { once: true });
+    image.src = src;
+  });
 }

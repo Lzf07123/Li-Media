@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     derivative_queue_limit: int = 32
     derivative_wait_timeout_seconds: float = 15.0
     stream_global_concurrency_limit: int = 16
-    stream_user_concurrency_limit: int = 1
+    stream_user_concurrency_limit: int = 3
     stream_queue_limit: int = 32
     stream_wait_timeout_seconds: float = 1.0
     task_thread_pool_size: int = 24

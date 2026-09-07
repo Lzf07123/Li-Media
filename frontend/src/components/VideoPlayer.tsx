@@ -4,7 +4,7 @@ import { Clock, Ratio } from "lucide-react";
 import { brand } from "@/lib/brand";
 
 type VideoPlayerProps = {
-  onSourceError?: () => void;
+  onSourceError?: (error?: MediaError) => void;
   onReady?: () => void;
   src: string;
   poster?: string | null;
@@ -80,7 +80,7 @@ export default function VideoPlayer({
         }`}
         controls
         onError={() => {
-          onSourceError?.();
+          onSourceError?.(videoRef.current?.error ?? undefined);
         }}
         onCanPlay={() => {
           setIsReady(true);

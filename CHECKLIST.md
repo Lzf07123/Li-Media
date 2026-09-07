@@ -255,10 +255,11 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 | I12 | 预热能否及时停止并在重启后继续？ | `ThumbnailPreheatJob` 增加取消事件和 `cancelled` 状态；新增管理员取消 API 与后台取消按钮；任务循环每项前检查取消，已生成派生保留，重启后再次预热自然续扫剩余候选。 | 活跃/排队任务可取消；已完成派生不回滚；取消后 tmp 为空；重新启动继续处理剩余。 | 2026-09-07：70 个 pytest 通过；真实 API 启动 240px 视频预热后取消返回 200 且 `status=cancelled`；24 个 Playwright 通过；重启后再次预热按候选顺序恢复。 | 采纳；恢复语义采用“幂等候选重扫 + 派生文件去重”，无需持久化游标。 |
 | I13 | 最后一条 unknown MOV 是否可归因？ | 用 64MB Range 样本运行 ffprobe/ffmpeg，确认失败为 `moov atom not found`；让远程派生按 `video/quicktime` MIME 将超限源标记为 `mov_moov` 并落库。 | unknown 清零；失败分类覆盖源截断和 MOV 索引缺失；临时文件清空且无 OOM。 | 2026-09-07：探针返回 `moov atom not found`；真实容器分类后失败为 5 条 `source_truncated` + 1 条 `mov_moov`；71 个 pytest 通过；Source Zero true、tmp=0、cgroup peak 131.08m。 | 采纳；该 MOV 需要 moov 前置重封装或专用远程探针，当前不做转码。 |
 | I14 | 派生失败后用户能否在单卡继续恢复？ | 卡片失败态显示“重试预览”，再次点击触发单卡重新加载；首次连续 502、手动重试后 200 的 Playwright 用例覆盖。 | 失败不整页不可用；重试入口可见且可点击；重试成功后显示图片。 | 2026-09-07：新增用例断言失败态出现“重试预览”、点击后图片可见；25 个 Playwright 全部通过，前端 typecheck/build 通过。 | 采纳；失败单卡恢复闭环完成。 |
+| I15 | 列表 429、派生 OOM 和视频不兼容能否继续收敛？ | 首页追加加载加请求锁并局部化错误；照片派生用 Pillow draft 先降采样；单用户视频流并发提高到 3；视频 `SRC_NOT_SUPPORTED` 显示编码不兼容文案。 | 滚动重复触发只发一次；追加 429 不清空画布；8-16MB 真实照片派生无 OOM；视频流 Range 可用；26 个 Playwright 通过。 | 2026-09-07：真实 8.73MB JPEG 派生成功，cgroup peak 146.8m；`/file?Range=0-1` 返回 206/no-store；26 个 Playwright、71 个 pytest 和工程门禁通过；快照 Source Zero true、tmp=0。 | 采纳；HEVC MOV 若浏览器不支持，现在明确提示下载播放，不做服务端转码。 |
 
 ## 11. 当前优先级
 
 1. 在冷缓存样本上对比首屏成功率和 429/5xx 错误率。
-2. 在冷缓存样本上对比首屏成功率和 429/5xx 错误率。
-4. 只有当以上数据证明需要跨进程治理时，才迁移到独立 worker 或外部队列。
-5. 每轮快照继续携带 Source Zero 审计；若出现新的源文件或 `source_path`，先回到本项再继续性能实验。
+2. 对 HEVC MOV 做浏览器兼容统计；若占比高，评估外部转码/独立 worker 的容量方案，但不放宽 256m。
+3. 只有当以上数据证明需要跨进程治理时，才迁移到独立 worker 或外部队列。
+4. 每轮快照继续携带 Source Zero 审计；若出现新的源文件或 `source_path`，先回到本项再继续性能实验。

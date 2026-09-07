@@ -14,12 +14,12 @@ type MemoryCardProps = {
 export default function MemoryCard({ memory, onOpen, priority = false }: MemoryCardProps) {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [queuedThumbnailUrl, setQueuedThumbnailUrl] = useState<string | null>(null);
   const [isIntersecting, setIsIntersecting] = useState(priority);
   const imageRef = useRef<HTMLImageElement>(null);
-  const cardRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [retryUrl, setRetryUrl] = useState<string | null>(null);
   const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "240");
   const knownSize = memory.width && memory.height
     ? { width: memory.width, height: memory.height }
@@ -88,27 +88,32 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
       });
 
     return () => controller.abort();
-  }, [isIntersecting, priority, retryKey, thumbnailUrl]);
+  }, [isIntersecting, priority, thumbnailUrl]);
 
   const showError = thumbnailFailed || loadState === "error";
 
+  const retryThumbnail = () => {
+    if (!thumbnailUrl) {
+      return;
+    }
+
+    const retryUrl = `${thumbnailUrl}&retry=${Date.now()}`;
+    setLoadState("loading");
+    setThumbnailFailed(false);
+    setNaturalSize(null);
+    setQueuedThumbnailUrl(null);
+    setRetryUrl(retryUrl);
+  };
+
   return (
-    <button
-      aria-label={brand.copy.detailPreviewAlt}
-      className="post-card block w-full overflow-hidden"
-      ref={cardRef}
-      onClick={() => {
-        if (showError) {
-          setLoadState("loading");
-          setThumbnailFailed(false);
-          setRetryKey((current) => current + 1);
-          return;
-        }
-        onOpen(memory.id);
-      }}
-      type="button"
-    >
-      {thumbnailUrl && !thumbnailFailed ? (
+    <div className="post-card relative block w-full overflow-hidden" ref={cardRef}>
+      <button
+        aria-label={brand.copy.detailPreviewAlt}
+        className="block w-full cursor-pointer text-left"
+        onClick={() => onOpen(memory.id)}
+        type="button"
+      >
+      {thumbnailUrl && (!thumbnailFailed || retryUrl) ? (
         <span className="post-cover-link block media-frame" style={mediaStyle}>
           {loadState !== "ready" ? (
             <span aria-hidden="true" className="media-placeholder">
@@ -125,6 +130,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
             onError={() => {
               setLoadState("error");
               setThumbnailFailed(true);
+              setRetryUrl(null);
             }}
             onLoad={(event) => {
               const image = event.currentTarget;
@@ -134,7 +140,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
               setLoadState("ready");
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
-            src={queuedThumbnailUrl ?? undefined}
+            src={retryUrl ?? queuedThumbnailUrl ?? undefined}
             ref={imageRef}
             width={memory.width ?? undefined}
           />
@@ -166,6 +172,18 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
           {brand.copy.videoKind}
         </span>
       ) : null}
-    </button>
+      </button>
+      {showError ? (
+        <button
+          aria-label={brand.copy.retryPreview}
+          className="absolute inset-x-2 bottom-2 flex min-h-11 items-center justify-center gap-1 rounded-lg bg-surface/90 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          onClick={retryThumbnail}
+          type="button"
+        >
+          <RotateCcw aria-hidden="true" className="size-3.5" />
+          {brand.copy.retryPreview}
+        </button>
+      ) : null}
+    </div>
   );
 }

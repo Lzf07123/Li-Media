@@ -86,8 +86,9 @@ def _create_photo_thumbnail(
     max_size: int,
     quality: int,
 ) -> None:
-    with Image.open(source_path) as image:
-        image = ImageOps.exif_transpose(image)
+    with Image.open(source_path) as source_image:
+        source_image.draft("RGB", (max_size, max_size))
+        image = ImageOps.exif_transpose(source_image)
 
         if image.mode not in {"RGB", "RGBA"}:
             image = image.convert("RGB")
