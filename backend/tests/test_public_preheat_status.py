@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from pathlib import Path
+import uuid
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -30,7 +31,7 @@ def create_database(tmp_path: Path) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-def add_public_photo(session_factory: sessionmaker[Session]) -> None:
+def add_public_photo(session_factory: sessionmaker[Session]) -> uuid.UUID:
     with session_factory.begin() as session:
         memory = Memory(
             title="公开照片",
@@ -39,6 +40,7 @@ def add_public_photo(session_factory: sessionmaker[Session]) -> None:
         )
         session.add(memory)
         session.flush()
+        memory_id = memory.id
         session.add(
             MemoryFile(
                 memory_id=memory.id,
@@ -55,6 +57,7 @@ def add_public_photo(session_factory: sessionmaker[Session]) -> None:
                 browser_compatibility=BrowserCompatibilityState.SUPPORTED,
             )
         )
+    return memory_id
 
 
 def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
@@ -66,7 +69,7 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
         latest_job=None,
     ) == {"status": "ready", "processed": 0, "total": 0}
 
-    add_public_photo(session_factory)
+    memory_id = add_public_photo(session_factory)
     assert collect_public_preheat_status(
         session_factory(),
         latest_job=None,
@@ -131,6 +134,14 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
         session_factory(),
         latest_job=failed_job,
     )["status"] == "degraded"
+
+    with session_factory.begin() as session:
+        memory = session.get(Memory, memory_id)
+        memory.thumbnail_path = "thumbnails/cached/240.webp"
+    assert collect_public_preheat_status(
+        session_factory(),
+        latest_job=None,
+    ) == {"status": "ready", "processed": 1, "total": 1}
 
 
 def test_public_preheat_endpoint_returns_only_safe_summary(

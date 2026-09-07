@@ -238,6 +238,23 @@ def count_public_derivative_candidates(db: Session) -> int:
     return int(db.scalar(statement) or 0)
 
 
+def count_public_derivative_cache_hits(db: Session) -> int:
+    """Count public files with a persisted derivative, independent of job history."""
+
+    statement = (
+        select(func.count(MemoryFile.id))
+        .join(Memory, MemoryFile.memory_id == Memory.id)
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            MemoryFile.source == "baidupan",
+            MemoryFile.remote_id.is_not(None),
+            Memory.thumbnail_path.is_not(None),
+            public_files_condition(),
+        )
+    )
+    return int(db.scalar(statement) or 0)
+
+
 def collect_public_preheat_status(
     db: Session,
     *,
@@ -246,9 +263,11 @@ def collect_public_preheat_status(
     total = count_public_derivative_candidates(db)
 
     if latest_job is None:
+        cache_hits = count_public_derivative_cache_hits(db)
+        is_ready = total == 0 or cache_hits >= total
         return {
-            "status": "ready" if total == 0 else "not_preheated",
-            "processed": 0,
+            "status": "ready" if is_ready else "not_preheated",
+            "processed": total if is_ready else 0,
             "total": total,
         }
 
