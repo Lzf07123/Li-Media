@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 from app.db.session import get_db, get_session_factory
-from app.models.admin import AdminSession
+from app.models.admin import AdminBackgroundJob, AdminSession
 from app.models.memory import (
     Memory,
     MemoryFile,
@@ -43,12 +43,15 @@ from app.schemas.responses import (
     AdminCleanupRequest,
     AdminCleanupResponse,
     AdminCleanupStats,
-    DisplayHealthCounts,
-    MemoryCounts,
+    AdminBackgroundJobRead,
     AdminMemoryListResponse,
     AdminLoginRequest,
     AdminMemoryBatchUpdateRequest,
     AdminMemoryBatchUpdateResponse,
+    AdminMemoryBatchPreviewRequest,
+    AdminMemoryBatchPreviewResponse,
+    AdminMemoryBatchStatusRequest,
+    AdminBrowserCompatibilityProbeRequest,
     AdminMemoryExportRequest,
     AdminMemoryExportResponse,
     AdminRemoteConfigResponse,
@@ -61,6 +64,19 @@ from app.schemas.responses import (
 )
 from app.services.memory_thumbnails import (
     remove_media_file,
+)
+from app.services.admin_batch_status import (
+    request_cancel as request_batch_status_cancel,
+    run_batch_status_job,
+)
+from app.services.admin_filters import (
+    add_admin_filters,
+    base_remote_statement,
+    collect_counts,
+)
+from app.services.admin_browser_compatibility import (
+    request_cancel as request_browser_probe_cancel,
+    run_browser_compatibility_probe,
 )
 from app.services.resource_metrics import collect_resource_metrics
 from app.services.admin_logs import record_admin_operation
@@ -79,6 +95,7 @@ from app.services.baidu_oauth import (
     build_baidu_authorize_url,
     create_baidu_oauth_state,
     exchange_baidu_code,
+    get_baidu_access_token,
     load_baidu_credentials,
     save_baidu_credentials,
     verify_baidu_oauth_state,
@@ -88,7 +105,6 @@ from app.services.baidu_sync import (
     refresh_remote_entry,
     run_remote_scan_task,
 )
-from app.services.display_health import displayable_files_condition
 from app.services.task_limits import is_temporary_path_active, task_limiter, task_metrics
 from app.services.system_status import collect_system_status
 from app.services.thumbnail_preheat import (
@@ -451,7 +467,7 @@ def trigger_baidu_sync(
     request_payload = payload or AdminSyncRequest()
     settings = get_settings()
 
-    if not settings.baidu_access_token:
+    if not get_baidu_access_token(settings):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="百度网盘访问凭证未配置",
@@ -657,52 +673,30 @@ def list_admin_memories(
     kind: MemoryKind | None = None,
     keyword: str | None = Query(default=None, max_length=100),
     display: Literal["all", "displayable", "excluded"] = Query(default="all"),
+    compatibility: Literal[
+        "all",
+        "supported",
+        "unsupported",
+        "unknown",
+    ] = Query(default="all"),
+    status: MemoryStatus | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
     _: AdminSession = Depends(require_admin_session),
 ) -> AdminMemoryListResponse:
-    statement = (
-        select(Memory)
-        .join(Memory.files)
-        .where(MemoryFile.source == "baidupan")
-        .distinct()
+    global_statement = base_remote_statement()
+    global_counts = collect_counts(db, global_statement)
+    statement = add_admin_filters(
+        global_statement,
+        kind=kind,
+        keyword=keyword,
+        display=display,
+        compatibility=compatibility,
+        status=status,
     )
-    if kind is not None:
-        statement = statement.where(Memory.kind == kind)
-    if keyword:
-        statement = statement.where(
-            (Memory.title.ilike(f"%{keyword}%"))
-            | (Memory.description.ilike(f"%{keyword}%"))
-            | (Memory.location.ilike(f"%{keyword}%"))
-        )
-
-    base_statement = statement
-    total = db.scalar(select(func.count()).select_from(base_statement.subquery())) or 0
-    displayable_count = (
-        db.scalar(
-            select(func.count()).select_from(
-                base_statement.where(displayable_files_condition()).subquery()
-            )
-        )
-        or 0
-    )
-    excluded_count = max(0, total - displayable_count)
-    if display == "displayable":
-        statement = statement.where(displayable_files_condition())
-    elif display == "excluded":
-        statement = statement.where(~displayable_files_condition())
-
-    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
-    photo_count = (
-        db.scalar(
-            select(func.count()).select_from(
-                base_statement.where(Memory.kind == MemoryKind.PHOTO).subquery()
-            )
-        )
-        or 0
-    )
-    video_count = total - photo_count
+    filtered_counts = collect_counts(db, statement)
+    total = int(filtered_counts["total"])
     memories = db.scalars(
         statement.order_by(Memory.created_at.desc())
         .order_by(Memory.id.desc())
@@ -713,14 +707,262 @@ def list_admin_memories(
     return AdminMemoryListResponse(
         items=[to_memory_read(memory) for memory in memories],
         total=total,
-        display_counts=DisplayHealthCounts(
-            displayable=displayable_count,
-            excluded=excluded_count,
-        ),
+        display_counts=global_counts["display_counts"],
+        filtered_display_counts=filtered_counts["display_counts"],
+        global_counts=global_counts["counts"],
+        status_counts=global_counts["status_counts"],
+        filtered_status_counts=filtered_counts["status_counts"],
+        browser_counts=global_counts["browser_counts"],
+        filtered_browser_counts=filtered_counts["browser_counts"],
         page=page,
         page_size=page_size,
-        counts=MemoryCounts(photo=photo_count, video=video_count),
+        counts=filtered_counts["counts"],
     )
+
+
+@router.post(
+    "/memories/batch-preview",
+    response_model=AdminMemoryBatchPreviewResponse,
+)
+def preview_batch_status_change(
+    payload: AdminMemoryBatchPreviewRequest,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminMemoryBatchPreviewResponse:
+    statement = add_admin_filters(
+        base_remote_statement(),
+        kind=payload.kind,
+        keyword=payload.keyword,
+        display=payload.display,
+        compatibility=payload.compatibility,
+        status=payload.status,
+    )
+    counts = collect_counts(db, statement)
+    return AdminMemoryBatchPreviewResponse(
+        filter_snapshot={
+            "kind": payload.kind.value if payload.kind else "all",
+            "keyword": payload.keyword or "all",
+            "display": payload.display,
+            "compatibility": payload.compatibility,
+            "status": payload.status.value if payload.status else "all",
+        },
+        total=int(counts["total"]),
+        counts=counts["counts"],
+        status_counts=counts["status_counts"],
+        display_counts=counts["display_counts"],
+        browser_counts=counts["browser_counts"],
+        is_full_library=(
+            payload.kind is None
+            and not payload.keyword
+            and payload.display == "all"
+            and payload.compatibility == "all"
+            and payload.status is None
+        ),
+    )
+
+
+@router.post(
+    "/memories/batch-status",
+    response_model=AdminBackgroundJobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_batch_status_change(
+    payload: AdminMemoryBatchStatusRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session_factory: sessionmaker[Session] = Depends(get_session_factory),
+    db: Session = Depends(get_db),
+    admin_session: AdminSession = Depends(require_admin_session),
+) -> AdminBackgroundJob:
+    if payload.target_status not in {MemoryStatus.PUBLISHED, MemoryStatus.HIDDEN}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="批量状态只支持发布或下线",
+        )
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="批量操作缺少确认",
+        )
+
+    statement = add_admin_filters(
+        base_remote_statement(),
+        kind=payload.kind,
+        keyword=payload.keyword,
+        display=payload.display,
+        compatibility=payload.compatibility,
+        status=payload.status,
+    )
+    memories = db.scalars(
+        statement.order_by(Memory.created_at.desc(), Memory.id.desc())
+    ).all()
+    job = AdminBackgroundJob(
+        action=f"batch_status_{payload.target_status.value}",
+        status="queued",
+        filter_snapshot={
+            "kind": payload.kind.value if payload.kind else "all",
+            "keyword": payload.keyword or "all",
+            "display": payload.display,
+            "compatibility": payload.compatibility,
+            "status": payload.status.value if payload.status else "all",
+            "target_status": payload.target_status.value,
+        },
+        resource_ids=[str(memory.id) for memory in memories],
+        total=len(memories),
+        created_by_session=admin_session.id,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    background_tasks.add_task(
+        run_batch_status_job,
+        session_factory,
+        job.id,
+        target_status=payload.target_status,
+        operator_session_id=admin_session.id,
+    )
+    record_admin_operation(
+        db,
+        action="batch_status_queued",
+        target_type="memory_batch_job",
+        target_id=None,
+        client_ip=_client_ip(request),
+        detail=(
+            f"action={job.action};total={job.total};"
+            f"session={admin_session.id};filters={job.filter_snapshot}"
+        ),
+    )
+    db.commit()
+    return job
+
+
+@router.get(
+    "/memories/batch-status/latest",
+    response_model=AdminBackgroundJobRead | None,
+)
+def get_latest_batch_status_job(
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminBackgroundJob | None:
+    job = db.scalar(
+        select(AdminBackgroundJob)
+        .where(
+            AdminBackgroundJob.action.in_(
+                ["batch_status_published", "batch_status_hidden"]
+            )
+        )
+        .order_by(AdminBackgroundJob.created_at.desc())
+    )
+    return job
+
+
+@router.post(
+    "/memories/batch-status/{job_id}/cancel",
+    response_model=AdminBackgroundJobRead,
+)
+def cancel_batch_status_job(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminBackgroundJob:
+    job = db.get(AdminBackgroundJob, job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="批量任务不存在",
+        )
+    if job.status not in {"queued", "running"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="批量任务已结束，不能取消",
+        )
+    request_batch_status_cancel(job_id)
+    return job
+
+
+@router.post(
+    "/browser-compatibility/probe",
+    response_model=AdminBackgroundJobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_browser_compatibility_probe(
+    payload: AdminBrowserCompatibilityProbeRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session_factory: sessionmaker[Session] = Depends(get_session_factory),
+    db: Session = Depends(get_db),
+    admin_session: AdminSession = Depends(require_admin_session),
+) -> AdminBackgroundJob:
+    job = AdminBackgroundJob(
+        action="browser_compatibility_probe",
+        status="queued",
+        filter_snapshot={"state": "unknown", "limit": payload.limit},
+        total=payload.limit,
+        created_by_session=admin_session.id,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    background_tasks.add_task(
+        run_browser_compatibility_probe,
+        session_factory,
+        job.id,
+        operator_session_id=admin_session.id,
+    )
+    record_admin_operation(
+        db,
+        action="browser_probe_queued",
+        target_type="memory_batch_job",
+        target_id=None,
+        client_ip=_client_ip(request),
+        detail=(
+            f"limit={payload.limit};session={admin_session.id};"
+            "mode=bounded-prefix"
+        ),
+    )
+    db.commit()
+    return job
+
+
+@router.get(
+    "/browser-compatibility/probe/latest",
+    response_model=AdminBackgroundJobRead | None,
+)
+def get_latest_browser_compatibility_probe(
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminBackgroundJob | None:
+    job = db.scalar(
+        select(AdminBackgroundJob)
+        .where(AdminBackgroundJob.action == "browser_compatibility_probe")
+        .order_by(AdminBackgroundJob.created_at.desc())
+    )
+    return job
+
+
+@router.post(
+    "/browser-compatibility/probe/{job_id}/cancel",
+    response_model=AdminBackgroundJobRead,
+)
+def cancel_browser_compatibility_probe(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> AdminBackgroundJob:
+    job = db.get(AdminBackgroundJob, job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="探测任务不存在",
+        )
+    if job.status not in {"queued", "running"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="探测任务已结束，不能取消",
+        )
+    request_browser_probe_cancel(job_id)
+    return job
 
 
 @router.patch("/memories/batch", response_model=AdminMemoryBatchUpdateResponse)

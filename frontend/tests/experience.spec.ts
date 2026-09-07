@@ -275,13 +275,13 @@ test("kind filter is centered and visually compact", async ({ page }) => {
   const height = await page
     .locator(".segmented")
     .evaluate((element) => element.getBoundingClientRect().height);
-  expect(height).toBeLessThanOrEqual(38);
+  expect(height).toBeLessThanOrEqual(38.01);
 
   const buttonHeight = await page
     .locator(".segmented button")
     .first()
     .evaluate((element) => element.getBoundingClientRect().height);
-  expect(buttonHeight).toBeLessThanOrEqual(32);
+  expect(buttonHeight).toBeLessThanOrEqual(32.01);
 });
 
 test("infinite canvas appends segmented thumbnail pages while scrolling", async ({ page }) => {

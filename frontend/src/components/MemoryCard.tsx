@@ -16,6 +16,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [queuedThumbnailUrl, setQueuedThumbnailUrl] = useState<string | null>(null);
+  const [showShimmer, setShowShimmer] = useState(false);
   const [isIntersecting, setIsIntersecting] = useState(priority);
   const imageRef = useRef<HTMLImageElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -90,6 +91,19 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     return () => controller.abort();
   }, [isIntersecting, priority, thumbnailUrl]);
 
+  useEffect(() => {
+    if (loadState !== "loading") {
+      setShowShimmer(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowShimmer(true);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [loadState]);
+
   const showError = thumbnailFailed || loadState === "error";
 
   const retryThumbnail = () => {
@@ -116,7 +130,10 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
       {thumbnailUrl && (!thumbnailFailed || retryUrl) ? (
         <span className="post-cover-link block media-frame" style={mediaStyle}>
           {loadState !== "ready" ? (
-            <span aria-hidden="true" className="media-placeholder">
+            <span
+              aria-hidden="true"
+              className={`media-placeholder ${showShimmer ? "card-shimmer" : ""}`}
+            >
               <ImageIcon className="size-8 opacity-40" />
             </span>
           ) : null}

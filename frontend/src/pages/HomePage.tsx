@@ -8,6 +8,7 @@ import { brand } from "@/lib/brand";
 import {
   getMemoryById,
   getMemories,
+  getPublicMediaCounts,
   getMemoryRecommendations,
   type MemorySummary,
 } from "@/lib/api";
@@ -67,6 +68,14 @@ export default function HomePage() {
   const [viewerMissing, setViewerMissing] = useState(false);
   const [counts, setCounts] = useState({ photo: 0, video: 0 });
   const [total, setTotal] = useState(0);
+  const [publicCounts, setPublicCounts] = useState<{
+    total: number;
+    photo: number;
+    video: number;
+  } | null>(null);
+  const [publicCountState, setPublicCountState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +158,29 @@ export default function HomePage() {
   useEffect(() => {
     void loadPage(1, "replace");
   }, [loadPage]);
+
+  useEffect(() => {
+    let active = true;
+    setPublicCountState("loading");
+    getPublicMediaCounts()
+      .then((data) => {
+        if (!active) {
+          return;
+        }
+        setPublicCounts(data);
+        setPublicCountState("ready");
+      })
+      .catch(() => {
+        if (active) {
+          setPublicCounts(null);
+          setPublicCountState("error");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -356,6 +388,28 @@ export default function HomePage() {
       />
       <div aria-hidden="true" className="flow-rule mx-auto mt-3 w-16" />
       <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
+
+      <p
+        aria-live="polite"
+        className="mt-4 text-center text-sm text-muted"
+        data-testid="public-count"
+      >
+        {publicCountState === "loading" ? (
+          brand.copy.publicCountLoading
+        ) : publicCountState === "error" ? (
+          brand.copy.publicCountFailed
+        ) : (
+          <>
+            <span className="font-medium text-foreground">
+              {brand.copy.publicCountLabel} {publicCounts?.total ?? 0}
+            </span>
+            <span className="ml-2">
+              {brand.copy.publicCountDetail} {publicCounts?.photo ?? 0}/
+              {publicCounts?.video ?? 0}
+            </span>
+          </>
+        )}
+      </p>
 
       <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
         <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">

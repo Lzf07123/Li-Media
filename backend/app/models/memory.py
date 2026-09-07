@@ -50,6 +50,12 @@ class RemoteStreamState(StrEnum):
     FAILED = "failed"
 
 
+class BrowserCompatibilityState(StrEnum):
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+    UNKNOWN = "unknown"
+
+
 class DerivativeFailureKind(StrEnum):
     UNKNOWN = "unknown"
     DISK_QUOTA = "disk_quota"
@@ -160,6 +166,20 @@ class MemoryFile(Base):
     )
     stream_state: Mapped[RemoteStreamState] = mapped_column(
         String(32), default=RemoteStreamState.UNAVAILABLE, index=True
+    )
+    browser_compatibility: Mapped[BrowserCompatibilityState] = mapped_column(
+        String(32),
+        default=BrowserCompatibilityState.UNKNOWN,
+        index=True,
+    )
+    browser_compatibility_version: Mapped[str] = mapped_column(String(32), default="v1")
+    browser_format_summary: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    browser_compatibility_error: Mapped[str | None] = mapped_column(Text)
+    browser_compatibility_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
     )
     raw_metadata_summary: Mapped[dict[str, object]] = mapped_column(
         JSON, default=dict

@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import Base, get_db
 from app.main import app
 from app.models.memory import Memory, MemoryFile, MemoryFileStatus, MemoryKind, MemoryStatus
-from app.models.memory import RemoteFileState, RemoteThumbnailState, RemoteStreamState
+from app.models.memory import (
+    BrowserCompatibilityState,
+    RemoteFileState,
+    RemoteThumbnailState,
+    RemoteStreamState,
+)
 
 
 def test_published_memory_is_visible_and_hidden_memory_is_not(tmp_path: Path) -> None:
@@ -119,6 +124,7 @@ def test_public_memories_support_kind_counts_and_sort(tmp_path: Path) -> None:
                         remote_state=RemoteFileState.READY,
                         thumbnail_state=RemoteThumbnailState.READY,
                         stream_state=RemoteStreamState.READY,
+                        browser_compatibility=BrowserCompatibilityState.SUPPORTED,
                     )
                 )
 

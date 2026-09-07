@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     remote_thumbnail_video_source_max_bytes: int = 64 * 1024 * 1024
     remote_thumbnail_disk_quota_bytes: int = 4 * 1024 * 1024 * 1024
     remote_thumbnail_max_temp_files: int = 2
+    browser_probe_max_bytes: int = 2 * 1024 * 1024
+    browser_probe_timeout_seconds: float = 12.0
     scan_concurrency_limit: int = 1
     scan_queue_limit: int = 1
     scan_wait_timeout_seconds: float = 0.0

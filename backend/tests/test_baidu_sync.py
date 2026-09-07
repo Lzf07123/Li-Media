@@ -23,6 +23,7 @@ from app.models.memory import (
     RemoteStreamState,
 )
 from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
+from app.services.baidu_oauth import BaiduCredentials, save_baidu_credentials
 from app.services.baidu_sync import refresh_remote_entry, scan_remote_directory
 
 
@@ -351,6 +352,55 @@ def test_admin_scan_is_scan_only_and_retry_logs_operation(tmp_path: Path, monkey
             assert task is not None
             assert task.status == RemoteScanStatus.COMPLETED
             assert task.delete_missing is True
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_session_factory, None)
+
+
+def test_admin_scan_accepts_service_credential_file(tmp_path: Path, monkeypatch) -> None:
+    tree = {
+        "/apps/Li&Media": [
+            remote_item("/apps/Li&Media/photo.jpg", fs_id="42"),
+        ]
+    }
+    client = FakeRemoteClient(tree)
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    credentials_path = tmp_path / "config" / "baidu_token.json"
+    session_factory = create_database(tmp_path)
+    settings = Settings(
+        admin_token="test-token",
+        baidu_access_token="",
+        baidu_credentials_path=str(credentials_path),
+        media_root=str(media_root),
+        baidu_sync_dir="/apps/Li&Media",
+    )
+    save_baidu_credentials(
+        settings,
+        BaiduCredentials(
+            access_token="file-access-token",
+            refresh_token=None,
+            expires_at=datetime.now(UTC).replace(microsecond=0),
+            scope="basic,netdisk",
+        ),
+    )
+    monkeypatch.setattr("app.api.v1.admin.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.api.v1.admin.BaiduPanClient",
+        lambda settings: client,
+    )
+
+    def override_get_db() -> Generator[Session, None, None]:
+        yield from override_database(session_factory)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
+    try:
+        with TestClient(app) as test_client:
+            assert test_client.post(
+                "/api/v1/admin/login", json={"token": "test-token"}
+            ).status_code == 204
+            assert test_client.post("/api/v1/admin/sync").status_code == 200
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.pop(get_session_factory, None)
