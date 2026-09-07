@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 from threading import Lock
 
@@ -17,6 +17,7 @@ from app.models.memory import (
     MemoryFile,
     MemoryKind,
     MemoryStatus,
+    RemoteStreamState,
     RemoteThumbnailState,
 )
 from app.schemas.memory import MemorySummaryRead, to_memory_summary
@@ -32,6 +33,10 @@ from app.services.memory_thumbnails import (
 )
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
+from app.services.display_health import (
+    displayable_files_condition,
+    get_media_display_state,
+)
 from app.services.derivative_tasks import (
     run_local_derivative,
     run_remote_derivative,
@@ -67,7 +72,12 @@ def recommend_memories(
         select(Memory)
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
-            Memory.files.any(MemoryFile.source == "baidupan"),
+            Memory.files.any(
+                and_(
+                    MemoryFile.source == "baidupan",
+                    displayable_files_condition(),
+                )
+            ),
         )
         .order_by(func.random())
     )
@@ -99,6 +109,7 @@ def list_memories(
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
             MemoryFile.source == "baidupan",
+            displayable_files_condition(),
         )
         .distinct()
     )
@@ -159,6 +170,7 @@ def get_memory(memory_id: uuid.UUID, db: Session = Depends(get_db)) -> MemorySum
         memory is None
         or memory.status != MemoryStatus.PUBLISHED
         or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+        or get_media_display_state(memory) == "excluded"
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
@@ -318,6 +330,8 @@ def stream_memory(
                 del _stream_users[user_key]
 
         task_metrics.record_failed(TaskType.STREAM)
+        memory_file.stream_state = RemoteStreamState.FAILED
+        db.commit()
         record_admin_operation(
             db,
             action="stream_proxy_failed",

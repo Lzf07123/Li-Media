@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.models.memory import (
@@ -11,6 +12,8 @@ from app.models.memory import (
     RemoteStreamState,
     RemoteThumbnailState,
 )
+
+from app.services.display_health import get_media_display_state
 
 
 class MemoryFileRead(BaseModel):
@@ -36,6 +39,9 @@ class MemoryFileRead(BaseModel):
     sync_error: str | None
 
 
+MediaDisplayState = Literal["displayable", "excluded"]
+
+
 class MemoryCardFileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +65,7 @@ class MemorySummaryRead(BaseModel):
     description: str
     kind: MemoryKind
     status: MemoryStatus
+    media_display_state: MediaDisplayState = "excluded"
     captured_at: datetime | None
     location: str | None
     thumbnail_path: str | None
@@ -93,6 +100,7 @@ class MemoryRead(BaseModel):
     description: str
     kind: MemoryKind
     status: MemoryStatus
+    media_display_state: MediaDisplayState = "excluded"
     captured_at: datetime | None
     location: str | None
     thumbnail_path: str | None
@@ -133,6 +141,7 @@ def to_memory_read(memory: Memory) -> MemoryRead:
     payload.primary_file = (
         MemoryFileRead.model_validate(memory.files[0]) if memory.files else None
     )
+    payload.media_display_state = get_media_display_state(memory)
     return payload
 
 
@@ -141,4 +150,5 @@ def to_memory_summary(memory: Memory) -> MemorySummaryRead:
     payload.primary_file = (
         MemoryCardFileRead.model_validate(memory.files[0]) if memory.files else None
     )
+    payload.media_display_state = get_media_display_state(memory)
     return payload

@@ -156,6 +156,7 @@ const preheatJob = {
 const adminListResponse = {
   items: [memory],
   total: 1,
+  display_counts: { displayable: 1, excluded: 0 },
   page: 1,
   page_size: 50,
   counts: { photo: 1, video: 0 },

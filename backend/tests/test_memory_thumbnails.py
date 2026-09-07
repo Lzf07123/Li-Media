@@ -17,6 +17,9 @@ from app.models.memory import (
     MemoryFileStatus,
     MemoryKind,
     MemoryStatus,
+    RemoteFileState,
+    RemoteStreamState,
+    RemoteThumbnailState,
 )
 from app.schemas.memory import MemoryRead
 from app.services.memory_thumbnails import create_memory_derivative
@@ -81,9 +84,12 @@ def test_photo_thumbnail_is_downscaled_and_served(tmp_path: Path, monkeypatch) -
                 memory_id=memory.id,
                 source="baidupan",
                 remote_path="photo.png",
-                source_path="photos/photo.png",
-                mime_type="image/png",
-                status=MemoryFileStatus.MATCHED,
+                    source_path="photos/photo.png",
+                    mime_type="image/png",
+                    status=MemoryFileStatus.MATCHED,
+                    remote_state=RemoteFileState.READY,
+                    thumbnail_state=RemoteThumbnailState.READY,
+                    stream_state=RemoteStreamState.READY,
             )
         )
 

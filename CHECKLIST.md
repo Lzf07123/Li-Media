@@ -256,6 +256,7 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 | I13 | 最后一条 unknown MOV 是否可归因？ | 用 64MB Range 样本运行 ffprobe/ffmpeg，确认失败为 `moov atom not found`；让远程派生按 `video/quicktime` MIME 将超限源标记为 `mov_moov` 并落库。 | unknown 清零；失败分类覆盖源截断和 MOV 索引缺失；临时文件清空且无 OOM。 | 2026-09-07：探针返回 `moov atom not found`；真实容器分类后失败为 5 条 `source_truncated` + 1 条 `mov_moov`；71 个 pytest 通过；Source Zero true、tmp=0、cgroup peak 131.08m。 | 采纳；该 MOV 需要 moov 前置重封装或专用远程探针，当前不做转码。 |
 | I14 | 派生失败后用户能否在单卡继续恢复？ | 卡片失败态显示“重试预览”，再次点击触发单卡重新加载；首次连续 502、手动重试后 200 的 Playwright 用例覆盖。 | 失败不整页不可用；重试入口可见且可点击；重试成功后显示图片。 | 2026-09-07：新增用例断言失败态出现“重试预览”、点击后图片可见；25 个 Playwright 全部通过，前端 typecheck/build 通过。 | 采纳；失败单卡恢复闭环完成。 |
 | I15 | 列表 429、派生 OOM 和视频不兼容能否继续收敛？ | 首页追加加载加请求锁并局部化错误；照片派生用 Pillow draft 先降采样；单用户视频流并发提高到 3；视频 `SRC_NOT_SUPPORTED` 显示编码不兼容文案。 | 滚动重复触发只发一次；追加 429 不清空画布；8-16MB 真实照片派生无 OOM；视频流 Range 可用；26 个 Playwright 通过。 | 2026-09-07：真实 8.73MB JPEG 派生成功，cgroup peak 146.8m；`/file?Range=0-1` 返回 206/no-store；26 个 Playwright、71 个 pytest 和工程门禁通过；快照 Source Zero true、tmp=0。 | 采纳；HEVC MOV 若浏览器不支持，现在明确提示下载播放，不做服务端转码。 |
+| I16 | 无法正常显示的资源是否会污染公开体验？ | 新增统一展示健康规则：照片预览失败且无缓存派生、视频流失败或远程不可用自动从公开列表/推荐/详情剔除；管理列表新增健康过滤、计数、剔除徽标和失败原因；Nginx 增加列表/派生 stale 缓存与静态文件缓存。 | 公开接口只返回 `displayable`；后台可筛选 excluded 并看到失败原因；backend 重启时可回源 stale 派生；73 个 pytest 和 26 个 Playwright 通过。 | 2026-09-07：真实 Nginx 公开列表 total=64（photo 47/video 17）且状态全部 `displayable`；后台 excluded=1 并能筛出；四容器 healthy；Source Zero true、tmp=0、OOM=0、cgroup peak 130.25m。 | 采纳；剔除是展示层过滤而非删除索引，管理员仍可审计和恢复。 |
 
 ## 11. 当前优先级
 
