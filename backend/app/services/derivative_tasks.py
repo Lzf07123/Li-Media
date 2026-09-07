@@ -1,6 +1,7 @@
 """Shared bounded execution helpers for media derivatives."""
 
 from pathlib import Path
+from threading import Event
 from uuid import UUID
 
 from app.core.config import get_settings
@@ -29,6 +30,7 @@ def run_local_derivative(
     duration_seconds: int | None = None,
     priority: int | None = None,
     failure_sink: dict[str, str] | None = None,
+    cancel_event: Event | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -68,6 +70,7 @@ def run_remote_derivative(
     duration_seconds: int | None = None,
     priority: int | None = None,
     failure_sink: dict[str, str] | None = None,
+    cancel_event: Event | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -87,7 +90,7 @@ def run_remote_derivative(
                 memory_id=memory.id,
                 max_size=max_size,
                 duration_seconds=duration_seconds,
-                cancel_event=make_cancel_event(),
+                cancel_event=cancel_event or make_cancel_event(),
                 failure_sink=failure_sink,
             )
 

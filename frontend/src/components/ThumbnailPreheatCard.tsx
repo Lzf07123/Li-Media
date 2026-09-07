@@ -10,6 +10,8 @@ import type { ThumbnailPreheatJob } from "@/lib/api";
 type ThumbnailPreheatCardProps = {
   job: ThumbnailPreheatJob | null;
   isStarting: boolean;
+  isCancelling?: boolean;
+  onCancel?: () => void;
   onStart: (payload: {
     max_size: "240" | "480" | "768" | "1280";
     kind?: "photo" | "video";
@@ -22,12 +24,15 @@ const statusCopy = {
   queued: brand.copy.adminPreheatQueued,
   running: brand.copy.adminPreheatRunning,
   completed: brand.copy.adminPreheatCompleted,
+  cancelled: brand.copy.adminPreheatCancelled,
   failed: brand.copy.adminPreheatFailed,
 };
 
 export default function ThumbnailPreheatCard({
   job,
   isStarting,
+  isCancelling = false,
+  onCancel,
   onStart,
 }: ThumbnailPreheatCardProps) {
   const [maxSize, setMaxSize] = useState<(typeof sizes)[number]>("240");
@@ -49,20 +54,33 @@ export default function ThumbnailPreheatCard({
             </p>
           </div>
         </div>
-        <Button
-          disabled={isStarting || isJobActive}
-          onClick={() =>
-            void onStart({
-              max_size: maxSize,
-              kind: kind || undefined,
-              limit: Math.min(200, Math.max(1, Number(limit) || 24)),
-            })
-          }
-        >
-          {isStarting || isJobActive
-            ? brand.copy.adminPreheatStarting
-            : brand.copy.adminPreheatStart}
-        </Button>
+        <div className="flex gap-2">
+          {isJobActive && onCancel ? (
+            <Button
+              disabled={isCancelling}
+              onClick={onCancel}
+              variant="danger"
+            >
+              {isCancelling
+                ? brand.copy.adminPreheatStarting
+                : brand.copy.adminPreheatCancel}
+            </Button>
+          ) : null}
+          <Button
+            disabled={isStarting || isJobActive}
+            onClick={() =>
+              void onStart({
+                max_size: maxSize,
+                kind: kind || undefined,
+                limit: Math.min(200, Math.max(1, Number(limit) || 24)),
+              })
+            }
+          >
+            {isStarting || isJobActive
+              ? brand.copy.adminPreheatStarting
+              : brand.copy.adminPreheatStart}
+          </Button>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">

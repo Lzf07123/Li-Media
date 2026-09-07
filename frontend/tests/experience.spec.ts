@@ -218,6 +218,7 @@ test("video playback uses server stream and avoids direct links", async ({ page 
   });
 
   await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
   await page.locator(".masonry .post-card").click();
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect.poll(() => serverRequests).toBe(1);

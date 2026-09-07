@@ -573,6 +573,15 @@ export async function getLatestThumbnailPreheat(): Promise<ThumbnailPreheatJob |
   return request<ThumbnailPreheatJob | null>("/admin/thumbnails/preheat/latest");
 }
 
+export async function cancelThumbnailPreheat(
+  jobId: string,
+): Promise<ThumbnailPreheatJob> {
+  return request<ThumbnailPreheatJob>(
+    `/admin/thumbnails/preheat/${jobId}/cancel`,
+    { method: "POST" },
+  );
+}
+
 export async function startBaiduAuthorization(): Promise<BaiduAuthorizeResponse> {
   return request<BaiduAuthorizeResponse>("/admin/baidu/authorize");
 }

@@ -567,6 +567,28 @@ def get_latest_thumbnail_preheat(
     return thumbnail_preheat_registry.get_latest()
 
 
+@router.post(
+    "/thumbnails/preheat/{job_id}/cancel",
+    response_model=ThumbnailPreheatJobRead,
+)
+def cancel_thumbnail_preheat(
+    job_id: uuid.UUID,
+    _: AdminSession = Depends(require_admin_session),
+) -> ThumbnailPreheatJob:
+    job = thumbnail_preheat_registry.get(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="预热任务不存在",
+        )
+    if not thumbnail_preheat_registry.request_cancel(job.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="预热任务已结束，不能取消",
+        )
+    return thumbnail_preheat_registry.get(job_id)
+
+
 @router.post("/remote-entries/{memory_file_id}/retry", response_model=MemoryRead)
 def retry_remote_entry(
     memory_file_id: uuid.UUID,

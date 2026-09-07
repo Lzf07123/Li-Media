@@ -153,6 +153,14 @@ const preheatJob = {
   completed_at: "2026-09-07T08:00:02Z",
 };
 
+const adminListResponse = {
+  items: [memory],
+  total: 1,
+  page: 1,
+  page_size: 50,
+  counts: { photo: 1, video: 0 },
+};
+
 const memoryList = {
   items: [memory],
   total: 1,
@@ -242,8 +250,8 @@ test("old detail address redirects to viewer", async ({ page }) => {
 test("admin table is visible in dark mode", async ({ page }) => {
   let statusRequests = 0;
   let preheatRequests = 0;
-  await page.route("**/api/v1/admin/memories", async (route) => {
-    await route.fulfill({ json: { items: [memory], total: 1 } });
+  await page.route("**/api/v1/admin/memories**", async (route) => {
+    await route.fulfill({ json: adminListResponse });
   });
   await page.route("**/api/v1/admin/remote-config", async (route) => {
     await route.fulfill({
@@ -392,8 +400,8 @@ test("admin can retry a remote entry", async ({ page }) => {
       source: "baidupan",
     },
   };
-  await page.route("**/api/v1/admin/memories", async (route) => {
-    await route.fulfill({ json: { items: [remoteMemory], total: 1 } });
+  await page.route("**/api/v1/admin/memories**", async (route) => {
+    await route.fulfill({ json: { ...adminListResponse, items: [remoteMemory] } });
   });
   await page.route("**/api/v1/admin/remote-config", async (route) => {
     await route.fulfill({
@@ -420,8 +428,10 @@ test("admin can retry a remote entry", async ({ page }) => {
 
 test("admin cleanup confirms before clearing local index", async ({ page }) => {
   let memories = [memory];
-  await page.route("**/api/v1/admin/memories", async (route) => {
-    await route.fulfill({ json: { items: memories, total: memories.length } });
+  await page.route("**/api/v1/admin/memories**", async (route) => {
+    await route.fulfill({
+      json: { ...adminListResponse, items: memories, total: memories.length },
+    });
   });
   await page.route("**/api/v1/admin/remote-config", async (route) => {
     await route.fulfill({
