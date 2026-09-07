@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -46,6 +46,7 @@ class ThumbnailPreheatJob:
     cached: int = 0
     failed: int = 0
     message: str | None = None
+    cancel_event: Event = field(default_factory=Event)
     created_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -147,6 +148,22 @@ class ThumbnailPreheatRegistry:
             completed_at=datetime.now(timezone.utc),
         )
 
+    def mark_cancelled(self, job_id: UUID, message: str | None = None) -> None:
+        self._update(
+            job_id,
+            status="cancelled",
+            message=message,
+            completed_at=datetime.now(timezone.utc),
+        )
+
+    def request_cancel(self, job_id: UUID) -> bool:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status not in {"queued", "running"}:
+                return False
+            job.cancel_event.set()
+            return True
+
 
 thumbnail_preheat_registry = ThumbnailPreheatRegistry()
 
@@ -200,6 +217,7 @@ def _process_pair(
     settings: Settings,
     max_size: int,
     failure_sink: dict[str, str] | None = None,
+    cancel_event: Event | None = None,
 ) -> str:
     memory = db.get(Memory, memory_id)
     memory_file = db.get(MemoryFile, memory_file_id)
@@ -243,6 +261,7 @@ def _process_pair(
                 duration_seconds=memory.duration_seconds,
                 priority=60,
                 failure_sink=failure_sink,
+                cancel_event=cancel_event,
             )
     except TaskRejected:
         task_metrics.record_failed(TaskType.DERIVATIVE)
@@ -271,6 +290,9 @@ def run_thumbnail_preheat(
     job = registry.get(job_id)
     if job is None:
         return
+    if job.cancel_event.is_set():
+        registry.mark_cancelled(job_id)
+        return
 
     try:
         with session_factory() as db:
@@ -282,6 +304,12 @@ def run_thumbnail_preheat(
         registry.mark_running(job_id, total=len(pairs))
 
         for memory_id, memory_file_id in pairs:
+            if job.cancel_event.is_set():
+                registry.mark_cancelled(
+                    job_id,
+                    f"processed={job.processed};total={job.total}",
+                )
+                return
             failure_sink: dict[str, str] = {}
             with session_factory() as db:
                 outcome = _process_pair(
@@ -291,6 +319,7 @@ def run_thumbnail_preheat(
                 settings=settings,
                 max_size=job.max_size,
                 failure_sink=failure_sink,
+                cancel_event=job.cancel_event,
             )
             registry.mark_item_processed(job_id, outcome=outcome)
             if outcome == "failed" and failure_sink is not None:

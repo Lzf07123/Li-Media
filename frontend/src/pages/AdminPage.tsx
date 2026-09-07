@@ -18,6 +18,7 @@ import {
   getRemoteConfig,
   getSystemStatus,
   getLatestThumbnailPreheat,
+  cancelThumbnailPreheat,
   getLatestRemoteScan,
   startThumbnailPreheat,
   requestLocalMediaCleanup,
@@ -64,6 +65,7 @@ export default function AdminPage() {
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [preheatJob, setPreheatJob] = useState<ThumbnailPreheatJob | null>(null);
   const [isPreheating, setIsPreheating] = useState(false);
+  const [isCancellingPreheat, setIsCancellingPreheat] = useState(false);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -403,6 +405,22 @@ export default function AdminPage() {
     }
   };
 
+  const cancelPreheat = async () => {
+    if (!preheatJob) {
+      return;
+    }
+    setIsCancellingPreheat(true);
+    try {
+      const job = await cancelThumbnailPreheat(preheatJob.id);
+      setPreheatJob(job);
+      setError(null);
+    } catch {
+      setError(brand.copy.adminPreheatFailedToast);
+    } finally {
+      setIsCancellingPreheat(false);
+    }
+  };
+
   const retryRemote = async (memory: Memory) => {
     if (!memory.primary_file) {
       return;
@@ -481,7 +499,9 @@ export default function AdminPage() {
 
       <ThumbnailPreheatCard
         isStarting={isPreheating}
+        isCancelling={isCancellingPreheat}
         job={preheatJob}
+        onCancel={() => void cancelPreheat()}
         onStart={startPreheat}
       />
 
