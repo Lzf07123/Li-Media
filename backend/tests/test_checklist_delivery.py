@@ -264,3 +264,47 @@ def test_browser_compatibility_matrix_is_conservative() -> None:
     assert evaluate_memory_file(supported)[0] == BrowserCompatibilityState.SUPPORTED
     assert evaluate_memory_file(unsupported)[0] == BrowserCompatibilityState.UNSUPPORTED
     assert evaluate_memory_file(unknown)[0] == BrowserCompatibilityState.UNKNOWN
+
+
+def test_admin_status_updates_are_idempotent(tmp_path: Path, monkeypatch) -> None:
+    session_factory = configure_admin_app(tmp_path, monkeypatch)
+    memory, _ = add_memory(
+        session_factory,
+        title="idempotent",
+        kind=MemoryKind.PHOTO,
+    )
+
+    app.dependency_overrides[get_db] = override_database(session_factory)
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
+    try:
+        with TestClient(app) as client:
+            assert client.post(
+                "/api/v1/admin/login",
+                json={"token": "test-token"},
+            ).status_code == 204
+
+            for _ in range(2):
+                assert client.patch(
+                    f"/api/v1/admin/memories/{memory.id}",
+                    json={"status": "hidden"},
+                ).status_code == 200
+                assert client.patch(
+                    "/api/v1/admin/memories/batch",
+                    json={"ids": [str(memory.id)], "status": "hidden"},
+                ).status_code == 200
+
+        with session_factory() as session:
+            persisted = session.get(Memory, memory.id)
+            assert persisted is not None
+            assert persisted.status == MemoryStatus.HIDDEN
+            logs = session.scalars(
+                select(AdminOperationLog).where(
+                    AdminOperationLog.action.in_(["hide", "batch_hide"])
+                )
+            ).all()
+            assert len(logs) == 3
+            assert [log.action for log in logs].count("hide") == 1
+            assert [log.action for log in logs].count("batch_hide") == 2
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_session_factory, None)

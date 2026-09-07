@@ -114,6 +114,7 @@ test("home public count, loading feedback and persistent footer", async ({ page 
 });
 
 test("admin counts, compatibility and batch confirmation are explicit", async ({ page }) => {
+  const consoleErrors: string[] = [];
   const item = memory(1);
   item.primary_file.browser_compatibility = "supported";
   const adminList = {
@@ -248,6 +249,11 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
     });
   });
 
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "回忆管理" })).toBeVisible();
   await expect(page.getByText("7 / 4 / 3")).toBeVisible();
@@ -272,4 +278,33 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
     page.locator(".card").filter({ hasText: "批量状态任务" }),
   ).toContainText("7");
   await expect.poll(() => batchRun).toBe(2);
+
+  await page.setViewportSize({ width: 375, height: 800 });
+  const filterGrid = page.locator(".admin-filter-grid");
+  await expect(filterGrid).toBeVisible();
+  const controlBoxes = await filterGrid.locator("> *").evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height };
+    }),
+  );
+  expect(controlBoxes.length).toBeGreaterThan(2);
+  for (const box of controlBoxes) {
+    expect(box.width).toBeLessThanOrEqual(375.5);
+  }
+  for (let left = 0; left < controlBoxes.length; left += 1) {
+    for (let right = left + 1; right < controlBoxes.length; right += 1) {
+      const a = controlBoxes[left];
+      const b = controlBoxes[right];
+      const overlapX = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+      const overlapY = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+      expect(overlapX * overlapY).toBeLessThanOrEqual(1);
+    }
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(consoleErrors.join("\n")).not.toContain("Content Security Policy");
 });
