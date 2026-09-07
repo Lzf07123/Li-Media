@@ -1,4 +1,4 @@
-import { Image as ImageIcon, Play, Video } from "lucide-react";
+import { Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
@@ -14,6 +14,7 @@ type MemoryCardProps = {
 export default function MemoryCard({ memory, onOpen, priority = false }: MemoryCardProps) {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [queuedThumbnailUrl, setQueuedThumbnailUrl] = useState<string | null>(null);
   const [isIntersecting, setIsIntersecting] = useState(priority);
@@ -83,10 +84,11 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
           return;
         }
         setLoadState("error");
+        setThumbnailFailed(true);
       });
 
     return () => controller.abort();
-  }, [isIntersecting, priority, thumbnailUrl]);
+  }, [isIntersecting, priority, retryKey, thumbnailUrl]);
 
   const showError = thumbnailFailed || loadState === "error";
 
@@ -95,7 +97,15 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
       aria-label={brand.copy.detailPreviewAlt}
       className="post-card block w-full overflow-hidden"
       ref={cardRef}
-      onClick={() => onOpen(memory.id)}
+      onClick={() => {
+        if (showError) {
+          setLoadState("loading");
+          setThumbnailFailed(false);
+          setRetryKey((current) => current + 1);
+          return;
+        }
+        onOpen(memory.id);
+      }}
       type="button"
     >
       {thumbnailUrl && !thumbnailFailed ? (
@@ -142,6 +152,12 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
           ) : (
             <ImageIcon className="size-8" />
           )}
+          {showError ? (
+            <span className="mt-2 flex items-center gap-1 text-xs font-medium">
+              <RotateCcw aria-hidden="true" className="size-3.5" />
+              {brand.copy.retryPreview}
+            </span>
+          ) : null}
         </span>
       )}
       {memory.kind === "video" ? (

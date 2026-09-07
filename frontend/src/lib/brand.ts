@@ -331,6 +331,7 @@ export const brand = {
   streamUnavailable: "不可播放",
   streamFailed: "播放失败",
     noDescription: "暂无描述。",
+    retryPreview: "重试预览",
     bytes: "字节",
   },
   nav: [

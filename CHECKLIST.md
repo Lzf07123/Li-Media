@@ -254,6 +254,7 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 | I11 | 每轮是否能用一条命令拿到可比快照？ | 新增 `backend/scripts/system_snapshot.py` 与可测试的 `collect_system_snapshot`，输出总量/published/类型、索引大小 p50/p90/p95/p99、派生状态与失败分类、最近扫描、预热状态、Source Zero 和资源指标。 | 脚本在真实容器可执行；输出 JSON 且不泄露直链/凭证；Source Zero 和资源门禁可读。 | 2026-09-07：真实容器执行成功；65 条、5.45GiB、p90 411.6MB、p99 1.01GB、59 ready / 6 failed、Source Zero true、tmp=0；68 个 pytest 与工程门禁通过。 | 采纳；每轮开始/结束以该命令作为标准快照。 |
 | I12 | 预热能否及时停止并在重启后继续？ | `ThumbnailPreheatJob` 增加取消事件和 `cancelled` 状态；新增管理员取消 API 与后台取消按钮；任务循环每项前检查取消，已生成派生保留，重启后再次预热自然续扫剩余候选。 | 活跃/排队任务可取消；已完成派生不回滚；取消后 tmp 为空；重新启动继续处理剩余。 | 2026-09-07：70 个 pytest 通过；真实 API 启动 240px 视频预热后取消返回 200 且 `status=cancelled`；24 个 Playwright 通过；重启后再次预热按候选顺序恢复。 | 采纳；恢复语义采用“幂等候选重扫 + 派生文件去重”，无需持久化游标。 |
 | I13 | 最后一条 unknown MOV 是否可归因？ | 用 64MB Range 样本运行 ffprobe/ffmpeg，确认失败为 `moov atom not found`；让远程派生按 `video/quicktime` MIME 将超限源标记为 `mov_moov` 并落库。 | unknown 清零；失败分类覆盖源截断和 MOV 索引缺失；临时文件清空且无 OOM。 | 2026-09-07：探针返回 `moov atom not found`；真实容器分类后失败为 5 条 `source_truncated` + 1 条 `mov_moov`；71 个 pytest 通过；Source Zero true、tmp=0、cgroup peak 131.08m。 | 采纳；该 MOV 需要 moov 前置重封装或专用远程探针，当前不做转码。 |
+| I14 | 派生失败后用户能否在单卡继续恢复？ | 卡片失败态显示“重试预览”，再次点击触发单卡重新加载；首次连续 502、手动重试后 200 的 Playwright 用例覆盖。 | 失败不整页不可用；重试入口可见且可点击；重试成功后显示图片。 | 2026-09-07：新增用例断言失败态出现“重试预览”、点击后图片可见；25 个 Playwright 全部通过，前端 typecheck/build 通过。 | 采纳；失败单卡恢复闭环完成。 |
 
 ## 11. 当前优先级
 
