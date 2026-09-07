@@ -18,6 +18,7 @@ class TaskType(StrEnum):
     SCAN = "scan"
     DIRECT_PROBE = "direct_probe"
     DERIVATIVE = "derivative"
+    PREHEAT = "preheat"
     STREAM = "stream"
 
 
@@ -94,6 +95,12 @@ class TaskLimiter:
                 settings.derivative_concurrency_limit,
                 settings.derivative_queue_limit,
                 settings.derivative_wait_timeout_seconds,
+            )
+        if task_type is TaskType.PREHEAT:
+            return _TaskPolicy(
+                settings.preheat_concurrency_limit,
+                settings.preheat_queue_limit,
+                settings.preheat_wait_timeout_seconds,
             )
         return _TaskPolicy(
             settings.stream_global_concurrency_limit,

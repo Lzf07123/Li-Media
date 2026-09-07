@@ -337,6 +337,8 @@ class ThumbnailPreheatJobRead(BaseModel):
     max_size: int
     kind: MemoryKind | None
     limit: int
+    concurrency: int
+    queue_limit: int
     status: Literal["queued", "running", "completed", "cancelled", "failed"]
     total: int
     processed: int

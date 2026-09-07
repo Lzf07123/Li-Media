@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,8 +30,9 @@ from app.services.memory_thumbnails import (
     derivative_cache_path,
     resolve_media_path,
 )
-from app.services.task_limits import TaskRejected, task_metrics
+from app.services.task_limits import TaskCancelled, TaskRejected, task_metrics
 from app.services.task_limits import TaskType
+from app.services.task_limits import task_limiter
 
 
 @dataclass(slots=True)
@@ -39,6 +41,8 @@ class ThumbnailPreheatJob:
     max_size: int
     kind: MemoryKind | None
     limit: int
+    concurrency: int
+    queue_limit: int
     status: str = "queued"
     total: int = 0
     processed: int = 0
@@ -66,6 +70,8 @@ class ThumbnailPreheatRegistry:
         max_size: int,
         kind: MemoryKind | None,
         limit: int,
+        concurrency: int = 1,
+        queue_limit: int = 0,
     ) -> tuple[ThumbnailPreheatJob, bool]:
         with self._lock:
             running = next(
@@ -84,6 +90,8 @@ class ThumbnailPreheatRegistry:
                 max_size=max_size,
                 kind=kind,
                 limit=limit,
+                concurrency=max(1, concurrency),
+                queue_limit=max(0, queue_limit),
             )
             self._jobs[job.id] = job
             self._latest_id = job.id
@@ -253,6 +261,7 @@ def _process_pair(
                 duration_seconds=memory.duration_seconds,
                 priority=60,
                 failure_sink=failure_sink,
+                cancel_event=cancel_event,
             )
         else:
             client = BaiduPanClient(settings)
@@ -285,6 +294,75 @@ def _process_pair(
     return "generated"
 
 
+def _mark_failure(
+    session_factory: sessionmaker[Session],
+    *,
+    memory_file_id: UUID,
+    failure_kind: str,
+) -> None:
+    try:
+        with session_factory.begin() as db:
+            memory_file = db.get(MemoryFile, memory_file_id)
+            if memory_file is not None:
+                memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+                memory_file.thumbnail_failure_kind = failure_kind
+    except Exception:
+        # 预热失败状态不应让单个坏资源中断整批任务。
+        return
+
+
+def _process_candidate(
+    session_factory: sessionmaker[Session],
+    *,
+    memory_id: UUID,
+    memory_file_id: UUID,
+    settings: Settings,
+    max_size: int,
+    cancel_event: Event,
+) -> str:
+    failure_sink: dict[str, str] = {}
+    try:
+        with task_limiter.slot(
+            TaskType.PREHEAT,
+            priority=60,
+            cancel_event=cancel_event,
+        ):
+            with session_factory() as db:
+                outcome = _process_pair(
+                    db,
+                    memory_id=memory_id,
+                    memory_file_id=memory_file_id,
+                    settings=settings,
+                    max_size=max_size,
+                    failure_sink=failure_sink,
+                    cancel_event=cancel_event,
+                )
+
+        if outcome == "failed":
+            task_metrics.record_failed(TaskType.PREHEAT)
+            _mark_failure(
+                session_factory,
+                memory_file_id=memory_file_id,
+                failure_kind=failure_sink.get("kind", "unknown"),
+            )
+        elif outcome == "cancelled":
+            task_metrics.record_cancelled(TaskType.PREHEAT)
+        else:
+            task_metrics.record_completed(TaskType.PREHEAT)
+        return outcome
+    except TaskCancelled:
+        task_metrics.record_cancelled(TaskType.PREHEAT)
+        return "cancelled"
+    except Exception:
+        task_metrics.record_failed(TaskType.PREHEAT)
+        _mark_failure(
+            session_factory,
+            memory_file_id=memory_file_id,
+            failure_kind=failure_sink.get("kind", "unknown"),
+        )
+        return "failed"
+
+
 def run_thumbnail_preheat(
     job_id: UUID,
     *,
@@ -308,35 +386,75 @@ def run_thumbnail_preheat(
             )
         registry.mark_running(job_id, total=len(pairs))
 
-        for memory_id, memory_file_id in pairs:
-            if job.cancel_event.is_set():
+        candidate_iterator = iter(pairs)
+        futures: dict[Future[str], tuple[UUID, UUID]] = {}
+        max_pending = job.concurrency + job.queue_limit
+        cancelled = False
+
+        with ThreadPoolExecutor(
+            max_workers=job.concurrency,
+            thread_name_prefix="limedia-preheat",
+        ) as executor:
+
+            def submit_ready() -> None:
+                while len(futures) < max_pending:
+                    if job.cancel_event.is_set():
+                        return
+                    try:
+                        pair = next(candidate_iterator)
+                    except StopIteration:
+                        return
+                    future = executor.submit(
+                        _process_candidate,
+                        session_factory,
+                        memory_id=pair[0],
+                        memory_file_id=pair[1],
+                        settings=settings,
+                        max_size=job.max_size,
+                        cancel_event=job.cancel_event,
+                    )
+                    futures[future] = pair
+
+            submit_ready()
+            while futures:
+                if job.cancel_event.is_set():
+                    cancelled = True
+                    break
+
+                completed, _ = wait(
+                    futures,
+                    timeout=0.2,
+                    return_when=FIRST_COMPLETED,
+                )
+                for future in completed:
+                    futures.pop(future, None)
+                    try:
+                        outcome = future.result()
+                    except Exception:
+                        outcome = "failed"
+                    registry.mark_item_processed(job_id, outcome=outcome)
+                    if outcome == "cancelled":
+                        cancelled = True
+
+                if cancelled:
+                    break
+                submit_ready()
+
+            if cancelled:
+                executor.shutdown(wait=True, cancel_futures=True)
+                for future in futures:
+                    if future.cancelled():
+                        continue
+                    try:
+                        outcome = future.result()
+                    except Exception:
+                        outcome = "failed"
+                    registry.mark_item_processed(job_id, outcome=outcome)
                 registry.mark_cancelled(
                     job_id,
                     f"processed={job.processed};total={job.total}",
                 )
                 return
-            failure_sink: dict[str, str] = {}
-            with session_factory() as db:
-                outcome = _process_pair(
-                db,
-                memory_id=memory_id,
-                memory_file_id=memory_file_id,
-                settings=settings,
-                max_size=job.max_size,
-                failure_sink=failure_sink,
-                cancel_event=job.cancel_event,
-            )
-            registry.mark_item_processed(job_id, outcome=outcome)
-            if outcome == "failed" and failure_sink is not None:
-                with session_factory() as db:
-                    memory_file = db.get(MemoryFile, memory_file_id)
-                    if memory_file is not None:
-                        memory_file.thumbnail_state = RemoteThumbnailState.FAILED
-                        memory_file.thumbnail_failure_kind = failure_sink.get(
-                            "kind",
-                            "unknown",
-                        )
-                        db.commit()
 
         registry.mark_completed(job_id)
     except Exception as exc:

@@ -30,6 +30,7 @@ def run_local_derivative(
     duration_seconds: int | None = None,
     priority: int | None = None,
     failure_sink: dict[str, str] | None = None,
+    cancel_event: Event | None = None,
 ) -> str | None:
     settings = get_settings()
     key = derivative_key(memory.id, settings.media_derivative_version, max_size)
@@ -40,6 +41,7 @@ def run_local_derivative(
             priority=(
                 derivative_priority(max_size) if priority is None else priority
             ),
+            cancel_event=cancel_event,
         ):
             return create_memory_derivative(
                 source_path,
@@ -81,6 +83,7 @@ def run_remote_derivative(
             priority=(
                 derivative_priority(max_size) if priority is None else priority
             ),
+            cancel_event=cancel_event,
         ):
             return create_remote_thumbnail(
                 client,

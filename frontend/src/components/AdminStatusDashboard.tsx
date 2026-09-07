@@ -80,6 +80,7 @@ export default function AdminStatusDashboard({
     scan: brand.copy.adminQueueScan,
     direct_probe: brand.copy.adminQueueDirectProbe,
     derivative: brand.copy.adminQueueDerivative,
+    preheat: brand.copy.adminQueuePreheat,
     stream: brand.copy.adminQueueStream,
   };
 

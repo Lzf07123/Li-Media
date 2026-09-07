@@ -2,7 +2,7 @@ from functools import lru_cache
 
 from urllib.parse import quote, urlsplit
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     derivative_concurrency_limit: int = 1
     derivative_queue_limit: int = 32
     derivative_wait_timeout_seconds: float = 15.0
+    preheat_concurrency_limit: int = Field(default=2, ge=1, le=8)
+    preheat_queue_limit: int = Field(default=64, ge=0, le=1000)
+    preheat_wait_timeout_seconds: float = Field(default=2.0, ge=0, le=30)
     stream_global_concurrency_limit: int = 16
     stream_user_concurrency_limit: int = 3
     stream_queue_limit: int = 32

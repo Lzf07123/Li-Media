@@ -103,6 +103,7 @@ const systemStatus = {
     scan: { active: 0, queued: 0, limit: 1, queue_limit: 1 },
     direct_probe: { active: 0, queued: 0, limit: 4, queue_limit: 16 },
     derivative: { active: 0, queued: 0, limit: 2, queue_limit: 32 },
+    preheat: { active: 0, queued: 0, limit: 2, queue_limit: 64 },
     stream: { active: 0, queued: 0, limit: 16, queue_limit: 32 },
   },
   metrics: {
@@ -146,6 +147,8 @@ const preheatJob = {
   max_size: 480,
   kind: null,
   limit: 24,
+  concurrency: 2,
+  queue_limit: 64,
   status: "completed",
   total: 3,
   processed: 3,
@@ -323,9 +326,13 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await expect(page.getByText("远端存储状态")).toBeVisible();
   await expect(page.getByText("百度网盘", { exact: true })).toBeVisible();
   await expect(page.getByText("资源与队列")).toBeVisible();
-  await expect(page.getByText("任务队列")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "任务队列" }),
+  ).toBeVisible();
   await expect(page.getByText("单帧派生")).toBeVisible();
+  await expect(page.getByText("预热调度")).toBeVisible();
   await expect(page.getByText("预热缩略图")).toBeVisible();
+  await expect(page.getByText("并发")).toBeVisible();
   await expect(page.getByText("预览就绪").first()).toBeVisible();
   await page.locator("#preheat-kind").selectOption({ label: "图片资源" });
   await page.getByRole("button", { name: "开始预热" }).click();
