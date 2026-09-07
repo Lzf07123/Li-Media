@@ -112,6 +112,7 @@ services:
       args:
         IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://npmreg.mirrors.ustc.edu.cn/}
+        NPM_FALLBACK_REGISTRY: ${NPM_FALLBACK_REGISTRY:-https://registry.npmmirror.com/}
     ports:
       - "${HTTP_PORT:-8080}:80"
     depends_on:
