@@ -39,6 +39,9 @@ class MemoryDirectLinkResponse(BaseModel):
 class AdminMemoryListResponse(BaseModel):
     items: list[MemoryRead]
     total: int
+    page: int
+    page_size: int
+    counts: MemoryCounts
 
 
 class AdminSyncRequest(BaseModel):

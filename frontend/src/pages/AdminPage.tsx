@@ -43,6 +43,7 @@ import Modal from "@/components/ui/Modal";
 import Notice from "@/components/ui/Notice";
 import { ToastViewport, type Toast } from "@/components/ui/Toast";
 import { Input, TextArea } from "@/components/ui/Input";
+import Pagination from "@/components/ui/Pagination";
 import ProgressBar from "@/components/ui/ProgressBar";
 import StatusDot from "@/components/ui/StatusDot";
 
@@ -68,6 +69,12 @@ export default function AdminPage() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Memory | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [adminKind, setAdminKind] = useState("");
+  const [adminSearch, setAdminSearch] = useState("");
+  const [adminSearchInput, setAdminSearchInput] = useState("");
+  const [adminPage, setAdminPage] = useState(1);
+  const [adminPageSize, setAdminPageSize] = useState(50);
+  const [adminTotal, setAdminTotal] = useState(0);
   const [isBatchEditing, setIsBatchEditing] = useState(false);
   const [batchTitle, setBatchTitle] = useState("");
   const [batchDescription, setBatchDescription] = useState("");
@@ -86,8 +93,14 @@ export default function AdminPage() {
   const loadMemories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await getAdminMemories();
+      const data = await getAdminMemories({
+        keyword: adminSearch || undefined,
+        kind: adminKind || undefined,
+        page: adminPage,
+        page_size: adminPageSize,
+      });
       setMemories(data.items);
+      setAdminTotal(data.total);
       setIsAdmin(true);
       const scan = await getLatestRemoteScan();
       setScanTask(scan);
@@ -114,7 +127,7 @@ export default function AdminPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [adminKind, adminPage, adminPageSize, adminSearch]);
 
   useEffect(() => {
     void loadMemories();
@@ -191,6 +204,12 @@ export default function AdminPage() {
       setIsAdmin(false);
       setError(brand.copy.adminLoginFailed);
     }
+  };
+
+  const submitAdminSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAdminSearch(adminSearchInput.trim());
+    setAdminPage(1);
   };
 
   const changeStatus = async (memory: Memory, status: Memory["status"]) => {
@@ -636,6 +655,52 @@ export default function AdminPage() {
         </div>
       ) : null}
 
+      <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_150px]" onSubmit={submitAdminSearch}>
+        <Input
+          id="admin-search"
+          label={brand.copy.adminSearchLabel}
+          onChange={(event) => setAdminSearchInput(event.target.value)}
+          value={adminSearchInput}
+        />
+        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-kind-filter">
+          {brand.copy.adminFilterLabel}
+          <select
+            className="select min-h-11"
+            id="admin-kind-filter"
+            onChange={(event) => {
+              setAdminKind(event.target.value);
+              setAdminPage(1);
+            }}
+            value={adminKind}
+          >
+            <option value="">{brand.copy.adminAllMemories}</option>
+            <option value="photo">{brand.copy.photoKind}</option>
+            <option value="video">{brand.copy.videoKind}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-page-size">
+          {brand.copy.adminPageSizeLabel}
+          <select
+            className="select min-h-11"
+            id="admin-page-size"
+            onChange={(event) => {
+              setAdminPageSize(Number(event.target.value));
+              setAdminPage(1);
+            }}
+            value={adminPageSize}
+          >
+            {[20, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="sr-only" type="submit">
+          {brand.copy.adminSearchLabel}
+        </button>
+      </form>
+
       {isLoading ? (
         <div className="shimmer mt-4 h-24 rounded-xl" />
       ) : memories.length === 0 ? (
@@ -767,6 +832,17 @@ export default function AdminPage() {
           </table>
         </div>
       )}
+
+      {adminTotal > 0 ? (
+        <div className="mt-4 flex justify-center">
+          <Pagination
+            onPageChange={setAdminPage}
+            page={adminPage}
+            pageSize={adminPageSize}
+            total={adminTotal}
+          />
+        </div>
+      ) : null}
 
       <Link className="mt-8 inline-flex min-h-11 items-center text-primary" to="/">
         {brand.copy.backHome}
