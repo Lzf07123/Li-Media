@@ -17,6 +17,8 @@
 cp .env.example .env
 ```
 
+镜像和构建依赖默认使用中科大源；可在 `.env` 中调整 `IMAGE_REGISTRY`、`APT_MIRROR`、`PIP_INDEX_URL` 和 `NPM_CONFIG_REGISTRY`。
+
 2. 启动服务：
 
 ```bash
