@@ -1,6 +1,11 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
+        APT_MIRROR: ${APT_MIRROR:-http://mirrors.ustc.edu.cn}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.ustc.edu.cn/pypi/simple}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -38,7 +43,7 @@ services:
       start_period: 10s
 
   db:
-    image: postgres:16-alpine
+    image: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-media}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
@@ -73,7 +78,7 @@ services:
       start_period: 5s
 
   redis:
-    image: redis:7-alpine
+    image: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}redis:7-alpine
     command:
       - redis-server
       - --appendonly
@@ -102,7 +107,11 @@ services:
       retries: 5
 
   nginx:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://npmreg.mirrors.ustc.edu.cn/}
     ports:
       - "${HTTP_PORT:-8080}:80"
     depends_on:

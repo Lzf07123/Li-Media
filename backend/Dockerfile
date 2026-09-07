@@ -1,9 +1,15 @@
-FROM python:3.12-slim
+ARG IMAGE_REGISTRY=docker.mirrors.ustc.edu.cn/library/
+
+FROM ${IMAGE_REGISTRY}python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN sed -i 's|http://deb.debian.org|http://mirrors.tuna.tsinghua.edu.cn|g; s|http://security.debian.org|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+ARG APT_MIRROR=http://mirrors.ustc.edu.cn
+ARG PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/simple
+ENV PIP_INDEX_URL=$PIP_INDEX_URL
+
+RUN sed -i "s|http://deb.debian.org|${APT_MIRROR}|g; s|http://security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
