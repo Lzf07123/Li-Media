@@ -283,28 +283,46 @@ def test_admin_status_updates_are_idempotent(tmp_path: Path, monkeypatch) -> Non
                 json={"token": "test-token"},
             ).status_code == 204
 
-            for _ in range(2):
-                assert client.patch(
-                    f"/api/v1/admin/memories/{memory.id}",
-                    json={"status": "hidden"},
-                ).status_code == 200
-                assert client.patch(
+            assert client.patch(
+                f"/api/v1/admin/memories/{memory.id}",
+                json={"status": "hidden"},
+            ).status_code == 200
+
+            selected_responses = []
+            for target_status in ("published", "published"):
+                response = client.patch(
                     "/api/v1/admin/memories/batch",
-                    json={"ids": [str(memory.id)], "status": "hidden"},
-                ).status_code == 200
+                    json={"ids": [str(memory.id)], "status": target_status},
+                )
+                assert response.status_code == 200
+                selected_responses.append(response.json())
+
+            assert selected_responses[0] == {
+                "changed": 1,
+                "skipped": 0,
+                "updated": 1,
+            }
+            assert selected_responses[1] == {
+                "changed": 0,
+                "skipped": 1,
+                "updated": 0,
+            }
 
         with session_factory() as session:
             persisted = session.get(Memory, memory.id)
             assert persisted is not None
-            assert persisted.status == MemoryStatus.HIDDEN
+            assert persisted.status == MemoryStatus.PUBLISHED
             logs = session.scalars(
                 select(AdminOperationLog).where(
-                    AdminOperationLog.action.in_(["hide", "batch_hide"])
+                    AdminOperationLog.action.in_(["hide", "batch_publish"])
                 )
             ).all()
             assert len(logs) == 3
             assert [log.action for log in logs].count("hide") == 1
-            assert [log.action for log in logs].count("batch_hide") == 2
+            assert [log.action for log in logs].count("batch_publish") == 2
+            batch_logs = [log for log in logs if log.action == "batch_publish"]
+            assert all("resource_ids=" in (log.detail or "") for log in batch_logs)
+            assert all("changed=" in (log.detail or "") for log in batch_logs)
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.pop(get_session_factory, None)

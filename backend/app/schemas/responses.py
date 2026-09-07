@@ -124,6 +124,9 @@ class AdminMemoryBatchUpdateRequest(BaseModel):
 
 
 class AdminMemoryBatchUpdateResponse(BaseModel):
+    changed: int
+    skipped: int
+    # Legacy clients treat this as the number of records actually changed.
     updated: int
 
 

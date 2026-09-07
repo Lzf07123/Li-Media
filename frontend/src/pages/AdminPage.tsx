@@ -365,8 +365,16 @@ export default function AdminPage() {
 
   const applyBatchUpdate = async (payload: Parameters<typeof batchUpdateMemories>[0]) => {
     try {
-      await batchUpdateMemories(payload);
+      const result = await batchUpdateMemories(payload);
       setError(null);
+      pushToast(
+        result.changed > 0
+          ? brand.copy.adminBatchChangedToast
+              .replace("{changed}", String(result.changed))
+              .replace("{skipped}", String(result.skipped))
+          : brand.copy.adminBatchSkippedToast,
+        result.changed > 0 ? "success" : "info",
+      );
       setSelectedIds([]);
       await loadMemories();
       return true;

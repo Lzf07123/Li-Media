@@ -295,6 +295,8 @@ export const brand = {
     adminBatchFilterCancel: "取消",
     adminBatchFilterQueued: "批量状态任务已开始。",
     adminBatchFilterFailed: "批量状态任务启动失败。",
+    adminBatchChangedToast: "批量操作完成：变更 {changed} 条，跳过 {skipped} 条。",
+    adminBatchSkippedToast: "所选记录已是目标状态，已全部跳过。",
     adminBatchJobTitle: "批量状态任务",
     adminBatchJobStatus: "状态",
     adminBatchJobProgress: "进度",
