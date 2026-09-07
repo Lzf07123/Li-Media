@@ -1283,7 +1283,7 @@
     @apply mx-auto flex min-h-14 max-w-7xl flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 py-5 text-xs text-muted lg:px-8;
   }
   .site-footer a {
-    @apply text-muted transition-colors duration-200 hover:text-foreground;
+    @apply inline-flex min-h-11 items-center px-2 py-3 text-muted transition-colors duration-200 hover:text-foreground;
   }
   .filing-icon-placeholder {
     @apply inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[4px] bg-surface-2 text-[9px] font-semibold leading-none text-muted;
