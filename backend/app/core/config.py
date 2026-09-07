@@ -1,9 +1,11 @@
 from functools import lru_cache
 
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class Settings(BaseSettings):
@@ -86,22 +88,62 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def resolve_database_url(self) -> "Settings":
-        if self.database_url:
+        explicit_url = self.database_url.strip()
+        if explicit_url:
+            self.database_url = explicit_url
+            self.validate_database_url()
             return self
 
-        if not self.postgres_host:
+        host, embedded_port = self.resolve_postgres_host()
+        if not host:
             self.database_url = "sqlite:///./data/app.db"
             return self
 
+        port = embedded_port if embedded_port is not None else self.postgres_port
         credentials = quote(self.postgres_user, safe="")
         if self.postgres_password:
             credentials += f":{quote(self.postgres_password, safe='')}"
 
         self.database_url = (
             f"postgresql+psycopg://{credentials}"
-            f"@{self.postgres_host}:{self.postgres_port}/{quote(self.postgres_db, safe='')}"
+            f"@{host}:{port}/{quote(self.postgres_db, safe='')}"
         )
+        self.validate_database_url()
         return self
+
+    def resolve_postgres_host(self) -> tuple[str, int | None]:
+        """兼容误写的 host:port、IPv6 和连接 URL，同时保留显式端口。"""
+        value = self.postgres_host.strip()
+        if not value:
+            return "", None
+
+        if "://" in value:
+            parsed = urlsplit(value)
+            return parsed.hostname or "", parsed.port
+
+        if value.startswith("["):
+            host, closing, tail = value[1:].partition("]")
+            if closing and tail.startswith(":") and tail[1:].isdigit():
+                return host, int(tail[1:])
+            if closing and not tail:
+                return host, None
+            raise ValueError("POSTGRES_HOST 的 IPv6 地址格式无效")
+
+        if value.count(":") == 1:
+            host, tail = value.split(":", 1)
+            if host and tail.isdigit():
+                return host, int(tail)
+
+        return value, None
+
+    def validate_database_url(self) -> None:
+        try:
+            make_url(self.database_url)
+        except ArgumentError as error:
+            raise ValueError(
+                "由 POSTGRES_* 生成的数据库连接串无效；"
+                "POSTGRES_HOST 只填主机名或 IP，端口使用 POSTGRES_PORT"
+            ) from error
 
 
 @lru_cache
