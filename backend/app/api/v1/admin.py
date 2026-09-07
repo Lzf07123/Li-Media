@@ -564,6 +564,8 @@ def start_thumbnail_preheat(
         max_size=int(payload.max_size),
         kind=payload.kind,
         limit=payload.limit,
+        concurrency=settings.preheat_concurrency_limit,
+        queue_limit=settings.preheat_queue_limit,
     )
     if started:
         background_tasks.add_task(

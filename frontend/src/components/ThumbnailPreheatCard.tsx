@@ -144,7 +144,7 @@ export default function ThumbnailPreheatCard({
               job.total > 0 ? (job.processed / job.total) * 100 : 0
             }
           />
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminPreheatGenerated}</dt>
               <dd className="text-sm font-medium">{job.generated}</dd>
@@ -160,6 +160,18 @@ export default function ThumbnailPreheatCard({
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminPreheatSize}</dt>
               <dd className="text-sm font-medium">{job.max_size}px</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">
+                {brand.copy.adminPreheatConcurrency}
+              </dt>
+              <dd className="text-sm font-medium">{job.concurrency}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">
+                {brand.copy.adminPreheatQueueLimit}
+              </dt>
+              <dd className="text-sm font-medium">{job.queue_limit}</dd>
             </div>
           </dl>
           {job.message ? (

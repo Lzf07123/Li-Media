@@ -360,7 +360,9 @@ export type ThumbnailPreheatJob = {
   max_size: number;
   kind: "photo" | "video" | null;
   limit: number;
-  status: "queued" | "running" | "completed" | "failed";
+  concurrency: number;
+  queue_limit: number;
+  status: "queued" | "running" | "completed" | "cancelled" | "failed";
   total: number;
   processed: number;
   generated: number;
@@ -382,6 +384,7 @@ const TASK_KEYS = {
   scan: true,
   direct_probe: true,
   derivative: true,
+  preheat: true,
   stream: true,
 } as const;
 
