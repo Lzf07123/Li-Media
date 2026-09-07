@@ -826,7 +826,7 @@ def start_batch_status_change(
         db,
         action="batch_status_queued",
         target_type="memory_batch_job",
-        target_id=job.id,
+        target_id=None,
         client_ip=_client_ip(request),
         detail=f"action={job.action};total={job.total};filters={job.filter_snapshot}",
     )
@@ -911,7 +911,7 @@ def start_browser_compatibility_probe(
         db,
         action="browser_probe_queued",
         target_type="memory_batch_job",
-        target_id=job.id,
+        target_id=None,
         client_ip=_client_ip(request),
         detail=f"limit={payload.limit};mode=bounded-prefix",
     )

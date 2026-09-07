@@ -137,7 +137,7 @@ def _record_job_log(
         AdminOperationLog(
             action=action[:32],
             target_type="memory_batch_job",
-            target_id=job.id,
+            target_id=None,
             detail=(
                 f"job={job.id};status={job.status};total={job.total};"
                 f"processed={job.processed};changed={job.changed};"
