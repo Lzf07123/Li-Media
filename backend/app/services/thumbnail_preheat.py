@@ -199,14 +199,18 @@ def _candidate_pairs(
         MemoryFile.thumbnail_failure_kind.is_(None)
         | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS)
     )
-    statement = (
+    ordered_statement = (
         statement.order_by(Memory.captured_at.desc().nulls_last())
         .order_by(Memory.updated_at.desc())
         .order_by(Memory.id.desc())
-        .limit(limit)
     )
+    if limit > 0:
+        ordered_statement = ordered_statement.limit(limit)
 
-    return [(memory_id, file_id) for memory_id, file_id in db.execute(statement).all()]
+    return [
+        (memory_id, file_id)
+        for memory_id, file_id in db.execute(ordered_statement).all()
+    ]
 
 
 def _process_pair(

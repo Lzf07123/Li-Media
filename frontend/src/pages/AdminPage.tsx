@@ -133,6 +133,16 @@ export default function AdminPage() {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   };
 
+  const clearAdminFilters = () => {
+    setAdminSearch("");
+    setAdminSearchInput("");
+    setAdminKind("");
+    setAdminCompatibility("");
+    setAdminStatus("");
+    setAdminDisplay("");
+    setAdminPage(1);
+  };
+
   const loadMemories = useCallback(async () => {
     setIsLoading(true);
     setCountsState("loading");
@@ -355,8 +365,16 @@ export default function AdminPage() {
 
   const applyBatchUpdate = async (payload: Parameters<typeof batchUpdateMemories>[0]) => {
     try {
-      await batchUpdateMemories(payload);
+      const result = await batchUpdateMemories(payload);
       setError(null);
+      pushToast(
+        result.changed > 0
+          ? brand.copy.adminBatchChangedToast
+              .replace("{changed}", String(result.changed))
+              .replace("{skipped}", String(result.skipped))
+          : brand.copy.adminBatchSkippedToast,
+        result.changed > 0 ? "success" : "info",
+      );
       setSelectedIds([]);
       await loadMemories();
       return true;
@@ -595,6 +613,14 @@ export default function AdminPage() {
     return String(value);
   };
 
+  const activeFilterItems = [
+    adminSearch ? `${brand.copy.adminSearchLabel}: ${adminSearch}` : "",
+    adminKind ? `${brand.copy.adminFilterLabel}: ${adminKind === "photo" ? brand.copy.photoKind : brand.copy.videoKind}` : "",
+    adminCompatibility ? `${brand.copy.adminCompatibilityFilterLabel}: ${adminCompatibility}` : "",
+    adminStatus ? `${brand.copy.adminStatusHeader}: ${adminStatus === "published" ? brand.copy.statusPublished : brand.copy.statusHidden}` : "",
+    adminDisplay ? `${brand.copy.adminDisplayHealthLabel}: ${adminDisplay === "displayable" ? brand.copy.adminDisplayable : brand.copy.adminDisplayExcluded}` : "",
+  ].filter(Boolean);
+
   const startAuthorization = async () => {
     setIsAuthorizing(true);
     try {
@@ -732,15 +758,23 @@ export default function AdminPage() {
         onStart={startPreheat}
       />
 
-      <h2 className="section-title mt-12 flex flex-wrap items-center justify-between gap-3">
-        <span>{brand.copy.adminAllMemories}</span>
+      <div className="admin-page-head">
+        <div>
+          <p className="admin-eyebrow">{brand.copy.adminMediaWorkspaceTitle}</p>
+          <h2 className="admin-heading" id="media-workspace-title">
+            {brand.copy.adminAllMemories}
+          </h2>
+          <p className="mt-2 text-sm text-muted">
+            {brand.copy.adminMediaWorkspaceDescription}
+          </p>
+        </div>
         <Button disabled={isSyncing} onClick={() => void triggerSync()}>
           <RefreshCw aria-hidden="true" className={`size-4 ${isSyncing ? "animate-spin" : ""}`} />
           {isSyncing ? brand.copy.adminSyncing : brand.copy.adminSync}
         </Button>
-      </h2>
+      </div>
 
-      <div className="mt-4 flex flex-wrap gap-3">
+      <div className="admin-metric-grid mt-4">
         <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminGlobalCountsLabel}>
           <dt className="text-xs text-muted">{brand.copy.adminGlobalCountsLabel}</dt>
           <dd className="mt-1 text-lg font-semibold">
@@ -966,163 +1000,217 @@ export default function AdminPage() {
         </dl>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button
-          disabled={isPreparingBatch || batchJob?.status === "running"}
-          onClick={() => void prepareBatchStatusChange("published")}
-        >
-          {brand.copy.adminBatchPublishFilter}
-        </Button>
-        <Button
-          disabled={isPreparingBatch || batchJob?.status === "running"}
-          onClick={() => void prepareBatchStatusChange("hidden")}
-          variant="secondary"
-        >
-          {brand.copy.adminBatchHideFilter}
-        </Button>
-      </div>
+      <section className="admin-panel mt-4" aria-labelledby="admin-filter-title">
+        <div className="admin-panel-head">
+          <div>
+            <h3 className="admin-panel-title" id="admin-filter-title">
+              {brand.copy.adminFilterTitle}
+            </h3>
+            <p className="admin-panel-description">
+              {brand.copy.adminFilterDescription}
+            </p>
+          </div>
+          <div aria-live="polite" className="admin-result-meta">
+            <span>{brand.copy.adminListSummary}</span>
+            <strong>{countValue(adminTotal)}</strong>
+          </div>
+        </div>
+
+        <form className="admin-filter-grid" onSubmit={submitAdminSearch}>
+          <div className="admin-filter-field admin-filter-field--wide">
+            <Input
+              id="admin-search"
+              label={brand.copy.adminSearchLabel}
+              onChange={(event) => setAdminSearchInput(event.target.value)}
+              value={adminSearchInput}
+            />
+          </div>
+          <label className="admin-filter-field" htmlFor="admin-kind-filter">
+            {brand.copy.adminFilterLabel}
+            <select
+              className="select"
+              id="admin-kind-filter"
+              onChange={(event) => {
+                setAdminKind(event.target.value);
+                setAdminPage(1);
+              }}
+              value={adminKind}
+            >
+              <option value="">{brand.copy.adminFilterAll}</option>
+              <option value="photo">{brand.copy.photoKind}</option>
+              <option value="video">{brand.copy.videoKind}</option>
+            </select>
+          </label>
+          <label className="admin-filter-field" htmlFor="admin-compatibility-filter">
+            {brand.copy.adminCompatibilityFilterLabel}
+            <select
+              className="select"
+              id="admin-compatibility-filter"
+              onChange={(event) => {
+                setAdminCompatibility(event.target.value);
+                setAdminPage(1);
+              }}
+              value={adminCompatibility}
+            >
+              <option value="">{brand.copy.adminFilterAll}</option>
+              <option value="supported">{brand.copy.adminCompatibilitySupported}</option>
+              <option value="unsupported">{brand.copy.adminCompatibilityUnsupported}</option>
+              <option value="unknown">{brand.copy.adminCompatibilityUnknown}</option>
+            </select>
+          </label>
+          <label className="admin-filter-field" htmlFor="admin-status-filter">
+            {brand.copy.adminStatusHeader}
+            <select
+              className="select"
+              id="admin-status-filter"
+              onChange={(event) => {
+                setAdminStatus(event.target.value);
+                setAdminPage(1);
+              }}
+              value={adminStatus}
+            >
+              <option value="">{brand.copy.adminFilterAll}</option>
+              <option value="published">{brand.copy.statusPublished}</option>
+              <option value="hidden">{brand.copy.statusHidden}</option>
+            </select>
+          </label>
+          <label className="admin-filter-field" htmlFor="admin-display-filter">
+            {brand.copy.adminDisplayHealthLabel}
+            <select
+              className="select"
+              id="admin-display-filter"
+              onChange={(event) => {
+                setAdminDisplay(event.target.value);
+                setAdminPage(1);
+              }}
+              value={adminDisplay}
+            >
+              <option value="">{brand.copy.adminFilterAll}</option>
+              <option value="displayable">{brand.copy.adminDisplayable}</option>
+              <option value="excluded">{brand.copy.adminDisplayExcluded}</option>
+            </select>
+          </label>
+          <label className="admin-filter-field" htmlFor="admin-page-size">
+            {brand.copy.adminPageSizeLabel}
+            <select
+              className="select"
+              id="admin-page-size"
+              onChange={(event) => {
+                setAdminPageSize(Number(event.target.value));
+                setAdminPage(1);
+              }}
+              value={adminPageSize}
+            >
+              {[20, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="admin-filter-actions">
+            <Button type="submit">
+              {brand.copy.adminFilterApply}
+            </Button>
+            <Button onClick={clearAdminFilters} type="button" variant="secondary">
+              {brand.copy.adminClearFilters}
+            </Button>
+          </div>
+        </form>
+
+        <div className="admin-filter-meta">
+          <div className="admin-chip-row">
+            <span className="admin-chip-label">
+              {activeFilterItems.length > 0
+                ? brand.copy.adminActiveFilters
+                : brand.copy.adminNoActiveFilters}
+            </span>
+            {activeFilterItems.map((item) => (
+              <span className="admin-filter-chip" key={item}>
+                <span>{item}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="admin-panel mt-4" aria-labelledby="admin-scope-actions-title">
+        <div className="admin-panel-head">
+          <div>
+            <h3 className="admin-panel-title" id="admin-scope-actions-title">
+              {brand.copy.adminFilterActionsTitle}
+            </h3>
+            <p className="admin-panel-description">
+              {brand.copy.adminFilterActionsDescription}
+            </p>
+          </div>
+          <div className="admin-action-row">
+            <Button
+              disabled={isPreparingBatch || batchJob?.status === "running"}
+              onClick={() => void prepareBatchStatusChange("published")}
+            >
+              {brand.copy.adminBatchPublishFilter}
+            </Button>
+            <Button
+              disabled={isPreparingBatch || batchJob?.status === "running"}
+              onClick={() => void prepareBatchStatusChange("hidden")}
+              variant="secondary"
+            >
+              {brand.copy.adminBatchHideFilter}
+            </Button>
+          </div>
+        </div>
+      </section>
 
       {selectedIds.length > 0 ? (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="mr-auto text-sm text-muted">
-            {brand.copy.adminSelectedCount} {selectedIds.length}
-          </span>
-          <Button onClick={() => setIsBatchEditing(true)}>
-            {brand.copy.adminBatchEdit}
-          </Button>
-          <Button
-            disabled={isSyncing}
-            onClick={() => void applyBatchUpdate({ ids: selectedIds, status: "published" })}
-          >
-            {brand.copy.adminBatchPublish}
-          </Button>
-          <Button
-            disabled={isSyncing}
-            onClick={() => void applyBatchUpdate({ ids: selectedIds, status: "hidden" })}
-            variant="secondary"
-          >
-            {brand.copy.adminBatchHide}
-          </Button>
-          <Button
-            disabled={isSyncing}
-            onClick={() => void exportSelectedReport()}
-            variant="secondary"
-          >
-            {brand.copy.adminExportReport}
-          </Button>
-        </div>
+        <section className="admin-panel mt-4" aria-labelledby="admin-selected-actions-title">
+          <div className="admin-panel-head">
+            <div>
+              <h3 className="admin-panel-title" id="admin-selected-actions-title">
+                {brand.copy.adminSelectedActionsTitle}
+              </h3>
+              <p className="admin-panel-description">
+                {brand.copy.adminSelectedActionsDescription}
+              </p>
+            </div>
+            <span className="admin-selected-count">
+              {brand.copy.adminSelectedCount} {selectedIds.length}
+            </span>
+          </div>
+          <div className="admin-action-row">
+            <Button onClick={() => setIsBatchEditing(true)}>
+              {brand.copy.adminBatchEdit}
+            </Button>
+            <Button
+              disabled={isSyncing}
+              onClick={() => void applyBatchUpdate({ ids: selectedIds, status: "published" })}
+            >
+              {brand.copy.adminBatchPublish}
+            </Button>
+            <Button
+              disabled={isSyncing}
+              onClick={() => void applyBatchUpdate({ ids: selectedIds, status: "hidden" })}
+              variant="secondary"
+            >
+              {brand.copy.adminBatchHide}
+            </Button>
+            <Button
+              disabled={isSyncing}
+              onClick={() => void exportSelectedReport()}
+              variant="secondary"
+            >
+              {brand.copy.adminExportReport}
+            </Button>
+          </div>
+        </section>
       ) : null}
 
-      <form
-        className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_190px_190px_170px_150px]"
-        onSubmit={submitAdminSearch}
-      >
-        <Input
-          id="admin-search"
-          label={brand.copy.adminSearchLabel}
-          onChange={(event) => setAdminSearchInput(event.target.value)}
-          value={adminSearchInput}
-        />
-        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-kind-filter">
-          {brand.copy.adminFilterLabel}
-          <select
-            className="select min-h-11"
-            id="admin-kind-filter"
-            onChange={(event) => {
-              setAdminKind(event.target.value);
-              setAdminPage(1);
-            }}
-            value={adminKind}
-          >
-            <option value="">{brand.copy.adminAllMemories}</option>
-            <option value="photo">{brand.copy.photoKind}</option>
-            <option value="video">{brand.copy.videoKind}</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-compatibility-filter">
-          {brand.copy.adminCompatibilityFilterLabel}
-          <select
-            className="select min-h-11"
-            id="admin-compatibility-filter"
-            onChange={(event) => {
-              setAdminCompatibility(event.target.value);
-              setAdminPage(1);
-            }}
-            value={adminCompatibility}
-          >
-            <option value="">
-              {brand.copy.adminCompatibilitySummary}: {browserCounts.supported}/
-              {browserCounts.unsupported}/{browserCounts.unknown}
-            </option>
-            <option value="supported">{brand.copy.adminCompatibilitySupported}</option>
-            <option value="unsupported">{brand.copy.adminCompatibilityUnsupported}</option>
-            <option value="unknown">{brand.copy.adminCompatibilityUnknown}</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-status-filter">
-          {brand.copy.adminStatusHeader}
-          <select
-            className="select min-h-11"
-            id="admin-status-filter"
-            onChange={(event) => {
-              setAdminStatus(event.target.value);
-              setAdminPage(1);
-            }}
-            value={adminStatus}
-          >
-            <option value="">
-              {brand.copy.statusPublished} / {brand.copy.statusHidden}
-            </option>
-            <option value="published">{brand.copy.statusPublished}</option>
-            <option value="hidden">{brand.copy.statusHidden}</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-display-filter">
-          {brand.copy.adminDisplayHealthLabel}
-          <select
-            className="select min-h-11"
-            id="admin-display-filter"
-            onChange={(event) => {
-              setAdminDisplay(event.target.value);
-              setAdminPage(1);
-            }}
-            value={adminDisplay}
-          >
-            <option value="">
-              {brand.copy.adminDisplayHealthSummary}: {displayCounts.displayable}/
-              {displayCounts.excluded}
-            </option>
-            <option value="displayable">{brand.copy.adminDisplayable}</option>
-            <option value="excluded">{brand.copy.adminDisplayExcluded}</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-page-size">
-          {brand.copy.adminPageSizeLabel}
-          <select
-            className="select min-h-11"
-            id="admin-page-size"
-            onChange={(event) => {
-              setAdminPageSize(Number(event.target.value));
-              setAdminPage(1);
-            }}
-            value={adminPageSize}
-          >
-            {[20, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="sr-only" type="submit">
-          {brand.copy.adminSearchLabel}
-        </button>
-      </form>
-
       {isLoading ? (
-        <div className="shimmer mt-4 h-24 rounded-xl" />
+        <div className="admin-panel mt-4 p-5">
+          <div className="shimmer h-24 rounded-xl" />
+        </div>
       ) : memories.length === 0 ? (
-        <div className="table-shell mt-4">
+        <div className="admin-table-shell table-shell mt-4">
           <table>
             <tbody>
               <tr className="table-empty-row">
@@ -1132,7 +1220,7 @@ export default function AdminPage() {
           </table>
         </div>
       ) : (
-        <div className="table-shell mt-4">
+        <div className="admin-table-shell table-shell mt-4">
           <table>
             <thead>
               <tr>

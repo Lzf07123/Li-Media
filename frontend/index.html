@@ -12,13 +12,7 @@
   </head>
   <body class="bg-background text-foreground">
     <div id="root"></div>
-    <script>
-      (() => {
-        const stored = localStorage.getItem("limedia-theme");
-        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        document.documentElement.classList.toggle("dark", stored === "dark" || (!stored && prefersDark));
-      })();
-    </script>
+    <script type="module" src="/src/theme-init.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

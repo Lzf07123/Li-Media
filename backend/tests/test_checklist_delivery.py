@@ -264,3 +264,65 @@ def test_browser_compatibility_matrix_is_conservative() -> None:
     assert evaluate_memory_file(supported)[0] == BrowserCompatibilityState.SUPPORTED
     assert evaluate_memory_file(unsupported)[0] == BrowserCompatibilityState.UNSUPPORTED
     assert evaluate_memory_file(unknown)[0] == BrowserCompatibilityState.UNKNOWN
+
+
+def test_admin_status_updates_are_idempotent(tmp_path: Path, monkeypatch) -> None:
+    session_factory = configure_admin_app(tmp_path, monkeypatch)
+    memory, _ = add_memory(
+        session_factory,
+        title="idempotent",
+        kind=MemoryKind.PHOTO,
+    )
+
+    app.dependency_overrides[get_db] = override_database(session_factory)
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
+    try:
+        with TestClient(app) as client:
+            assert client.post(
+                "/api/v1/admin/login",
+                json={"token": "test-token"},
+            ).status_code == 204
+
+            assert client.patch(
+                f"/api/v1/admin/memories/{memory.id}",
+                json={"status": "hidden"},
+            ).status_code == 200
+
+            selected_responses = []
+            for target_status in ("published", "published"):
+                response = client.patch(
+                    "/api/v1/admin/memories/batch",
+                    json={"ids": [str(memory.id)], "status": target_status},
+                )
+                assert response.status_code == 200
+                selected_responses.append(response.json())
+
+            assert selected_responses[0] == {
+                "changed": 1,
+                "skipped": 0,
+                "updated": 1,
+            }
+            assert selected_responses[1] == {
+                "changed": 0,
+                "skipped": 1,
+                "updated": 0,
+            }
+
+        with session_factory() as session:
+            persisted = session.get(Memory, memory.id)
+            assert persisted is not None
+            assert persisted.status == MemoryStatus.PUBLISHED
+            logs = session.scalars(
+                select(AdminOperationLog).where(
+                    AdminOperationLog.action.in_(["hide", "batch_publish"])
+                )
+            ).all()
+            assert len(logs) == 3
+            assert [log.action for log in logs].count("hide") == 1
+            assert [log.action for log in logs].count("batch_publish") == 2
+            batch_logs = [log for log in logs if log.action == "batch_publish"]
+            assert all("resource_ids=" in (log.detail or "") for log in batch_logs)
+            assert all("changed=" in (log.detail or "") for log in batch_logs)
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_session_factory, None)

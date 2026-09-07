@@ -813,15 +813,18 @@ export async function deleteMemory(memoryId: string): Promise<void> {
 
 export async function batchUpdateMemories(
   payload: MemoryBatchUpdatePayload,
-): Promise<{ updated: number }> {
-  return request<{ updated: number }>("/admin/memories/batch", {
-    method: "PATCH",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
+): Promise<{ changed: number; skipped: number; updated: number }> {
+  return request<{ changed: number; skipped: number; updated: number }>(
+    "/admin/memories/batch",
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+  );
 }
 
 export async function exportMemories(

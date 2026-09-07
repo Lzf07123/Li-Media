@@ -18,6 +18,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   const [queuedThumbnailUrl, setQueuedThumbnailUrl] = useState<string | null>(null);
   const [showShimmer, setShowShimmer] = useState(false);
   const [isIntersecting, setIsIntersecting] = useState(priority);
+  const [isInView, setIsInView] = useState(priority);
   const imageRef = useRef<HTMLImageElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryUrl, setRetryUrl] = useState<string | null>(null);
@@ -31,14 +32,15 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     : { minHeight: 160 };
 
   useEffect(() => {
-    if (priority || typeof IntersectionObserver === "undefined") {
+    if (typeof IntersectionObserver === "undefined") {
       setIsIntersecting(true);
       return;
     }
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
+        const inView = entries.some((entry) => entry.isIntersecting);
+        if (inView) {
           setIsIntersecting(true);
           observer.disconnect();
         }
@@ -51,6 +53,38 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     }
 
     return () => observer.disconnect();
+  }, [priority]);
+
+  useEffect(() => {
+    let animationFrame = 0;
+    const updateVisibility = () => {
+      animationFrame = 0;
+      const rect = cardRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+      setIsInView(
+        rect.bottom > -240 && rect.top < window.innerHeight + 240,
+      );
+    };
+    const scheduleVisibility = () => {
+      if (animationFrame) {
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(updateVisibility);
+    };
+
+    updateVisibility();
+    window.addEventListener("scroll", scheduleVisibility, { passive: true });
+    window.addEventListener("resize", scheduleVisibility);
+
+    return () => {
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      window.removeEventListener("scroll", scheduleVisibility);
+      window.removeEventListener("resize", scheduleVisibility);
+    };
   }, [priority]);
 
   useEffect(() => {
@@ -129,17 +163,21 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
       >
       {thumbnailUrl && (!thumbnailFailed || retryUrl) ? (
         <span className="post-cover-link block media-frame" style={mediaStyle}>
-          {loadState !== "ready" ? (
+          {thumbnailUrl ? (
             <span
               aria-hidden="true"
-              className={`media-placeholder ${showShimmer ? "card-shimmer" : ""}`}
+              className={`media-placeholder media-crossfade ${
+                isInView && loadState !== "ready" ? "is-visible" : "is-hidden"
+              } ${showShimmer ? "card-shimmer" : ""}`}
             >
               <ImageIcon className="size-8 opacity-40" />
             </span>
           ) : null}
           <img
             alt={brand.copy.detailPreviewAlt}
-            className={`post-cover media-reveal ${loadState === "ready" ? "is-loaded" : ""}`}
+            className={`post-cover media-reveal media-crossfade ${
+              loadState === "ready" && isInView ? "is-visible" : "is-hidden"
+            }`}
             decoding="async"
             fetchPriority={priority ? "high" : "auto"}
             height={memory.height ?? undefined}

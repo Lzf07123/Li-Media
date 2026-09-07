@@ -991,9 +991,19 @@ def batch_update_memories(
     for memory in memories:
         _ensure_remote_memory(memory)
 
+    changed_count = 0
+    skipped_count = 0
     for memory in memories:
+        memory_changed = False
         for key, value in changes.items():
-            setattr(memory, key, value)
+            if getattr(memory, key) != value:
+                setattr(memory, key, value)
+                memory_changed = True
+
+        if memory_changed:
+            changed_count += 1
+        else:
+            skipped_count += 1
 
     db.commit()
     status_value = changes.get("status")
@@ -1008,9 +1018,17 @@ def batch_update_memories(
         action=action,
         target_type="memory_batch",
         client_ip=_client_ip(request),
-        detail=", ".join(sorted(changes)),
+        detail=(
+            f"changed={changed_count};skipped={skipped_count};"
+            f"fields={','.join(sorted(changes))};"
+            f"resource_ids={','.join(str(memory.id) for memory in memories)}"
+        ),
     )
-    return AdminMemoryBatchUpdateResponse(updated=len(memories))
+    return AdminMemoryBatchUpdateResponse(
+        changed=changed_count,
+        skipped=skipped_count,
+        updated=changed_count,
+    )
 
 
 @router.post("/memories/export", response_model=AdminMemoryExportResponse)
