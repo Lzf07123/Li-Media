@@ -336,6 +336,42 @@ test("remote photo without preview uses placeholder", async ({ page }) => {
   await expect(page.locator("img[alt=\"回忆预览\"]")).toHaveCount(0);
 });
 
+test("failed thumbnail can retry from the card", async ({ page }) => {
+  let attempts = 0;
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories" || url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({
+        json: url.pathname === "/api/v1/memories/recommend"
+          ? []
+          : memoryList,
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
+      attempts += 1;
+      if (attempts < 6) {
+        await route.fulfill({ status: 502, json: { detail: "failed" } });
+        return;
+      }
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+    await route.fulfill({ json: memory });
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await expect(page.locator(".masonry .post-card")).toContainText("重试预览", {
+    timeout: 10_000,
+  });
+  await page.locator(".masonry .post-card").click();
+  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
+});
+
 test("missing old detail link shows viewer recovery state", async ({ page }) => {
   await page.route("**/api/v1/memories/**", async (route) => {
     await route.fulfill({ status: 500, json: { detail: "服务暂时不可用" } });
