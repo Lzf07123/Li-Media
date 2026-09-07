@@ -572,5 +572,6 @@ test("admin cleanup confirms before clearing local index", async ({ page }) => {
   await expect(page.getByText("确认清理全部本地索引？")).toBeVisible();
   await page.getByRole("button", { name: "确认清理" }).click();
   await expect(page.getByText("本地清理完成，网盘资源未变化。")).toBeVisible();
+  await expect(page.locator(".table-empty-row td")).toHaveAttribute("colSpan", "11");
   await expect(page.getByText("网盘中还没有照片或视频；请先完成接入步骤，再点击扫描。")).toBeVisible();
 });
