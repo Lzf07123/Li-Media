@@ -469,6 +469,7 @@ def get_memory_thumbnail(
             max_size=max_size,
             duration_seconds=memory.duration_seconds,
             failure_sink=failure_sink,
+            source_mime_type=memory_file.mime_type,
         )
     except TaskRejected as exc:
         raise _task_http_error(exc) from exc

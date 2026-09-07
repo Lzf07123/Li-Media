@@ -262,6 +262,7 @@ def _process_pair(
                 priority=60,
                 failure_sink=failure_sink,
                 cancel_event=cancel_event,
+                source_mime_type=memory_file.mime_type,
             )
     except TaskRejected:
         task_metrics.record_failed(TaskType.DERIVATIVE)
