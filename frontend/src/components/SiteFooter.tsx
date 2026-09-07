@@ -6,7 +6,7 @@ export default function SiteFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="site-footer relative z-10">
+    <footer className="site-footer">
       <div className="site-footer-inner">
         <span>
           © {year} {brand.copyrightHolder}

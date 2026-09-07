@@ -72,7 +72,7 @@ test("home public count, loading feedback and persistent footer", async ({ page 
       return;
     }
     if (url.pathname.endsWith("/thumbnail")) {
-      await new Promise((resolve) => setTimeout(resolve, 220));
+      await new Promise((resolve) => setTimeout(resolve, 800));
       await route.fulfill({
         body: Buffer.from(pngBase64, "base64"),
         contentType: "image/png",
@@ -98,12 +98,16 @@ test("home public count, loading feedback and persistent footer", async ({ page 
   await expect(firstCard.locator("img")).toBeVisible();
   await expect(firstCard.locator(".card-shimmer")).toHaveCount(0);
 
-  const footerBefore = await page.locator(".site-footer").boundingBox();
-  await page.mouse.wheel(0, 900);
-  await expect.poll(async () => {
-    const footer = await page.locator(".site-footer").boundingBox();
-    return footer?.y ?? 0;
-  }).toBeCloseTo(footerBefore?.y ?? 0, 0);
+  await expect(page.locator(".site-footer")).toHaveCSS("position", "fixed");
+  const footerHeight = (await page.locator(".site-footer").boundingBox())?.height ?? 0;
+  const expectedFooterY = 720 - footerHeight;
+  for (const scrollY of [0, 900, 100000]) {
+    await page.evaluate((top) => window.scrollTo(0, top), scrollY);
+    await expect.poll(async () => {
+      const footer = await page.locator(".site-footer").boundingBox();
+      return footer?.y ?? 0;
+    }).toBeCloseTo(expectedFooterY, 0);
+  }
   await expect(page.getByTestId("public-count")).toContainText(
     "已收录媒体 7",
   );
