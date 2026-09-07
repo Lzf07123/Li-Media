@@ -51,6 +51,12 @@ class PublicMediaCounts(BaseModel):
     video: int
 
 
+class PublicPreheatStatusResponse(BaseModel):
+    status: Literal["running", "not_preheated", "ready", "degraded", "unavailable"]
+    processed: int
+    total: int
+
+
 class MemoryDirectLinkResponse(BaseModel):
     direct_url: str
     expires_at: datetime | None
@@ -239,6 +245,22 @@ class ServiceStatus(BaseModel):
     connected_clients: int | None = None
 
 
+class ResourceRuntimeConfiguration(BaseModel):
+    preheat_concurrency_limit: int
+    preheat_queue_limit: int
+    preheat_wait_timeout_seconds: float
+    derivative_concurrency_limit: int
+    derivative_queue_limit: int
+    derivative_wait_timeout_seconds: float
+    direct_probe_concurrency_limit: int
+    direct_probe_queue_limit: int
+    scan_concurrency_limit: int
+    stream_global_concurrency_limit: int
+    stream_user_concurrency_limit: int
+    temp_max_files: int
+    temp_disk_quota_bytes: int
+
+
 class BackendRuntimeStatus(BaseModel):
     app_name: str
     version: str
@@ -249,6 +271,7 @@ class BackendRuntimeStatus(BaseModel):
     redis: ServiceStatus
     task_thread_pool_size: int
     stack_guard: str
+    configuration: ResourceRuntimeConfiguration
 
 
 class RemoteStorageCounts(BaseModel):
@@ -295,6 +318,7 @@ class TaskQueueStatus(BaseModel):
     queued: int
     limit: int
     queue_limit: int
+    wait_timeout_seconds: float
 
 
 class ResourceStackStatus(BaseModel):
@@ -312,6 +336,8 @@ class ResourceStatus(BaseModel):
     process: dict[str, int | None]
     cgroup: dict[str, int | None]
     temporary: dict[str, float | int | None]
+    filesystem: dict[str, float | int | None]
+    caches: dict[str, dict[str, float | int | str]]
     stack: ResourceStackStatus
     limits: ResourceLimitStatus
 

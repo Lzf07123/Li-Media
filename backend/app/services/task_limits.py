@@ -173,7 +173,7 @@ class TaskLimiter:
             return False
         return not any(waiter.priority <= priority for waiter in waiters)
 
-    def stats(self) -> dict[str, dict[str, int]]:
+    def stats(self) -> dict[str, dict[str, int | float]]:
         with self._condition:
             return {
                 task_type.value: {
@@ -181,6 +181,9 @@ class TaskLimiter:
                     "queued": len(self._waiters[task_type]),
                     "limit": self._policy(task_type).max_active,
                     "queue_limit": self._policy(task_type).max_queue,
+                    "wait_timeout_seconds": self._policy(
+                        task_type,
+                    ).wait_timeout,
                 }
                 for task_type in TaskType
             }

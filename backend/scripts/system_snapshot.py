@@ -50,6 +50,7 @@ def main() -> None:
             db,
             Path(settings.media_root),
             preheat_latest=preheat_latest,
+            nginx_cache_root=Path(settings.nginx_cache_root),
         )
 
     print(json.dumps(snapshot, ensure_ascii=False, default=str, separators=(",", ":")))

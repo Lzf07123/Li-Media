@@ -46,6 +46,34 @@ def test_queue_rejects_when_full(monkeypatch) -> None:
     assert limiter.stats()[TaskType.DERIVATIVE.value]["active"] == 0
 
 
+def test_task_policy_reads_all_runtime_limits(monkeypatch) -> None:
+    settings = configure_limits(
+        monkeypatch,
+        preheat_concurrency_limit=3,
+        preheat_queue_limit=7,
+        preheat_wait_timeout_seconds=1.5,
+        derivative_concurrency_limit=1,
+        derivative_queue_limit=9,
+        derivative_wait_timeout_seconds=8.0,
+    )
+    limiter = TaskLimiter()
+
+    assert limiter.stats()["preheat"] == {
+        "active": 0,
+        "queued": 0,
+        "limit": 3,
+        "queue_limit": 7,
+        "wait_timeout_seconds": 1.5,
+    }
+    assert limiter.stats()["derivative"] == {
+        "active": 0,
+        "queued": 0,
+        "limit": 1,
+        "queue_limit": 9,
+        "wait_timeout_seconds": 8.0,
+    }
+
+
 def test_queue_prioritizes_first_screen_jobs(monkeypatch) -> None:
     configure_limits(
         monkeypatch,

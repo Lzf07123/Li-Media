@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import shutil
 import resource
+import os
+from time import monotonic
 from pathlib import Path
 
 
@@ -82,12 +84,63 @@ def _read_disk(temporary_dir: Path) -> dict[str, int | None]:
     }
 
 
+def _read_directory_usage(
+    directory: Path,
+    *,
+    max_files: int = 50_000,
+    timeout_seconds: float = 2.0,
+) -> dict[str, int | str]:
+    """Count local cache files without exposing names or absolute paths."""
+
+    started_at = monotonic()
+    if not directory.exists():
+        return {"files": 0, "bytes": 0, "status": "ok"}
+    if not directory.is_dir():
+        return {"files": 0, "bytes": 0, "status": "unavailable"}
+
+    files = 0
+    bytes_seen = 0
+    stack: list[Path] = [directory]
+    while stack:
+        if files >= max_files:
+            return {"files": 0, "bytes": 0, "status": "truncated"}
+        if monotonic() - started_at > timeout_seconds:
+            return {"files": 0, "bytes": 0, "status": "timeout"}
+
+        current = stack.pop()
+        try:
+            entries = list(os.scandir(current))
+        except OSError:
+            return {"files": 0, "bytes": 0, "status": "unavailable"}
+
+        for entry in entries:
+            try:
+                if entry.is_symlink():
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(Path(entry.path))
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                files += 1
+                bytes_seen += entry.stat(follow_symlinks=False).st_size
+                if files >= max_files:
+                    return {"files": 0, "bytes": 0, "status": "truncated"}
+                if monotonic() - started_at > timeout_seconds:
+                    return {"files": 0, "bytes": 0, "status": "timeout"}
+            except OSError:
+                return {"files": 0, "bytes": 0, "status": "unavailable"}
+
+    return {"files": files, "bytes": bytes_seen, "status": "ok"}
+
+
 def collect_resource_metrics(
     media_root: Path,
     *,
     backend_memory_limit_bytes: int | None = None,
     temp_disk_quota_bytes: int | None = None,
     temp_max_files: int | None = None,
+    nginx_cache_root: Path | None = None,
 ) -> dict[str, object]:
     process = _read_proc_status()
     temporary_dir = media_root / "tmp"
@@ -96,7 +149,10 @@ def collect_resource_metrics(
     temp_bytes = sum(
         path.stat().st_size for path in temp_files if path.is_file()
     )
-    disk = _read_disk(temporary_dir)
+    filesystem = _read_disk(media_root if media_root.exists() else temporary_dir)
+    derived_cache = _read_directory_usage(media_root / "thumbnails")
+    temporary_cache = _read_directory_usage(temporary_dir)
+    nginx_cache = _read_directory_usage(nginx_cache_root or media_root / "nginx_cache")
 
     return {
         "process": {
@@ -114,7 +170,13 @@ def collect_resource_metrics(
         "temporary": {
             "files": len(temp_files),
             "bytes": temp_bytes,
-            **disk,
+            **_read_disk(temporary_dir),
+        },
+        "filesystem": filesystem,
+        "caches": {
+            "derived_thumbnails": derived_cache,
+            "temporary": temporary_cache,
+            "nginx": nginx_cache,
         },
         "stack": _read_stack_limits(),
         "limits": {

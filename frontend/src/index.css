@@ -1362,6 +1362,9 @@
   .progress.is-success .progress-bar {
     background: var(--limedia-success);
   }
+  .progress.is-warning .progress-bar {
+    background: var(--limedia-warning);
+  }
   .progress.is-danger .progress-bar {
     background: var(--limedia-destructive);
   }

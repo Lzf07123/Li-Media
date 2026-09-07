@@ -157,6 +157,115 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
     counts: { photo: 1, video: 0 },
   };
   let batchRun = 0;
+  const adminSystemStatus = {
+    generated_at: "2026-09-08T00:00:00Z",
+    backend: {
+      app_name: "Li&Media",
+      version: "0.1.0",
+      python_version: "3.12.0",
+      platform: "Linux",
+      pid: 100,
+      database: { status: "ok", detail: null, pool_status: null, dialect: null, used_memory_bytes: null, max_memory_bytes: null, connected_clients: null },
+      redis: { status: "ok", detail: null, pool_status: null, dialect: null, used_memory_bytes: null, max_memory_bytes: null, connected_clients: null },
+      task_thread_pool_size: 24,
+      stack_guard: "bounded",
+      configuration: {
+        preheat_concurrency_limit: 2,
+        preheat_queue_limit: 64,
+        preheat_wait_timeout_seconds: 2,
+        derivative_concurrency_limit: 1,
+        derivative_queue_limit: 32,
+        derivative_wait_timeout_seconds: 15,
+        direct_probe_concurrency_limit: 4,
+        direct_probe_queue_limit: 16,
+        scan_concurrency_limit: 1,
+        stream_global_concurrency_limit: 16,
+        stream_user_concurrency_limit: 3,
+        temp_max_files: 2,
+        temp_disk_quota_bytes: 4294967296,
+      },
+    },
+    remote_storage: {
+      provider: "baidupan",
+      configured: true,
+      oauth_configured: true,
+      authorized: true,
+      scan_dir: "/apps/Li&Media",
+      token_expires_at: null,
+      direct_link_cache_entries: 0,
+      counts: {
+        total: 3,
+        remote_ready: 3,
+        remote_missing: 0,
+        remote_failed: 0,
+        thumbnail_ready: 1,
+        thumbnail_missing: 2,
+        thumbnail_failed: 0,
+        thumbnail_failure_kinds: {},
+        stream_ready: 1,
+        stream_failed: 0,
+      },
+      last_scan: null,
+    },
+    source_zero: {
+      compliant: true,
+      source_path_count: 0,
+      source_path_schema_exposed: false,
+      database_blob_count: 0,
+      source_media_file_count: 0,
+      source_media_extensions: {},
+      media_photos_file_count: 0,
+      media_videos_file_count: 0,
+      unexpected_media_file_count: 0,
+      temporary_file_count: 0,
+      filesystem_scan_failed: false,
+    },
+    tasks: {
+      scan: { active: 0, queued: 0, limit: 1, queue_limit: 1, wait_timeout_seconds: 0 },
+      direct_probe: { active: 0, queued: 0, limit: 4, queue_limit: 16, wait_timeout_seconds: 3 },
+      derivative: { active: 0, queued: 0, limit: 1, queue_limit: 32, wait_timeout_seconds: 15 },
+      preheat: { active: 0, queued: 0, limit: 2, queue_limit: 64, wait_timeout_seconds: 2 },
+      stream: { active: 0, queued: 0, limit: 16, queue_limit: 32, wait_timeout_seconds: 1 },
+    },
+    metrics: { active_jobs: 0, queue_depth: 0 },
+    resources: {
+      process: { rss_kbytes: 59080, threads: 8, pss_kbytes: 49960 },
+      cgroup: {
+        memory_current_bytes: 47366144,
+        memory_peak_bytes: 80941056,
+        memory_max_bytes: 268435456,
+        pids_current: 8,
+        pids_max: 64,
+        oom: 0,
+        oom_kill: 0,
+      },
+      temporary: {
+        files: 0,
+        bytes: 0,
+        free_bytes: 4294967296,
+        total_bytes: 5368709120,
+        used_bytes: 1073741824,
+        usage_ratio: 0.2,
+      },
+      filesystem: {
+        total_bytes: 5368709120,
+        used_bytes: 1073741824,
+        free_bytes: 4294967296,
+        usage_ratio: 0.2,
+      },
+      caches: {
+        derived_thumbnails: { files: 3, bytes: 245760, status: "ok" },
+        temporary: { files: 0, bytes: 0, status: "ok" },
+        nginx: { files: 5, bytes: 163840, status: "ok" },
+      },
+      stack: { soft_kbytes: 8192, hard_kbytes: null },
+      limits: {
+        backend_memory_bytes: 268435456,
+        temp_disk_quota_bytes: 4294967296,
+        temp_max_files: 2,
+      },
+    },
+  };
 
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
@@ -215,7 +324,7 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
     await route.fulfill({ json: null });
   });
   await page.route("**/api/v1/admin/system/status", async (route) => {
-    await route.fulfill({ status: 500, json: { detail: "unavailable" } });
+    await route.fulfill({ json: adminSystemStatus });
   });
   await page.route("**/api/v1/admin/thumbnails/preheat/latest", async (route) => {
     await route.fulfill({ json: null });
@@ -278,6 +387,15 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
   await expect(
     page.getByText("可播放 / 不可播放 / 未知").first(),
   ).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "文件系统占用" }),
+  ).toBeVisible();
+  await expect(page.getByText("缓存占用")).toBeVisible();
+  await expect(page.getByText("3 文件 · 240 KB")).toBeVisible();
+  await expect(page.getByText("5 文件 · 160 KB")).toBeVisible();
+  await expect(page.getByText("生效资源限制")).toBeVisible();
+  await expect(page.getByText("2 / 64")).toBeVisible();
+  await expect(page.getByText("16 / 3")).toBeVisible();
 
   await page.getByRole("button", { name: "发布当前筛选" }).click();
   await expect(page.getByText("当前没有筛选条件，本次将影响全部媒体。")).toBeVisible();

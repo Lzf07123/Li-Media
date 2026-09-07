@@ -2,7 +2,11 @@ import { Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
-import { resolveThumbnailUrl, type MemorySummary } from "@/lib/api";
+import {
+  resolveThumbnailSrcSet,
+  resolveThumbnailUrl,
+  type MemorySummary,
+} from "@/lib/api";
 import { loadQueuedImage } from "@/lib/image-load-queue";
 
 type MemoryCardProps = {
@@ -23,6 +27,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryUrl, setRetryUrl] = useState<string | null>(null);
   const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "240");
+  const thumbnailSrcSet = resolveThumbnailSrcSet(memory.thumbnail_url);
   const knownSize = memory.width && memory.height
     ? { width: memory.width, height: memory.height }
     : null;
@@ -179,7 +184,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
               loadState === "ready" && isInView ? "is-visible" : "is-hidden"
             }`}
             decoding="async"
-            fetchPriority={priority ? "high" : "auto"}
+            fetchPriority={priority ? "high" : "low"}
             height={memory.height ?? undefined}
             loading={priority ? "eager" : "lazy"}
             onError={() => {
@@ -195,6 +200,9 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
               setLoadState("ready");
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
+            srcSet={
+              loadState === "ready" && !retryUrl ? thumbnailSrcSet ?? undefined : undefined
+            }
             src={retryUrl ?? queuedThumbnailUrl ?? undefined}
             ref={imageRef}
             width={memory.width ?? undefined}

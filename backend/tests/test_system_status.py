@@ -82,6 +82,27 @@ def test_system_status_reports_backend_remote_and_resources(
             assert payload["resources"]["limits"]["backend_memory_bytes"] == (
                 256 * 1024 * 1024
             )
+            assert payload["backend"]["configuration"] == {
+                "preheat_concurrency_limit": 2,
+                "preheat_queue_limit": 64,
+                "preheat_wait_timeout_seconds": 2.0,
+                "derivative_concurrency_limit": 1,
+                "derivative_queue_limit": 32,
+                "derivative_wait_timeout_seconds": 15.0,
+                "direct_probe_concurrency_limit": 4,
+                "direct_probe_queue_limit": 16,
+                "scan_concurrency_limit": 1,
+                "stream_global_concurrency_limit": 16,
+                "stream_user_concurrency_limit": 3,
+                "temp_max_files": 2,
+                "temp_disk_quota_bytes": 4294967296,
+            }
+            assert payload["resources"]["filesystem"]["total_bytes"] > 0
+            assert payload["resources"]["caches"]["derived_thumbnails"]["status"] == "ok"
+            assert payload["resources"]["caches"]["temporary"]["status"] == "ok"
+            assert payload["resources"]["caches"]["nginx"]["status"] == "ok"
+            for task_status in payload["tasks"].values():
+                assert "wait_timeout_seconds" in task_status
             assert "access_token" not in response.text.lower()
             assert "client_secret" not in response.text.lower()
     finally:

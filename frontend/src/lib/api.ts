@@ -96,6 +96,12 @@ export type MemorySummaryListResponse = {
   };
 };
 
+export type PublicPreheatStatus = {
+  status: "running" | "not_preheated" | "ready" | "degraded";
+  processed: number;
+  total: number;
+};
+
 export type MemoryAdminListResponse = {
   items: Memory[];
   total: number;
@@ -280,6 +286,7 @@ export type BackendRuntimeStatus = {
   redis: ServiceStatus;
   task_thread_pool_size: number;
   stack_guard: string;
+  configuration: ResourceRuntimeConfiguration;
 };
 
 export type RemoteStorageCounts = {
@@ -307,11 +314,28 @@ export type RemoteStorageStatus = {
   last_scan: RemoteScanTask | null;
 };
 
+export type ResourceRuntimeConfiguration = {
+  preheat_concurrency_limit: number;
+  preheat_queue_limit: number;
+  preheat_wait_timeout_seconds: number;
+  derivative_concurrency_limit: number;
+  derivative_queue_limit: number;
+  derivative_wait_timeout_seconds: number;
+  direct_probe_concurrency_limit: number;
+  direct_probe_queue_limit: number;
+  scan_concurrency_limit: number;
+  stream_global_concurrency_limit: number;
+  stream_user_concurrency_limit: number;
+  temp_max_files: number;
+  temp_disk_quota_bytes: number;
+};
+
 export type TaskQueueStatus = {
   active: number;
   queued: number;
   limit: number;
   queue_limit: number;
+  wait_timeout_seconds: number;
 };
 
 export type SystemStatus = {
@@ -343,6 +367,20 @@ export type SystemStatus = {
       used_bytes: number | null;
       usage_ratio: number | null;
     };
+    filesystem: {
+      total_bytes: number | null;
+      used_bytes: number | null;
+      free_bytes: number | null;
+      usage_ratio: number | null;
+    };
+    caches: Record<
+      "derived_thumbnails" | "temporary" | "nginx",
+      {
+        files: number;
+        bytes: number;
+        status: "ok" | "unavailable" | "timeout" | "truncated";
+      }
+    >;
     stack: {
       soft_kbytes: number | null;
       hard_kbytes: number | null;
@@ -627,6 +665,10 @@ export async function getPublicMediaCounts(): Promise<{
   return request<{ total: number; photo: number; video: number }>(
     "/memories/public-counts",
   );
+}
+
+export async function getPublicPreheatStatus(): Promise<PublicPreheatStatus> {
+  return request<PublicPreheatStatus>("/memories/preheat-status");
 }
 
 export async function previewBatchStatusChange(

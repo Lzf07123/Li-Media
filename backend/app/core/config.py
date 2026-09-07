@@ -43,26 +43,30 @@ class Settings(BaseSettings):
     video_frame_offset_seconds: float = 0.0
     remote_thumbnail_source_max_bytes: int = 16 * 1024 * 1024
     remote_thumbnail_video_source_max_bytes: int = 64 * 1024 * 1024
-    remote_thumbnail_disk_quota_bytes: int = 4 * 1024 * 1024 * 1024
-    remote_thumbnail_max_temp_files: int = 2
+    remote_thumbnail_disk_quota_bytes: int = Field(
+        default=4 * 1024 * 1024 * 1024,
+        ge=0,
+        le=64 * 1024 * 1024 * 1024,
+    )
+    remote_thumbnail_max_temp_files: int = Field(default=2, ge=0, le=64)
     browser_probe_max_bytes: int = 2 * 1024 * 1024
     browser_probe_timeout_seconds: float = 12.0
-    scan_concurrency_limit: int = 1
-    scan_queue_limit: int = 1
-    scan_wait_timeout_seconds: float = 0.0
-    direct_probe_concurrency_limit: int = 4
-    direct_probe_queue_limit: int = 16
-    direct_probe_wait_timeout_seconds: float = 3.0
-    derivative_concurrency_limit: int = 1
-    derivative_queue_limit: int = 32
-    derivative_wait_timeout_seconds: float = 15.0
+    scan_concurrency_limit: int = Field(default=1, ge=1, le=4)
+    scan_queue_limit: int = Field(default=1, ge=0, le=100)
+    scan_wait_timeout_seconds: float = Field(default=0.0, ge=0, le=30)
+    direct_probe_concurrency_limit: int = Field(default=4, ge=1, le=16)
+    direct_probe_queue_limit: int = Field(default=16, ge=0, le=1000)
+    direct_probe_wait_timeout_seconds: float = Field(default=3.0, ge=0, le=30)
+    derivative_concurrency_limit: int = Field(default=1, ge=1, le=4)
+    derivative_queue_limit: int = Field(default=32, ge=0, le=1000)
+    derivative_wait_timeout_seconds: float = Field(default=15.0, ge=0, le=60)
     preheat_concurrency_limit: int = Field(default=2, ge=1, le=8)
     preheat_queue_limit: int = Field(default=64, ge=0, le=1000)
     preheat_wait_timeout_seconds: float = Field(default=2.0, ge=0, le=30)
-    stream_global_concurrency_limit: int = 16
-    stream_user_concurrency_limit: int = 3
-    stream_queue_limit: int = 32
-    stream_wait_timeout_seconds: float = 1.0
+    stream_global_concurrency_limit: int = Field(default=16, ge=1, le=64)
+    stream_user_concurrency_limit: int = Field(default=3, ge=1, le=16)
+    stream_queue_limit: int = Field(default=32, ge=0, le=1000)
+    stream_wait_timeout_seconds: float = Field(default=1.0, ge=0, le=30)
     task_thread_pool_size: int = 24
     backend_memory_limit_bytes: int = 256 * 1024 * 1024
     database_pool_size: int = 8
