@@ -45,6 +45,9 @@ def test_nginx_excludes_private_media_from_cache() -> None:
     assert "$http_accept" in nginx
     assert "proxy_cache_bypass $limedia_has_authorization $limedia_has_cookie" in nginx
     assert "proxy_cache off" in nginx
+    assert "proxy_cache_use_stale error timeout invalid_header updating http_500 http_502 http_503 http_504" in nginx
+    assert "proxy_cache_background_update on" in nginx
+    assert "open_file_cache max=1000 inactive=30s" in nginx
     assert 'add_header Cache-Control "no-store" always;' in nginx
     assert "limit_req_zone $binary_remote_addr zone=limedia_derivative" in nginx
     assert nginx.index("\nhttp {") < nginx.index("upstream limedia_backend {")

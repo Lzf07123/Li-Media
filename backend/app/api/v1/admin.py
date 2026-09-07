@@ -16,6 +16,7 @@ from fastapi import (
     Response,
     status,
 )
+from typing import Literal
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -42,6 +43,7 @@ from app.schemas.responses import (
     AdminCleanupRequest,
     AdminCleanupResponse,
     AdminCleanupStats,
+    DisplayHealthCounts,
     MemoryCounts,
     AdminMemoryListResponse,
     AdminLoginRequest,
@@ -86,6 +88,7 @@ from app.services.baidu_sync import (
     refresh_remote_entry,
     run_remote_scan_task,
 )
+from app.services.display_health import displayable_files_condition
 from app.services.task_limits import is_temporary_path_active, task_limiter, task_metrics
 from app.services.system_status import collect_system_status
 from app.services.thumbnail_preheat import (
@@ -653,6 +656,7 @@ def retry_remote_entry(
 def list_admin_memories(
     kind: MemoryKind | None = None,
     keyword: str | None = Query(default=None, max_length=100),
+    display: Literal["all", "displayable", "excluded"] = Query(default="all"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -673,11 +677,27 @@ def list_admin_memories(
             | (Memory.location.ilike(f"%{keyword}%"))
         )
 
+    base_statement = statement
+    total = db.scalar(select(func.count()).select_from(base_statement.subquery())) or 0
+    displayable_count = (
+        db.scalar(
+            select(func.count()).select_from(
+                base_statement.where(displayable_files_condition()).subquery()
+            )
+        )
+        or 0
+    )
+    excluded_count = max(0, total - displayable_count)
+    if display == "displayable":
+        statement = statement.where(displayable_files_condition())
+    elif display == "excluded":
+        statement = statement.where(~displayable_files_condition())
+
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     photo_count = (
         db.scalar(
             select(func.count()).select_from(
-                statement.where(Memory.kind == MemoryKind.PHOTO).subquery()
+                base_statement.where(Memory.kind == MemoryKind.PHOTO).subquery()
             )
         )
         or 0
@@ -693,6 +713,10 @@ def list_admin_memories(
     return AdminMemoryListResponse(
         items=[to_memory_read(memory) for memory in memories],
         total=total,
+        display_counts=DisplayHealthCounts(
+            displayable=displayable_count,
+            excluded=excluded_count,
+        ),
         page=page,
         page_size=page_size,
         counts=MemoryCounts(photo=photo_count, video=video_count),

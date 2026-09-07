@@ -4,6 +4,7 @@ export type Memory = {
   description: string;
   kind: "photo" | "video";
   status: "pending" | "draft" | "published" | "hidden" | "error";
+  media_display_state: "displayable" | "excluded";
   captured_at: string | null;
   location: string | null;
   file_url: string;
@@ -59,6 +60,7 @@ export type MemorySummary = {
   description: string;
   kind: Memory["kind"];
   status: Memory["status"];
+  media_display_state: "displayable" | "excluded";
   captured_at: string | null;
   location: string | null;
   file_url: string;
@@ -87,6 +89,10 @@ export type MemorySummaryListResponse = {
 export type MemoryAdminListResponse = {
   items: Memory[];
   total: number;
+  display_counts: {
+    displayable: number;
+    excluded: number;
+  };
   page: number;
   page_size: number;
   counts: {
@@ -474,6 +480,7 @@ export async function getAdminMemories(
   params: {
     keyword?: string;
     kind?: string;
+    display?: string;
     page?: number;
     page_size?: number;
   } = {},

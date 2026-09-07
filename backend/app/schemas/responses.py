@@ -1,5 +1,5 @@
-import uuid
 from datetime import datetime
+import uuid
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
 
@@ -11,6 +11,11 @@ from app.schemas.memory import MemoryRead, MemorySummaryRead
 class MemoryCounts(BaseModel):
     photo: int
     video: int
+
+
+class DisplayHealthCounts(BaseModel):
+    displayable: int
+    excluded: int
 
 
 class MemoryListResponse(BaseModel):
@@ -39,6 +44,7 @@ class MemoryDirectLinkResponse(BaseModel):
 class AdminMemoryListResponse(BaseModel):
     items: list[MemoryRead]
     total: int
+    display_counts: DisplayHealthCounts
     page: int
     page_size: int
     counts: MemoryCounts

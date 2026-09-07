@@ -40,6 +40,7 @@ import {
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import Button from "@/components/ui/Button";
+import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import Notice from "@/components/ui/Notice";
 import { ToastViewport, type Toast } from "@/components/ui/Toast";
@@ -72,11 +73,16 @@ export default function AdminPage() {
   const [pendingDelete, setPendingDelete] = useState<Memory | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [adminKind, setAdminKind] = useState("");
+  const [adminDisplay, setAdminDisplay] = useState("");
   const [adminSearch, setAdminSearch] = useState("");
   const [adminSearchInput, setAdminSearchInput] = useState("");
   const [adminPage, setAdminPage] = useState(1);
   const [adminPageSize, setAdminPageSize] = useState(50);
   const [adminTotal, setAdminTotal] = useState(0);
+  const [displayCounts, setDisplayCounts] = useState({
+    displayable: 0,
+    excluded: 0,
+  });
   const [isBatchEditing, setIsBatchEditing] = useState(false);
   const [batchTitle, setBatchTitle] = useState("");
   const [batchDescription, setBatchDescription] = useState("");
@@ -98,11 +104,13 @@ export default function AdminPage() {
       const data = await getAdminMemories({
         keyword: adminSearch || undefined,
         kind: adminKind || undefined,
+        display: adminDisplay || undefined,
         page: adminPage,
         page_size: adminPageSize,
       });
       setMemories(data.items);
       setAdminTotal(data.total);
+      setDisplayCounts(data.display_counts);
       setIsAdmin(true);
       const scan = await getLatestRemoteScan();
       setScanTask(scan);
@@ -129,7 +137,7 @@ export default function AdminPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [adminKind, adminPage, adminPageSize, adminSearch]);
+  }, [adminDisplay, adminKind, adminPage, adminPageSize, adminSearch]);
 
   useEffect(() => {
     void loadMemories();
@@ -675,7 +683,10 @@ export default function AdminPage() {
         </div>
       ) : null}
 
-      <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_150px]" onSubmit={submitAdminSearch}>
+      <form
+        className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_190px_150px]"
+        onSubmit={submitAdminSearch}
+      >
         <Input
           id="admin-search"
           label={brand.copy.adminSearchLabel}
@@ -696,6 +707,25 @@ export default function AdminPage() {
             <option value="">{brand.copy.adminAllMemories}</option>
             <option value="photo">{brand.copy.photoKind}</option>
             <option value="video">{brand.copy.videoKind}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-2 text-sm" htmlFor="admin-display-filter">
+          {brand.copy.adminDisplayHealthLabel}
+          <select
+            className="select min-h-11"
+            id="admin-display-filter"
+            onChange={(event) => {
+              setAdminDisplay(event.target.value);
+              setAdminPage(1);
+            }}
+            value={adminDisplay}
+          >
+            <option value="">
+              {brand.copy.adminDisplayHealthSummary}: {displayCounts.displayable}/
+              {displayCounts.excluded}
+            </option>
+            <option value="displayable">{brand.copy.adminDisplayable}</option>
+            <option value="excluded">{brand.copy.adminDisplayExcluded}</option>
           </select>
         </label>
         <label className="flex flex-col gap-2 text-sm" htmlFor="admin-page-size">
@@ -771,6 +801,13 @@ export default function AdminPage() {
                   <td>
                     <p className="font-medium">{memory.title}</p>
                     <p className="mt-1 text-xs text-muted">{memory.primary_file?.remote_path}</p>
+                    <div className="mt-2">
+                      {memory.media_display_state === "excluded" ? (
+                        <Badge tone="danger">{brand.copy.adminDisplayExcluded}</Badge>
+                      ) : (
+                        <Badge tone="success">{brand.copy.adminDisplayable}</Badge>
+                      )}
+                    </div>
                   </td>
                   <td>
                     {memory.kind === "video" ? brand.copy.videoKind : brand.copy.photoKind}
@@ -799,6 +836,22 @@ export default function AdminPage() {
                         kind="thumbnail"
                         state={memory.primary_file.thumbnail_state}
                       />
+                    ) : null}
+                    {memory.primary_file?.thumbnail_failure_kind ? (
+                      <p
+                        className="mt-1 max-w-32 truncate text-xs text-muted"
+                        title={
+                          brand.copy.adminThumbnailFailureReasons[
+                            memory.primary_file.thumbnail_failure_kind as keyof typeof brand.copy.adminThumbnailFailureReasons
+                          ] ?? memory.primary_file.thumbnail_failure_kind
+                        }
+                      >
+                        {
+                          brand.copy.adminThumbnailFailureReasons[
+                            memory.primary_file.thumbnail_failure_kind as keyof typeof brand.copy.adminThumbnailFailureReasons
+                          ]
+                        }
+                      </p>
                     ) : null}
                   </td>
                   <td>
