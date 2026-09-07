@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.admin import AdminBackgroundJob, AdminOperationLog
 from app.models.memory import Memory, MemoryFile, MemoryStatus
+from app.services.cache_invalidation import invalidate_nginx_proxy_cache
 
 
 BATCH_SIZE = 100
@@ -34,6 +35,7 @@ def run_batch_status_job(
     operator_session_id: UUID | None = None,
 ) -> None:
     clear_cancel(job_id)
+    invalidated_cache_files = 0
 
     with session_factory() as db:
         job = db.get(AdminBackgroundJob, job_id)
@@ -54,8 +56,14 @@ def run_batch_status_job(
                     job.status = "cancelled"
                     job.completed_at = datetime.now(timezone.utc)
                     db.commit()
+                    invalidated_cache_files = invalidate_nginx_proxy_cache()
                     clear_cancel(job_id)
-                    _record_job_log(db, job, operator_session_id)
+                    _record_job_log(
+                        db,
+                        job,
+                        operator_session_id,
+                        invalidated_cache_files=invalidated_cache_files,
+                    )
                     return
 
                 chunk = resource_ids[offset : offset + BATCH_SIZE]
@@ -86,7 +94,13 @@ def run_batch_status_job(
             job.status = "completed"
             job.completed_at = datetime.now(timezone.utc)
             db.commit()
-            _record_job_log(db, job, operator_session_id)
+            invalidated_cache_files = invalidate_nginx_proxy_cache()
+            _record_job_log(
+                db,
+                job,
+                operator_session_id,
+                invalidated_cache_files=invalidated_cache_files,
+            )
         except Exception as exc:
             db.rollback()
             job = db.get(AdminBackgroundJob, job_id)
@@ -95,7 +109,12 @@ def run_batch_status_job(
                 job.error_message = str(exc) or type(exc).__name__
                 job.completed_at = datetime.now(timezone.utc)
                 db.commit()
-                _record_job_log(db, job, operator_session_id)
+                _record_job_log(
+                    db,
+                    job,
+                    operator_session_id,
+                    invalidated_cache_files=0,
+                )
         finally:
             clear_cancel(job_id)
 
@@ -104,6 +123,8 @@ def _record_job_log(
     db: Session,
     job: AdminBackgroundJob,
     operator_session_id: UUID | None,
+    *,
+    invalidated_cache_files: int,
 ) -> None:
     action = (
         "batch_publish"
@@ -121,6 +142,7 @@ def _record_job_log(
                 f"job={job.id};status={job.status};total={job.total};"
                 f"processed={job.processed};changed={job.changed};"
                 f"skipped={job.skipped};failed={job.failed};"
+                f"nginx_cache_files={invalidated_cache_files};"
                 f"filters={json.dumps(job.filter_snapshot, ensure_ascii=False, sort_keys=True)};"
                 f"resource_ids={json.dumps(job.resource_ids, separators=(',', ':'))}"
             ),

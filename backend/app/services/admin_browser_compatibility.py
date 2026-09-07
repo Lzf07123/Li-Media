@@ -19,6 +19,7 @@ from app.models.memory import (
 )
 from app.services.baidu_pan import BaiduPanClient
 from app.services.browser_compatibility import probe_memory_file_compatibility
+from app.services.cache_invalidation import invalidate_nginx_proxy_cache
 from app.services.task_limits import TaskRejected
 from pathlib import Path
 
@@ -42,6 +43,7 @@ def run_browser_compatibility_probe(
     operator_session_id: UUID | None = None,
 ) -> None:
     clear_cancel(job_id)
+    invalidated_cache_files = 0
     with session_factory() as db:
         job = db.get(AdminBackgroundJob, job_id)
         if job is None:
@@ -74,8 +76,14 @@ def run_browser_compatibility_probe(
                     job.status = "cancelled"
                     job.completed_at = datetime.now(timezone.utc)
                     db.commit()
+                    invalidated_cache_files = invalidate_nginx_proxy_cache()
                     clear_cancel(job_id)
-                    _record_job_log(db, job, operator_session_id)
+                    _record_job_log(
+                        db,
+                        job,
+                        operator_session_id,
+                        invalidated_cache_files=invalidated_cache_files,
+                    )
                     return
 
                 job.processed += 1
@@ -100,11 +108,18 @@ def run_browser_compatibility_probe(
                 else:
                     job.changed += 1
                 db.commit()
+                if memory_file.browser_compatibility != BrowserCompatibilityState.UNKNOWN:
+                    invalidated_cache_files += invalidate_nginx_proxy_cache()
 
             job.status = "completed"
             job.completed_at = datetime.now(timezone.utc)
             db.commit()
-            _record_job_log(db, job, operator_session_id)
+            _record_job_log(
+                db,
+                job,
+                operator_session_id,
+                invalidated_cache_files=invalidated_cache_files,
+            )
         except Exception as exc:
             db.rollback()
             job = db.get(AdminBackgroundJob, job_id)
@@ -113,7 +128,12 @@ def run_browser_compatibility_probe(
                 job.error_message = str(exc) or type(exc).__name__
                 job.completed_at = datetime.now(timezone.utc)
                 db.commit()
-                _record_job_log(db, job, operator_session_id)
+                _record_job_log(
+                    db,
+                    job,
+                    operator_session_id,
+                    invalidated_cache_files=0,
+                )
         finally:
             clear_cancel(job_id)
 
@@ -122,6 +142,8 @@ def _record_job_log(
     db: Session,
     job: AdminBackgroundJob,
     operator_session_id: UUID | None,
+    *,
+    invalidated_cache_files: int,
 ) -> None:
     db.add(
         AdminOperationLog(
@@ -132,6 +154,7 @@ def _record_job_log(
                 f"job={job.id};status={job.status};total={job.total};"
                 f"processed={job.processed};changed={job.changed};"
                 f"skipped={job.skipped};failed={job.failed};"
+                f"nginx_cache_files={invalidated_cache_files};"
                 f"filters={json.dumps(job.filter_snapshot, ensure_ascii=False, sort_keys=True)};"
                 f"resource_ids={json.dumps(job.resource_ids, separators=(',', ':'))}"
             ),
