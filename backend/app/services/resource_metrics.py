@@ -122,10 +122,10 @@ def _read_directory_usage(
                     continue
                 if not entry.is_file(follow_symlinks=False):
                     continue
-                files += 1
-                bytes_seen += entry.stat(follow_symlinks=False).st_size
                 if files >= max_files:
                     return {"files": 0, "bytes": 0, "status": "truncated"}
+                files += 1
+                bytes_seen += entry.stat(follow_symlinks=False).st_size
                 if monotonic() - started_at > timeout_seconds:
                     return {"files": 0, "bytes": 0, "status": "timeout"}
             except OSError:
