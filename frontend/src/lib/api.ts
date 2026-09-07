@@ -87,6 +87,12 @@ export type MemorySummaryListResponse = {
 export type MemoryAdminListResponse = {
   items: Memory[];
   total: number;
+  page: number;
+  page_size: number;
+  counts: {
+    photo: number;
+    video: number;
+  };
 };
 
 export type MemorySyncResponse = {
@@ -465,8 +471,28 @@ export async function getMediaDirectLink(
 }
 
 export async function getAdminMemories(
+  params: {
+    keyword?: string;
+    kind?: string;
+    page?: number;
+    page_size?: number;
+  } = {},
 ): Promise<MemoryAdminListResponse> {
-  return request<MemoryAdminListResponse>("/admin/memories", {
+  const search = new URLSearchParams();
+  if (params.keyword) {
+    search.set("keyword", params.keyword);
+  }
+  if (params.kind) {
+    search.set("kind", params.kind);
+  }
+  if (params.page) {
+    search.set("page", String(params.page));
+  }
+  if (params.page_size) {
+    search.set("page_size", String(params.page_size));
+  }
+  const query = search.toString();
+  return request<MemoryAdminListResponse>(`/admin/memories${query ? `?${query}` : ""}`, {
     headers: {
       Accept: "application/json",
     },

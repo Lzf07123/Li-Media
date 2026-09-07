@@ -11,6 +11,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     HTTPException,
+    Query,
     Request,
     Response,
     status,
@@ -24,6 +25,7 @@ from app.models.admin import AdminSession
 from app.models.memory import (
     Memory,
     MemoryFile,
+    MemoryKind,
     MemoryFileStatus,
     MemoryStatus,
     RemoteScanStatus,
@@ -40,6 +42,7 @@ from app.schemas.responses import (
     AdminCleanupRequest,
     AdminCleanupResponse,
     AdminCleanupStats,
+    MemoryCounts,
     AdminMemoryListResponse,
     AdminLoginRequest,
     AdminMemoryBatchUpdateRequest,
@@ -626,6 +629,10 @@ def retry_remote_entry(
 
 @router.get("/memories", response_model=AdminMemoryListResponse)
 def list_admin_memories(
+    kind: MemoryKind | None = None,
+    keyword: str | None = Query(default=None, max_length=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
     _: AdminSession = Depends(require_admin_session),
 ) -> AdminMemoryListResponse:
@@ -635,11 +642,38 @@ def list_admin_memories(
         .where(MemoryFile.source == "baidupan")
         .distinct()
     )
+    if kind is not None:
+        statement = statement.where(Memory.kind == kind)
+    if keyword:
+        statement = statement.where(
+            (Memory.title.ilike(f"%{keyword}%"))
+            | (Memory.description.ilike(f"%{keyword}%"))
+            | (Memory.location.ilike(f"%{keyword}%"))
+        )
+
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
-    memories = db.scalars(statement.order_by(Memory.created_at.desc())).all()
+    photo_count = (
+        db.scalar(
+            select(func.count()).select_from(
+                statement.where(Memory.kind == MemoryKind.PHOTO).subquery()
+            )
+        )
+        or 0
+    )
+    video_count = total - photo_count
+    memories = db.scalars(
+        statement.order_by(Memory.created_at.desc())
+        .order_by(Memory.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
 
     return AdminMemoryListResponse(
-        items=[to_memory_read(memory) for memory in memories], total=total
+        items=[to_memory_read(memory) for memory in memories],
+        total=total,
+        page=page,
+        page_size=page_size,
+        counts=MemoryCounts(photo=photo_count, video=video_count),
     )
 
 
