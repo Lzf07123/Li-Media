@@ -173,8 +173,8 @@ def test_remote_thumbnail_enforces_source_and_temporary_file_limits(
         kind=MemoryKind.VIDEO,
         memory_id=uuid.uuid4(),
         max_size=240,
-    ) == "generated"
-    assert seen_sizes == [300]
+    ) is None
+    assert seen_sizes == []
 
 
 def test_startup_removes_orphaned_remote_temporary_files(tmp_path) -> None:

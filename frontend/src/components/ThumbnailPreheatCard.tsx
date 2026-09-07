@@ -30,7 +30,7 @@ export default function ThumbnailPreheatCard({
   isStarting,
   onStart,
 }: ThumbnailPreheatCardProps) {
-  const [maxSize, setMaxSize] = useState<(typeof sizes)[number]>("480");
+  const [maxSize, setMaxSize] = useState<(typeof sizes)[number]>("240");
   const [kind, setKind] = useState<"" | "photo" | "video">("");
   const [limit, setLimit] = useState("24");
   const isJobActive = job?.status === "queued" || job?.status === "running";

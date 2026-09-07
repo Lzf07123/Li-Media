@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.core.config import Settings
@@ -164,6 +164,7 @@ def _candidate_pairs(
             MemoryFile.source == "baidupan",
             MemoryFile.remote_id.is_not(None),
         )
+        .order_by(case((Memory.kind == MemoryKind.PHOTO, 0), else_=1))
         .order_by(Memory.captured_at.desc().nulls_last())
         .order_by(Memory.updated_at.desc())
         .limit(limit)

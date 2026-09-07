@@ -13,6 +13,9 @@ from app.core.config import Settings, get_settings
 from app.services.baidu_oauth import get_baidu_access_token
 
 
+MEDIA_USER_AGENT = "netdisk; BaiduNetdisk"
+
+
 class BaiduPanError(RuntimeError):
     """Raised when Baidu Pan returns an unusable response."""
 
@@ -208,8 +211,7 @@ class BaiduPanClient:
         """
 
         headers: dict[str, str] = {
-            "Authorization": f"bearer {self._settings.baidu_access_token}",
-            "User-Agent": "Li&Media",
+            "User-Agent": MEDIA_USER_AGENT,
         }
         if range_header:
             headers["Range"] = range_header
@@ -311,7 +313,7 @@ class BaiduPanClient:
                 url,
                 headers={
                     "Range": "bytes=0-0",
-                    "User-Agent": "Mozilla/5.0",
+                    "User-Agent": MEDIA_USER_AGENT,
                 },
                 follow_redirects=True,
                 timeout=httpx.Timeout(10, read=15),

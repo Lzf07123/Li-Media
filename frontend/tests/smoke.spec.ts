@@ -380,7 +380,6 @@ test("remote video playback failure can be retried", async ({ page }) => {
   await page.goto(`/memories/${memoryId}`);
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await page.getByRole("button", { name: "播放视频" }).click();
-  await page.getByRole("button", { name: "回退服务器播放" }).click();
   await expect(page.getByText("视频播放失败").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "重试" }).first()).toBeVisible();
 });

@@ -19,7 +19,6 @@ import { createPortal } from "react-dom";
 
 import VideoPlayer from "@/components/VideoPlayer";
 import {
-  getMediaDirectLink,
   resolveMediaUrl,
   resolveThumbnailUrl,
   type MemorySummary,
@@ -42,54 +41,6 @@ type PlaybackSource = {
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 
-type CachedPlaybackLink = {
-  directUrl: string;
-  expiresAt: string | null;
-};
-
-const playbackLinkCache = new Map<string, CachedPlaybackLink>();
-const playbackLinkRequests = new Map<string, Promise<CachedPlaybackLink>>();
-
-function isPlaybackLinkFresh(link: CachedPlaybackLink): boolean {
-  if (!link.expiresAt) {
-    return false;
-  }
-
-  const expiresAt = Date.parse(link.expiresAt);
-  return Number.isFinite(expiresAt) && expiresAt - Date.now() > 30_000;
-}
-
-async function getPlaybackLink(
-  memoryId: string,
-  forceRefresh = false,
-): Promise<CachedPlaybackLink> {
-  const cached = playbackLinkCache.get(memoryId);
-  if (!forceRefresh && cached && isPlaybackLinkFresh(cached)) {
-    return cached;
-  }
-
-  const pending = playbackLinkRequests.get(memoryId);
-  if (pending) {
-    return pending;
-  }
-
-  const request = getMediaDirectLink(memoryId, "play")
-    .then((link) => {
-      const cachedLink: CachedPlaybackLink = {
-        directUrl: link.direct_url,
-        expiresAt: link.expires_at,
-      };
-      playbackLinkCache.set(memoryId, cachedLink);
-      return cachedLink;
-    })
-    .finally(() => {
-      playbackLinkRequests.delete(memoryId);
-    });
-
-  playbackLinkRequests.set(memoryId, request);
-  return request;
-}
-
 export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -97,8 +48,6 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
   const pinchOrigin = useRef<{ distance: number; zoom: number } | null>(null);
   const playbackTask = useRef(0);
   const isStartingPlayback = useRef(false);
-  const recoveredDirectLink = useRef(false);
-  const isRecoveringPlayback = useRef(false);
   const downloadRetried = useRef(false);
   const isRefreshingDownload = useRef(false);
 
@@ -114,8 +63,6 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
 
   const [playbackSource, setPlaybackSource] = useState<PlaybackSource | null>(null);
   const [playbackState, setPlaybackState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [directLinkFailed, setDirectLinkFailed] = useState(false);
-
   const [downloadState, setDownloadState] = useState<"idle" | "loading" | "error">("idle");
   const [posterSize, setPosterSize] = useState<"480" | "1280">(() => {
     return window.matchMedia("(max-width: 767px)").matches ? "480" : "1280";
@@ -397,84 +344,20 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     }
   };
 
-  const startPlayback = async (
-    useServerFallback = false,
-    forceRefresh = false,
-  ) => {
-    if (isStartingPlayback.current || isRecoveringPlayback.current) {
+  const startPlayback = async () => {
+    if (isStartingPlayback.current) {
       return;
     }
 
     const taskId = playbackTask.current + 1;
     playbackTask.current = taskId;
     isStartingPlayback.current = true;
-    setDirectLinkFailed(false);
-
-    if (useServerFallback) {
-      setPlaybackState("loading");
-      setPlaybackSource({ kind: "server", src: resolveMediaUrl(memory.file_url) });
-      isStartingPlayback.current = false;
-      return;
-    }
-
     setPlaybackState("loading");
-    try {
-      const link = await getPlaybackLink(memory.id, forceRefresh);
-      if (taskId !== playbackTask.current) {
-        return;
-      }
-      recoveredDirectLink.current = false;
-      if (playbackSource?.src !== link.directUrl) {
-        setPlaybackSource({ kind: "direct", src: link.directUrl });
-      }
-    } catch {
-      if (taskId !== playbackTask.current) {
-        return;
-      }
-      setPlaybackState("idle");
-      setDirectLinkFailed(true);
-    } finally {
-      isStartingPlayback.current = false;
-    }
-  };
-
-  const recoverPlayback = async (brokenUrl: string) => {
-    const taskId = playbackTask.current;
-    setPlaybackSource(null);
-    setPlaybackState("loading");
-    try {
-      const link = await getPlaybackLink(memory.id, true);
-      if (link.directUrl === brokenUrl || taskId !== playbackTask.current) {
-        playbackTask.current += 1;
-        setPlaybackState("loading");
-        setPlaybackSource({ kind: "server", src: resolveMediaUrl(memory.file_url) });
-        return;
-      }
-
-      recoveredDirectLink.current = true;
-      setPlaybackState("loading");
-      setPlaybackSource({ kind: "direct", src: link.directUrl });
-    } catch {
-      playbackTask.current += 1;
-      setPlaybackState("loading");
-      setPlaybackSource({ kind: "server", src: resolveMediaUrl(memory.file_url) });
-    } finally {
-      isRecoveringPlayback.current = false;
-    }
+    setPlaybackSource({ kind: "server", src: resolveMediaUrl(memory.file_url) });
+    isStartingPlayback.current = false;
   };
 
   const handleVideoSourceError = (source: PlaybackSource) => {
-    if (source.kind === "direct" && !recoveredDirectLink.current) {
-      if (isRecoveringPlayback.current) {
-        return;
-      }
-
-      isRecoveringPlayback.current = true;
-      recoveredDirectLink.current = true;
-      void recoverPlayback(source.src);
-      return;
-    }
-
     setPlaybackState("error");
   };
 
@@ -486,11 +369,9 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     isRefreshingDownload.current = true;
     setDownloadState("loading");
     try {
-      const link = await getMediaDirectLink(memory.id, "download");
       const anchor = document.createElement("a");
-      anchor.href = link.direct_url;
+      anchor.href = resolveMediaUrl(memory.file_url);
       anchor.rel = "noopener noreferrer";
-      anchor.target = "_blank";
       anchor.download = memory.primary_file?.filename || `limedia-${memory.id}`;
       document.body.appendChild(anchor);
       anchor.click();
@@ -498,28 +379,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
       downloadRetried.current = false;
       setDownloadState("idle");
     } catch {
-      if (downloadRetried.current) {
-        setDownloadState("error");
-        return;
-      }
-
-      downloadRetried.current = true;
-      setDownloadState("idle");
-      try {
-        const link = await getMediaDirectLink(memory.id, "download");
-      const anchor = document.createElement("a");
-      anchor.href = link.direct_url;
-      anchor.rel = "noopener noreferrer";
-      anchor.target = "_blank";
-      anchor.download = memory.primary_file?.filename || `limedia-${memory.id}`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      downloadRetried.current = false;
-      setDownloadState("idle");
-      } catch {
-        setDownloadState("error");
-      }
+      setDownloadState("error");
     } finally {
       isRefreshingDownload.current = false;
     }
@@ -528,13 +388,10 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
   useEffect(() => {
     playbackTask.current += 1;
     isStartingPlayback.current = false;
-    recoveredDirectLink.current = false;
-    isRecoveringPlayback.current = false;
     isRefreshingDownload.current = false;
     downloadRetried.current = false;
     setPlaybackSource(null);
     setPlaybackState("idle");
-    setDirectLinkFailed(false);
     setDownloadState("idle");
 
     return () => {
@@ -591,29 +448,18 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
               </>
             )}
           </div>
-          {playbackState === "loading" || directLinkFailed || playbackState === "error" ? (
+          {playbackState === "loading" || playbackState === "error" ? (
             <div aria-live="assertive" className="video-playback-overlay">
               {playbackState === "loading" ? (
                 <p className="video-playback-message">
                   <span className="spinner text-primary" />
                   <span>{brand.copy.viewerPreparingPlayback}</span>
                 </p>
-              ) : directLinkFailed ? (
-                <>
-                  <p>{brand.copy.viewerDirectLinkFailed}</p>
-                  <button
-                    aria-label={brand.copy.viewerUseServerFallback}
-                    onClick={() => void startPlayback(true)}
-                    type="button"
-                  >
-                    {brand.copy.viewerUseServerFallback}
-                  </button>
-                </>
               ) : (
                 <>
                   <p>{brand.copy.detailPlaybackFailed}</p>
                   <button
-                    onClick={() => void startPlayback(false, playbackSource?.kind === "direct")}
+                    onClick={() => void startPlayback()}
                     type="button"
                   >
                     {brand.copy.detailRetry}

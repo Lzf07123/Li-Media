@@ -47,7 +47,7 @@ def create_remote_thumbnail(
             return None
 
         try:
-            status_code, _, _, _, stream = client.open_stream(
+            status_code, content_length, _, _, stream = client.open_stream(
                 remote_id,
                 range_header=None,
             )
@@ -57,6 +57,10 @@ def create_remote_thumbnail(
 
         if status_code is not None and status_code >= 400:
             record_failure(DerivativeFailureKind.REMOTE_UNAVAILABLE.value)
+            return None
+
+        if content_length is not None and content_length > max_source_bytes:
+            record_failure(DerivativeFailureKind.SOURCE_TRUNCATED.value)
             return None
 
         register_temporary_path(temporary_path.resolve())
@@ -76,7 +80,7 @@ def create_remote_thumbnail(
                 written_bytes += len(chunk)
                 if written_bytes >= max_source_bytes:
                     record_failure(DerivativeFailureKind.SOURCE_TRUNCATED.value)
-                    break
+                    return None
 
         if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
             record_failure(DerivativeFailureKind.TEMPORARY_EMPTY.value)

@@ -100,7 +100,7 @@ Snapshot -> Verify invariants -> Pick highest P0/P1 gap -> One reversible change
 | 远程索引文件 | 65 | `baidupan` 来源。 |
 | 索引总大小 | 5.45 GiB | 最大单文件约 0.94 GiB。 |
 | 派生状态 | 26 ready / 39 failed | 2026-09-07 受控复现成功 1 条；39 条仍待复现分类。 |
-| backend 内存 | 256m 硬上限 | 2026-09-07 受控派生后 cgroup peak 207.99m，未 OOM 但超过 200m 安全目标。 |
+| backend 内存 | 256m 硬上限 | 2026-09-07 视频派生安全跳过验证后 cgroup peak 123.21m；此前大视频预热曾触顶并产生 559MB tmp。 |
 | 派生并发 / 队列 | 1 / 32 | 保护 256m 上限；不能因 429 直接提高并发。 |
 | 前端图像并发 | 2 | 首页可见卡片排队请求 240px，查看器高优先级。 |
 | 已知格式风险 | MOV | 16 MiB 截断会缺 `moov atom`；视频首帧需要更大的临时源或专用探针。 |
@@ -248,6 +248,7 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 | I5 | 服务端是否残留源资源？ | 审计 DB `source_path`、`media/photos`、源媒体扩展名和 BLOB。 | Source Zero = 2 分；无 PNG/JPG/MOV/MP4 源文件。 | 2026-09-07：DB 65 条 `baidupan` 且 `source_path=0`；但 `media/photos` 发现 3 PNG + 1 ICO 历史遗留。 | 清理遗留文件，并把 Source Zero 审计加入每轮闭环。 |
 | I6 | 清理后能否由启动审计和测试门禁持续证明 Source Zero？ | 确认 65 条记录 `source_path=0`；删除 4 个历史遗留文件；新增 DB/文件/Pydantic/API 审计并接入启动日志与 pytest；重建 backend 后走真实 Nginx 链路。 | `photos/videos/tmp=0`、源媒体文件与 BLOB 为 0、DB `source_path=0`；四容器 healthy；真实浏览器无播放前视频请求。 | 2026-09-07：`source_zero.compliant=true`；文件计数 `photos=0,videos=0,tmp=0,thumbnails=58`；cgroup peak 129.8m，OOM=0；健康/列表/详情/240 WebP/直链 `no-store` 通过；真实 Chrome 打开视频查看器且 `direct-url`、`file` 请求均为 0。 | 采纳；G0 当前轮=2。后续快照必须携带 `source_zero`，下一实验转向 I1 失败分类。 |
 | I7 | 40 条派生失败能否从“统一 failed”变成可归因分类？ | 新增 `thumbnail_failure_kind` 迁移、异常分类器、失败 sink、状态分组与后台文案；迁移 0008 后重建真实容器，对最小失败 JPEG 做 1 条受控复现。 | 新失败必须落库分类；后台按类分组；受控重试可成功且有资源指标；不输出直链和凭证。 | 2026-09-07：迁移通过；65 个 pytest、24 个 Playwright、真实 Nginx/Chrome 播放边界通过；受控 1.4MB JPEG 生成 240px，`tmp=0`，ready 26 / failed 39，39 条历史失败仍 `unclassified`；cgroup peak 207.99m，OOM=0。 | 采纳分类器；因峰值超过 200m，不做批量重试，继续观察资源并优先设计低内存复现/独立 worker。 |
+| I8 | 视频短链 403、大视频预热 OOM、CSS 瀑布流空洞能否一次收敛？ | 实测直链：浏览器 UA + Range 返回 403，`netdisk; BaiduNetdisk` UA 返回 206；UI 播放/下载改为服务端 `/file` 流；backend 媒体 UA 同步修正；超过 64MB 的视频派生先按 `source_truncated` 跳过；预热照片优先并默认 240px；首页改为 JS 分列网格和加载占位。 | 播放不请求 Baidu 直链且服务端支持 Range；大视频不下载、不生成 tmp；四容器 healthy；Playwright/真实 Chrome 通过；画布列数稳定。 | 2026-09-07：`/file?Range=0-1` 返回 206、`video/quicktime`、`no-store`；真实 Chrome 打开视频时 `direct-url=0` 且 `/file` 有请求；1.01GB 视频派生立即返回 `source_truncated`、`tmp=0`；backend cgroup peak 123.21m；24 个 Playwright 通过，1280 视口实测 5 列。 | 采纳；浏览器无法设置百度要求的媒体 UA，因此播放与下载默认走服务端流。若要恢复直链，需要百度放宽 UA 或引入专用播放代理。 |
 
 ## 11. 当前优先级
 
