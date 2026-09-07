@@ -251,11 +251,12 @@ Ledger 只追加，不重写历史。每轮的结论会改变下一轮优先级�
 | I8 | 视频短链 403、大视频预热 OOM、CSS 瀑布流空洞能否一次收敛？ | 实测直链：浏览器 UA + Range 返回 403，`netdisk; BaiduNetdisk` UA 返回 206；UI 播放/下载改为服务端 `/file` 流；backend 媒体 UA 同步修正；超过 64MB 的视频派生先按 `source_truncated` 跳过；预热照片优先并默认 240px；首页改为 JS 分列网格和加载占位。 | 播放不请求 Baidu 直链且服务端支持 Range；大视频不下载、不生成 tmp；四容器 healthy；Playwright/真实 Chrome 通过；画布列数稳定。 | 2026-09-07：`/file?Range=0-1` 返回 206、`video/quicktime`、`no-store`；真实 Chrome 打开视频时 `direct-url=0` 且 `/file` 有请求；1.01GB 视频派生立即返回 `source_truncated`、`tmp=0`；backend cgroup peak 123.21m；24 个 Playwright 通过，1280 视口实测 5 列。 | 采纳；浏览器无法设置百度要求的媒体 UA，因此播放与下载默认走服务端流。若要恢复直链，需要百度放宽 UA 或引入专用播放代理。 |
 | I9 | 预热是否还会反复处理格式限制项？ | 将候选按公开首页列表顺序排序，并在 SQL 候选层排除 `source_truncated`、`mov_moov`、编码/图片格式不支持；用真实 DB 检查候选顺序并执行 12 条小批量预热。 | 候选不包含已证明的格式限制项；顺序对齐首页；批量任务完成且无 OOM/tmp。 | 2026-09-07：四容器 healthy；候选顺序为公开列表顺序；12/12 全部 cached、failed=0、`tmp=0`；cgroup peak 136.71m，OOM=0；65 个 pytest 和工程门禁通过。 | 采纳；下一轮再做预热取消/恢复和真实冷缓存成功率对比。 |
 | I10 | 管理接口与页面能否支撑 `N` 增长？ | `/admin/memories` 增加 page/page_size、类型筛选、标题/描述/地点搜索、分页计数；管理页补筛选、搜索、每页 20/50/100 和分页控件；用真实 Nginx 管理会话验证。 | 单页响应有硬上限 100；响应不随 N 全量展开；筛选计数正确；页面可分页。 | 2026-09-07：真实请求 `page=1&page_size=2` 返回 total=65、items=2、counts 48/17；第 2 页 items=2；`kind=video` 返回 total=17；67 个 pytest、前端 typecheck/build 通过。 | 采纳；P1 管理列表无界返回风险已消除，批量/导出仍受显式 ID 数组上限 100 保护。 |
+| I11 | 每轮是否能用一条命令拿到可比快照？ | 新增 `backend/scripts/system_snapshot.py` 与可测试的 `collect_system_snapshot`，输出总量/published/类型、索引大小 p50/p90/p95/p99、派生状态与失败分类、最近扫描、预热状态、Source Zero 和资源指标。 | 脚本在真实容器可执行；输出 JSON 且不泄露直链/凭证；Source Zero 和资源门禁可读。 | 2026-09-07：真实容器执行成功；65 条、5.45GiB、p90 411.6MB、p99 1.01GB、59 ready / 6 failed、Source Zero true、tmp=0；68 个 pytest 与工程门禁通过。 | 采纳；每轮开始/结束以该命令作为标准快照。 |
 
 ## 11. 当前优先级
 
 1. 给预热任务补齐取消、恢复和真实冷缓存成功率对比。
-2. 建立标准资源盘点快照命令，输出索引大小分位数、派生状态、扫描/预热状态和资源指标。
+2. 给预热任务补齐取消/恢复，并在冷缓存样本上对比首屏成功率。
 3. 人工检查剩余 1 条 `unknown` MOV 的编码/容器限制，确认是否可安全生成海报。
 4. 只有当以上数据证明需要跨进程治理时，才迁移到独立 worker 或外部队列。
 5. 每轮快照继续携带 Source Zero 审计；若出现新的源文件或 `source_path`，先回到本项再继续性能实验。
