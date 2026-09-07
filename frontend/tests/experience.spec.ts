@@ -630,7 +630,7 @@ test("24 media page stays within load, transfer and layout-shift budgets", async
 
   expect(metrics.firstPaint).toBeLessThan(3000);
   expect(metrics.transferBytes).toBeLessThan(2 * 1024 * 1024);
-  expect(metrics.layoutShift).toBeLessThan(0.1);
+  expect(metrics.layoutShift).toBeLessThan(0.05);
 });
 
 test("photo viewer selects card and viewer sizes by viewport", async ({ page }) => {
