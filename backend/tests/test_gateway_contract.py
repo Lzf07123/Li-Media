@@ -58,6 +58,11 @@ def test_nginx_excludes_private_media_from_cache() -> None:
     assert "proxy_cache_key" in nginx
     assert "$http_accept" in nginx
     assert "proxy_cache_bypass $limedia_has_authorization $limedia_has_cookie" in nginx
+    assert "proxy_no_cache $limedia_has_authorization $limedia_has_cookie" in nginx
+    assert 'map "$limedia_has_authorization$limedia_has_cookie" $limedia_list_cache_control' in nginx
+    assert '"00" "public, max-age=15, stale-while-revalidate=30";' in nginx
+    assert "proxy_hide_header Cache-Control;" in nginx
+    assert "add_header Cache-Control $limedia_list_cache_control always;" in nginx
     assert "proxy_cache off" in nginx
     assert "proxy_cache_use_stale error timeout invalid_header updating http_500 http_502 http_503 http_504" in nginx
     assert "proxy_cache_background_update on" in nginx
