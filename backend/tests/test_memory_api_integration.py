@@ -82,6 +82,7 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
         baidu_oauth_client_secret="test-client-secret",
         baidu_credentials_path=str(tmp_path / "baidu-token.json"),
         baidu_sync_dir="/apps/Li&Media",
+        public_base_url="http://127.0.0.1:8080",
         admin_login_base_delay=0,
         admin_login_max_delay=0,
     )

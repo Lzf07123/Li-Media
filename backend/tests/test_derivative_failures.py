@@ -1,5 +1,8 @@
 import subprocess
 import uuid
+from pathlib import Path
+
+from app.core.config import Settings
 
 from app.models.memory import MemoryKind
 
@@ -46,7 +49,13 @@ def test_remote_thumbnail_records_rate_limit_failure(tmp_path) -> None:
     assert failure_sink == {"kind": "baidu_rate_limited"}
 
 
-def test_large_quicktime_source_is_classified_as_mov_moov(tmp_path) -> None:
+def test_large_quicktime_source_is_classified_as_mov_moov(tmp_path, monkeypatch) -> None:
+    # Container images and deployment .env files may raise the video source cap;
+    # this test targets the 64MB classification boundary, not deployment limits.
+    monkeypatch.setattr(
+        "app.services.remote_thumbnails.get_settings",
+        lambda: Settings(remote_thumbnail_video_source_max_bytes=64 * 1024 * 1024),
+    )
     failure_sink: dict[str, str] = {}
     result = create_remote_thumbnail(
         LargeRemoteClient(),
