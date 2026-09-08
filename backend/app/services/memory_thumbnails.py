@@ -86,6 +86,15 @@ def _create_photo_thumbnail(
     max_size: int,
     quality: int,
 ) -> None:
+    if _is_webp_source(source_path):
+        _create_photo_thumbnail_with_ffmpeg(
+            source_path,
+            output_path,
+            temporary_path,
+            max_size=max_size,
+        )
+        return
+
     with Image.open(source_path) as source_image:
         source_image.draft("RGB", (max_size, max_size))
         image = ImageOps.exif_transpose(source_image)
@@ -96,6 +105,51 @@ def _create_photo_thumbnail(
         image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
         image.save(temporary_path, format="WEBP", quality=quality, method=4)
 
+    temporary_path.replace(output_path)
+
+
+def _is_webp_source(source_path: Path) -> bool:
+    try:
+        with source_path.open("rb") as source_file:
+            header = source_file.read(12)
+    except OSError:
+        return False
+    return len(header) == 12 and header[:4] == b"RIFF" and header[8:] == b"WEBP"
+
+
+def _create_photo_thumbnail_with_ffmpeg(
+    source_path: Path,
+    output_path: Path,
+    temporary_path: Path,
+    *,
+    max_size: int,
+) -> None:
+    settings = get_settings()
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-threads",
+        "1",
+        "-i",
+        str(source_path),
+        "-frames:v",
+        "1",
+        "-map",
+        "v:0",
+        "-vf",
+        (
+            f"scale='if(gt(iw,ih),min({max_size},iw),-2)':"
+            f"'if(gt(iw,ih),-2,min({max_size},ih))'"
+        ),
+        str(temporary_path),
+    ]
+
+    subprocess.run(command, check=True, capture_output=True, timeout=30)
+    task_metrics.record_child_peak_kbytes(getrusage(RUSAGE_CHILDREN).ru_maxrss)
     temporary_path.replace(output_path)
 
 
