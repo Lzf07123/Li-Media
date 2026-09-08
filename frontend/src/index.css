@@ -2593,9 +2593,13 @@ html {
 }
 
 .canvas-loading {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  row-gap: 4px;
+  text-align: center;
   min-height: 40px;
   color: var(--limedia-muted);
   font-size: 0.8rem;

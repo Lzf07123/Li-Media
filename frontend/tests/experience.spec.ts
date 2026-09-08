@@ -592,6 +592,19 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
     .poll(() => requestedPages.filter((pageNumber) => pageNumber === 3).length)
     .toBe(1);
   await expect(page.getByRole("button", { name: "重试加载" })).toBeVisible();
+  const loadingStyle = await page.evaluate(() => {
+    const canvas = document.querySelector(".infinite-canvas")!.getBoundingClientRect();
+    const row = document.querySelector(".canvas-loading") as HTMLElement;
+    const style = getComputedStyle(row);
+    return {
+      widthRatio: row.getBoundingClientRect().width / canvas.width,
+      display: style.display,
+      justifyContent: style.justifyContent,
+    };
+  });
+  expect(loadingStyle.display).toBe("flex");
+  expect(loadingStyle.justifyContent).toBe("center");
+  expect(loadingStyle.widthRatio).toBeCloseTo(1, 2);
 });
 
 test("thumbnail image loads are queued with bounded concurrency", async ({ page }) => {
