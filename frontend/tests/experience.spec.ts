@@ -254,6 +254,30 @@ test("home card shimmer is disabled under reduced motion", async ({ page }) => {
   );
 });
 
+test("home skeleton matches masonry columns and media frames", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  await page.route("**/thumbnail*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      body: Buffer.from(pngBase64, "base64"),
+      contentType: "image/webp",
+    });
+  });
+
+  await page.setViewportSize({ width: 375, height: 720 });
+  await page.goto("/");
+  await expect(page.locator(".masonry > .canvas-column")).toHaveCount(2);
+  await expect(
+    page.locator(".masonry > .canvas-column").first().locator(".media-frame"),
+  ).toBeVisible();
+
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await expect(page.locator(".masonry > .canvas-column")).toHaveCount(4);
+  await expect(
+    page.locator(".masonry > .canvas-column").first().locator(".post-card").first(),
+  ).toBeVisible();
+});
+
 test("large viewer navigates with arrows and keyboard", async ({ page }) => {
   const items = ["第一张", "第二张", "第三张"].map((title, index) => ({
     ...memory,

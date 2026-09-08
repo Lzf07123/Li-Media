@@ -342,6 +342,7 @@ export const brand = {
     adminResourceQueueDepth: "排队任务",
     adminResourceChildPeak: "子进程峰值",
     adminResourceOom: "OOM 事件",
+    adminWorkloadTitle: "运行负载",
     adminQueueTitle: "任务队列",
     adminQueueActive: "进行中",
     adminQueueQueued: "排队",

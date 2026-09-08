@@ -15,6 +15,9 @@ type MemoryCardProps = {
   onOpen: (memoryId: string) => void;
 };
 
+const AUTO_RETRY_LIMIT = 3;
+const AUTO_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+
 export default function MemoryCard({ memory, onOpen, priority = false }: MemoryCardProps) {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
@@ -25,9 +28,12 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   const [isInView, setIsInView] = useState(priority);
   const imageRef = useRef<HTMLImageElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const [retryUrl, setRetryUrl] = useState<string | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "240");
   const thumbnailSrcSet = resolveThumbnailSrcSet(memory.thumbnail_url);
+  const thumbnailRetryUrl = retryAttempt > 0
+    ? `${thumbnailUrl}&retry=${retryAttempt}`
+    : null;
   const knownSize = memory.width && memory.height
     ? { width: memory.width, height: memory.height }
     : null;
@@ -93,18 +99,23 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   }, [priority]);
 
   useEffect(() => {
+    setRetryAttempt(0);
+  }, [thumbnailUrl]);
+
+  useEffect(() => {
     if (!thumbnailUrl || !isIntersecting) {
       setQueuedThumbnailUrl(null);
       return;
     }
 
     const controller = new AbortController();
+    let autoRetryTimer = 0;
     setLoadState("loading");
     setThumbnailFailed(false);
     setNaturalSize(null);
     setQueuedThumbnailUrl(null);
 
-    loadQueuedImage(thumbnailUrl, {
+    loadQueuedImage(thumbnailRetryUrl ?? thumbnailUrl, {
       priority: priority ? "high" : "normal",
       retries: 4,
       signal: controller.signal,
@@ -125,10 +136,22 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
         }
         setLoadState("error");
         setThumbnailFailed(true);
+
+        if (retryAttempt < AUTO_RETRY_LIMIT) {
+          autoRetryTimer = window.setTimeout(() => {
+            if (controller.signal.aborted) {
+              return;
+            }
+            setRetryAttempt(retryAttempt + 1);
+          }, AUTO_RETRY_DELAYS_MS[retryAttempt]);
+        }
       });
 
-    return () => controller.abort();
-  }, [isIntersecting, priority, thumbnailUrl]);
+    return () => {
+      controller.abort();
+      window.clearTimeout(autoRetryTimer);
+    };
+  }, [isIntersecting, priority, retryAttempt, thumbnailRetryUrl, thumbnailUrl]);
 
   useEffect(() => {
     if (loadState !== "loading") {
@@ -150,12 +173,11 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
       return;
     }
 
-    const retryUrl = `${thumbnailUrl}&retry=${Date.now()}`;
     setLoadState("loading");
     setThumbnailFailed(false);
     setNaturalSize(null);
     setQueuedThumbnailUrl(null);
-    setRetryUrl(retryUrl);
+    setRetryAttempt((current) => current + 1);
   };
 
   return (
@@ -166,7 +188,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
         onClick={() => onOpen(memory.id)}
         type="button"
       >
-      {thumbnailUrl && (!thumbnailFailed || retryUrl) ? (
+      {thumbnailUrl && (!thumbnailFailed || thumbnailRetryUrl) ? (
         <span className="post-cover-link block media-frame" style={mediaStyle}>
           {thumbnailUrl ? (
             <span
@@ -190,7 +212,6 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
             onError={() => {
               setLoadState("error");
               setThumbnailFailed(true);
-              setRetryUrl(null);
             }}
             onLoad={(event) => {
               const image = event.currentTarget;
@@ -201,9 +222,11 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
             srcSet={
-              loadState === "ready" && !retryUrl ? thumbnailSrcSet ?? undefined : undefined
+              loadState === "ready" && !thumbnailRetryUrl
+                ? thumbnailSrcSet ?? undefined
+                : undefined
             }
-            src={retryUrl ?? queuedThumbnailUrl ?? undefined}
+            src={thumbnailRetryUrl ?? queuedThumbnailUrl ?? undefined}
             ref={imageRef}
             width={memory.width ?? undefined}
           />
