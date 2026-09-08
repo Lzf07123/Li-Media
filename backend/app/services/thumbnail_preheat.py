@@ -258,9 +258,10 @@ def _candidate_pairs(
     *,
     kind: MemoryKind | None,
     limit: int,
-    max_size: int = HOME_PREHEAT_SIZE,
+    sizes: tuple[int, ...] | list[int] | None = None,
     derivative_version: str | None = None,
 ) -> list[tuple[UUID, UUID]]:
+    selected_sizes = tuple(dict.fromkeys(sizes or (HOME_PREHEAT_SIZE,)))
     statement = (
         select(Memory.id, MemoryFile.id)
         .join(MemoryFile, Memory.files)
@@ -286,19 +287,22 @@ def _candidate_pairs(
         | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS)
     )
     version = derivative_version or get_settings().media_derivative_version
-    ready_cache = exists(
-        select(MemoryDerivativeCache.id).where(
-            MemoryDerivativeCache.memory_file_id == MemoryFile.id,
-            MemoryDerivativeCache.max_size == max_size,
-            MemoryDerivativeCache.derivative_version == version,
-            MemoryDerivativeCache.status == DerivativeCacheStatus.READY,
+    missing_conditions = []
+    for max_size in selected_sizes:
+        ready_cache = exists(
+            select(MemoryDerivativeCache.id).where(
+                MemoryDerivativeCache.memory_file_id == MemoryFile.id,
+                MemoryDerivativeCache.max_size == max_size,
+                MemoryDerivativeCache.derivative_version == version,
+                MemoryDerivativeCache.status == DerivativeCacheStatus.READY,
+            )
         )
-    )
-    legacy_cache = and_(
-        Memory.thumbnail_path.is_not(None),
-        Memory.thumbnail_path.endswith(f"/{version}/{max_size}.webp"),
-    )
-    statement = statement.where(~(ready_cache | legacy_cache))
+        legacy_cache = and_(
+            Memory.thumbnail_path.is_not(None),
+            Memory.thumbnail_path.endswith(f"/{version}/{max_size}.webp"),
+        )
+        missing_conditions.append(~(ready_cache | legacy_cache))
+    statement = statement.where(or_(*missing_conditions))
     ordered_statement = (
         statement.order_by(Memory.captured_at.desc().nulls_last())
         .order_by(Memory.updated_at.desc())
@@ -935,6 +939,7 @@ def run_thumbnail_preheat(
                 db,
                 kind=job.kind,
                 limit=job.limit,
+                sizes=job.sizes,
             )
         registry.mark_running(job_id, total=len(pairs))
 
