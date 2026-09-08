@@ -8,6 +8,8 @@ from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import Settings
+
 from app.db.session import Base, get_session_factory
 from app.main import app
 from app.models.memory import (
@@ -21,6 +23,8 @@ from app.models.memory import (
     RemoteFileState,
 )
 from app.services.thumbnail_preheat import _candidate_pairs
+from app.services.thumbnail_preheat import _process_pair
+from app.services.baidu_pan import BaiduPanError
 from tests.test_admin_security import configure_admin_app
 
 
@@ -177,3 +181,35 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             assert memory_file.thumbnail_state == RemoteThumbnailState.READY
     finally:
         app.dependency_overrides.clear()
+
+
+def test_remote_preheat_failure_is_classified(tmp_path: Path) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000010")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="webp sample",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+
+    class FailingClient:
+        def open_stream(self, remote_id: str, *, range_header: str | None):
+            raise BaiduPanError("百度网盘接口限流，请稍后重试")
+
+    failure_sink: dict[str, str] = {}
+    with session_factory() as db:
+        memory_file_id = db.scalar(select(MemoryFile.id))
+        outcome = _process_pair(
+            db,
+            memory_id=memory_id,
+            memory_file_id=memory_file_id,
+            settings=Settings(media_root=str(tmp_path / "media")),
+            max_size=240,
+            failure_sink=failure_sink,
+            client=FailingClient(),
+        )
+
+    assert outcome == "failed"
+    assert failure_sink["kind"] == DerivativeFailureKind.BAIDU_RATE_LIMITED.value
