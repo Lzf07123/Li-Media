@@ -262,7 +262,7 @@ def _candidate_pairs(
     derivative_version: str | None = None,
 ) -> list[tuple[UUID, UUID]]:
     statement = (
-        select(Memory.id, MemoryFile.id)
+        select(Memory.id, func.min(MemoryFile.id).label("primary_file_id"))
         .join(MemoryFile, Memory.files)
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
@@ -270,6 +270,7 @@ def _candidate_pairs(
             MemoryFile.remote_id.is_not(None),
         )
     )
+    statement = statement.group_by(Memory.id)
     statement = statement.where(
         MemoryFile.remote_state == RemoteFileState.READY,
         browser_playable_files_condition(),
@@ -317,7 +318,8 @@ def count_public_derivative_candidates(db: Session) -> int:
     """Count the same public display surface without leaking per-item data."""
 
     statement = (
-        select(func.count(distinct(MemoryFile.id)))
+        select(func.count(distinct(Memory.id)))
+        .select_from(MemoryFile)
         .join(Memory, MemoryFile.memory_id == Memory.id)
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
@@ -339,7 +341,8 @@ def count_public_derivative_cache_hits(
 
     version = derivative_version or get_settings().media_derivative_version
     statement = (
-        select(func.count(MemoryFile.id))
+        select(func.count(distinct(Memory.id)))
+        .select_from(MemoryFile)
         .join(Memory, MemoryFile.memory_id == Memory.id)
         .outerjoin(
             MemoryDerivativeCache,
@@ -374,7 +377,8 @@ def count_public_detail_derivative_cache_hits(db: Session) -> int:
 
     version = get_settings().media_derivative_version
     statement = (
-        select(func.count(distinct(MemoryFile.id)))
+        select(func.count(distinct(Memory.id)))
+        .select_from(MemoryFile)
         .join(Memory, MemoryFile.memory_id == Memory.id)
         .outerjoin(
             MemoryDerivativeCache,
