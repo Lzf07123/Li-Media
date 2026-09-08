@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
@@ -44,9 +45,10 @@ class BaiduListPage:
 class DownloadUrlCache:
     """Process-local cache for Baidu links; links must never reach storage."""
 
-    def __init__(self, ttl_seconds: int) -> None:
+    def __init__(self, ttl_seconds: int, max_entries: int) -> None:
         self._ttl_seconds = ttl_seconds
-        self._urls: dict[str, tuple[str, float]] = {}
+        self._urls: OrderedDict[str, tuple[str, float]] = OrderedDict()
+        self._max_entries = max(1, max_entries)
 
     def get(self, remote_id: str) -> str | None:
         entry = self.get_entry(remote_id)
@@ -69,10 +71,18 @@ class DownloadUrlCache:
             self._urls.pop(remote_id, None)
             return url
 
+        now = time.monotonic()
+        for key in list(self._urls):
+            entry = self._urls.get(key)
+            if entry is None or now >= entry[1]:
+                self._urls.pop(key, None)
+
         self._urls[remote_id] = (
             url,
-            time.monotonic() + max(1, self._ttl_seconds - 5),
+            now + max(1, self._ttl_seconds - 5),
         )
+        while len(self._urls) > self._max_entries:
+            self._urls.popitem(last=False)
         return url
 
     def invalidate(self, remote_id: str) -> None:
@@ -86,7 +96,8 @@ class DownloadUrlCache:
 
 
 download_url_cache = DownloadUrlCache(
-    get_settings().baidu_download_url_ttl_seconds
+    get_settings().baidu_download_url_ttl_seconds,
+    get_settings().baidu_download_url_cache_size,
 )
 
 

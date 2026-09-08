@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import get_settings
 from app.db.session import Base, get_db
 from app.main import app
 from app.models.memory import (
@@ -76,7 +77,7 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
     ) == {"status": "not_preheated", "processed": 0, "total": 1}
 
     queued_job, _ = registry.start(
-        max_size=480,
+        sizes=(240,),
         kind=None,
         limit=0,
         concurrency=1,
@@ -88,7 +89,7 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
     ) == {"status": "running", "processed": 0, "total": 1}
 
     running_job, _ = registry.start(
-        max_size=480,
+        sizes=(480,),
         kind=None,
         limit=0,
         concurrency=1,
@@ -100,7 +101,12 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
         latest_job=running_job,
     ) == {"status": "running", "processed": 0, "total": 1}
 
-    registry.mark_item_processed(running_job.id, outcome="cached")
+    registry.mark_item_processed(running_job.id, outcomes={240: "cached"})
+    with session_factory.begin() as session:
+        memory = session.get(Memory, memory_id)
+        memory.thumbnail_path = (
+            f"thumbnails/cached/{get_settings().media_derivative_version}/240.webp"
+        )
     registry.mark_completed(running_job.id)
     assert collect_public_preheat_status(
         session_factory(),
@@ -108,7 +114,7 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
     ) == {"status": "ready", "processed": 1, "total": 1}
 
     cancelled_job, _ = registry.start(
-        max_size=480,
+        sizes=(240,),
         kind=None,
         limit=0,
         concurrency=1,
@@ -119,10 +125,10 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
     assert collect_public_preheat_status(
         session_factory(),
         latest_job=cancelled_job,
-    )["status"] == "degraded"
+    )["status"] == "ready"
 
     failed_job, _ = registry.start(
-        max_size=480,
+        sizes=(240,),
         kind=None,
         limit=0,
         concurrency=1,
@@ -133,11 +139,7 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
     assert collect_public_preheat_status(
         session_factory(),
         latest_job=failed_job,
-    )["status"] == "degraded"
-
-    with session_factory.begin() as session:
-        memory = session.get(Memory, memory_id)
-        memory.thumbnail_path = "thumbnails/cached/240.webp"
+    )["status"] == "ready"
     assert collect_public_preheat_status(
         session_factory(),
         latest_job=None,

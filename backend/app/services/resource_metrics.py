@@ -5,8 +5,11 @@ from __future__ import annotations
 import shutil
 import resource
 import os
+import gc
 from time import monotonic
 from pathlib import Path
+
+from app.services.task_limits import temporary_registry_size
 
 
 def _read_int(path: str) -> int | None:
@@ -168,6 +171,13 @@ def collect_resource_metrics(
         "process": {
             **process,
             "pss_kbytes": _read_pss_kbytes(),
+        },
+        "garbage_collection": {
+            **dict(zip(("gen0", "gen1", "gen2"), gc.get_count())),
+            "collections": sum(item["collections"] for item in gc.get_stats()),
+        },
+        "temporary_registry": {
+            "paths": temporary_registry_size(),
         },
         "cgroup": {
             "memory_current_bytes": _read_int("/sys/fs/cgroup/memory.current"),

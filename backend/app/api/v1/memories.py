@@ -59,6 +59,18 @@ _stream_users: dict[str, int] = {}
 _stream_users_lock = Lock()
 
 
+def _public_memory_statement():
+    return select(Memory).where(
+        Memory.status == MemoryStatus.PUBLISHED,
+        Memory.files.any(
+            and_(
+                MemoryFile.source == "baidupan",
+                public_files_condition(),
+            )
+        ),
+    )
+
+
 def _task_http_error(exc: TaskRejected) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -74,19 +86,7 @@ def recommend_memories(
     limit: int = Query(default=8, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> list[MemorySummaryRead]:
-    statement = (
-        select(Memory)
-        .where(
-            Memory.status == MemoryStatus.PUBLISHED,
-            Memory.files.any(
-                and_(
-                    MemoryFile.source == "baidupan",
-                    public_files_condition(),
-                )
-            ),
-        )
-        .order_by(func.random())
-    )
+    statement = _public_memory_statement().order_by(func.random())
 
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
@@ -109,16 +109,7 @@ def list_memories(
     ),
     db: Session = Depends(get_db),
 ) -> MemorySummaryListResponse:
-    statement = (
-        select(Memory)
-        .join(Memory.files)
-        .where(
-            Memory.status == MemoryStatus.PUBLISHED,
-            MemoryFile.source == "baidupan",
-            public_files_condition(),
-        )
-        .distinct()
-    )
+    statement = _public_memory_statement()
 
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
@@ -140,6 +131,19 @@ def list_memories(
         or 0
     )
     video_count = total - photo_count
+
+    public_statement = _public_memory_statement()
+    public_total = db.scalar(
+        select(func.count()).select_from(public_statement.subquery())
+    ) or 0
+    public_photo_count = (
+        db.scalar(
+            select(func.count()).select_from(
+                public_statement.where(Memory.kind == MemoryKind.PHOTO).subquery()
+            )
+        )
+        or 0
+    )
 
     if sort == "captured_asc":
         primary_order = Memory.captured_at.asc().nulls_last()
@@ -165,6 +169,10 @@ def list_memories(
         page=page,
         page_size=page_size,
         counts=MemoryCounts(photo=photo_count, video=video_count),
+        public_counts=MemoryCounts(
+            photo=public_photo_count,
+            video=public_total - public_photo_count,
+        ),
     )
 
 
@@ -172,16 +180,7 @@ def list_memories(
 def get_public_media_counts(db: Session = Depends(get_db)) -> PublicMediaCounts:
     """One authoritative count for every publicly browsable photo and video."""
 
-    statement = (
-        select(Memory)
-        .join(Memory.files)
-        .where(
-            Memory.status == MemoryStatus.PUBLISHED,
-            MemoryFile.source == "baidupan",
-            public_files_condition(),
-        )
-        .distinct()
-    )
+    statement = _public_memory_statement()
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     photo_count = (
         db.scalar(

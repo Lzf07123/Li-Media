@@ -109,6 +109,9 @@ const systemStatus = {
       thumbnail_missing: 0,
       thumbnail_failed: 0,
       thumbnail_failure_kinds: {},
+      home_derivative_ready: 1,
+      detail_derivative_ready: 0,
+      detail_derivative_total: 1,
       stream_ready: 1,
       stream_failed: 0,
     },
@@ -140,6 +143,8 @@ const systemStatus = {
       oom: 0,
       oom_kill: 0,
     },
+    garbage_collection: { gen0: 1, gen1: 0, gen2: 0, collections: 12 },
+    temporary_registry: { paths: 0 },
     temporary: {
       files: 0,
       bytes: 0,
@@ -170,7 +175,7 @@ const systemStatus = {
 
 const preheatJob = {
   id: "b1c32dd1-2dc8-4de9-a3b4-c96f94977865",
-  max_size: 480,
+  sizes: [480],
   kind: null,
   limit: 24,
   concurrency: 2,
@@ -185,6 +190,9 @@ const preheatJob = {
   created_at: "2026-09-07T08:00:00Z",
   started_at: "2026-09-07T08:00:01Z",
   completed_at: "2026-09-07T08:00:02Z",
+  source_bytes_downloaded: 0,
+  derivative_duration_ms: 124,
+  size_results: { "480": { generated: 2, cached: 1, failed: 0 } },
 };
 
 const adminListResponse = {
@@ -208,6 +216,7 @@ const memoryList = {
   page: 1,
   page_size: 24,
   counts: { photo: 1, video: 0 },
+  public_counts: { photo: 1, video: 0 },
 };
 
 async function mockAdminJobRoutes(page: Page) {
@@ -364,7 +373,7 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await page.getByRole("button", { name: "开始预热" }).click();
   await expect
     .poll(() => preheatPayload)
-    .toEqual({ max_size: "240", kind: "photo", limit: 0 });
+    .toEqual({ sizes: [240], kind: "photo", limit: 0 });
   await expect.poll(() => preheatRequests).toBeGreaterThan(1);
   await page.getByRole("button", { name: "刷新状态" }).click();
   await expect.poll(() => statusRequests).toBeGreaterThan(1);

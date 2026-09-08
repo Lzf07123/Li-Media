@@ -11,7 +11,7 @@ from app.services.thumbnail_preheat import (
 
 def test_registry_cancels_active_job_only_once() -> None:
     registry = ThumbnailPreheatRegistry()
-    job, _ = registry.start(max_size=240, kind=None, limit=1)
+    job, _ = registry.start(sizes=(240,), kind=None, limit=1)
 
     assert registry.request_cancel(job.id) is True
     assert job.cancel_event.is_set()
@@ -25,7 +25,7 @@ def test_registry_cancels_active_job_only_once() -> None:
 def test_preheat_uses_configured_worker_bound(monkeypatch) -> None:
     registry = ThumbnailPreheatRegistry()
     job, _ = registry.start(
-        max_size=240,
+        sizes=(240,),
         kind=None,
         limit=0,
         concurrency=3,
@@ -75,7 +75,7 @@ def test_preheat_uses_configured_worker_bound(monkeypatch) -> None:
 def test_preheat_cancels_pending_work_without_counting_it(monkeypatch) -> None:
     registry = ThumbnailPreheatRegistry()
     job, _ = registry.start(
-        max_size=240,
+        sizes=(240,),
         kind=None,
         limit=0,
         concurrency=1,
@@ -116,7 +116,7 @@ def test_preheat_cancels_pending_work_without_counting_it(monkeypatch) -> None:
 
 def test_run_preheat_returns_immediately_for_cancelled_job(monkeypatch) -> None:
     registry = ThumbnailPreheatRegistry()
-    job, _ = registry.start(max_size=240, kind=None, limit=1)
+    job, _ = registry.start(sizes=(240,), kind=None, limit=1)
     registry.request_cancel(job.id)
 
     def fail_candidates(*args, **kwargs):

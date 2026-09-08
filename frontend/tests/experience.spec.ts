@@ -47,6 +47,7 @@ const memoryList = {
   page: 1,
   page_size: 24,
   counts: { photo: 1, video: 0 },
+  public_counts: { photo: 1, video: 0 },
 };
 
 async function mockMemoryRoutes(page: Page, listResponse = memoryList) {

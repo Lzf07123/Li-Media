@@ -215,6 +215,7 @@ class TaskMetrics:
         self._counters: dict[str, int] = {}
         self._wait_total_ms = 0
         self._child_peak_kbytes = 0
+        self._gc_collected_objects = 0
 
     def record_started(self, task_type: TaskType) -> None:
         self._bump(f"{task_type.value}.started")
@@ -245,6 +246,10 @@ class TaskMetrics:
         with self._lock:
             self._child_peak_kbytes = max(self._child_peak_kbytes, value)
 
+    def record_gc(self, collected_objects: int) -> None:
+        with self._lock:
+            self._gc_collected_objects += max(0, collected_objects)
+
     def _bump(self, name: str) -> None:
         with self._lock:
             self._counters[name] = self._counters.get(name, 0) + 1
@@ -254,6 +259,7 @@ class TaskMetrics:
             counters = dict(self._counters)
             wait_total_ms = self._wait_total_ms
             child_peak = self._child_peak_kbytes
+            gc_collected_objects = self._gc_collected_objects
 
         limiters = task_limiter.stats()
         queued = sum(value["queued"] for value in limiters.values())
@@ -264,6 +270,7 @@ class TaskMetrics:
             "queue_depth": queued,
             "queue_wait_total_ms": wait_total_ms,
             "child_peak_kbytes": child_peak,
+            "gc_collected_objects": gc_collected_objects,
         }
 
 
@@ -337,6 +344,11 @@ def unregister_temporary_path(path: object) -> None:
 def is_temporary_path_active(path: object) -> bool:
     with _temporary_path_lock:
         return str(path) in _active_temporary_paths
+
+
+def temporary_registry_size() -> int:
+    with _temporary_path_lock:
+        return len(_active_temporary_paths)
 
 
 def derivative_key(memory_id: UUID | str, version: str, max_size: int) -> str:

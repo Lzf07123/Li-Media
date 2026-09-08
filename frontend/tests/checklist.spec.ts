@@ -153,9 +153,10 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
     items: [item],
     total: 1,
     page: 1,
-    page_size: 18,
-    counts: { photo: 1, video: 0 },
-  };
+  page_size: 18,
+  counts: { photo: 1, video: 0 },
+  public_counts: { photo: 1, video: 0 },
+};
   let batchRun = 0;
   const adminSystemStatus = {
     generated_at: "2026-09-08T00:00:00Z",
@@ -202,6 +203,9 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
         thumbnail_missing: 2,
         thumbnail_failed: 0,
         thumbnail_failure_kinds: {},
+        home_derivative_ready: 1,
+        detail_derivative_ready: 0,
+        detail_derivative_total: 1,
         stream_ready: 1,
         stream_failed: 0,
       },
@@ -239,6 +243,8 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
         oom: 0,
         oom_kill: 0,
       },
+      garbage_collection: { gen0: 1, gen1: 0, gen2: 0, collections: 12 },
+      temporary_registry: { paths: 0 },
       temporary: {
         files: 0,
         bytes: 0,

@@ -43,6 +43,7 @@ class MemorySummaryListResponse(BaseModel):
     page: int
     page_size: int
     counts: MemoryCounts
+    public_counts: MemoryCounts
 
 
 class PublicMediaCounts(BaseModel):
@@ -285,6 +286,9 @@ class RemoteStorageCounts(BaseModel):
     thumbnail_failure_kinds: dict[str, int]
     stream_ready: int
     stream_failed: int
+    home_derivative_ready: int
+    detail_derivative_ready: int
+    detail_derivative_total: int
 
 
 class RemoteStorageStatus(BaseModel):
@@ -334,6 +338,8 @@ class ResourceLimitStatus(BaseModel):
 
 class ResourceStatus(BaseModel):
     process: dict[str, int | None]
+    garbage_collection: dict[str, int]
+    temporary_registry: dict[str, int]
     cgroup: dict[str, int | None]
     temporary: dict[str, float | int | None]
     filesystem: dict[str, float | int | None]
@@ -353,14 +359,18 @@ class AdminSystemStatusResponse(BaseModel):
 
 
 class ThumbnailPreheatRequest(BaseModel):
-    max_size: Literal["240", "480", "768", "1280"] = "480"
+    sizes: list[Literal["240", "480", "768", "1280"]] = Field(
+        default_factory=lambda: ["240"],
+        min_length=1,
+        max_length=4,
+    )
     kind: MemoryKind | None = None
     limit: int = Field(default=0, ge=0, le=5000)
 
 
 class ThumbnailPreheatJobRead(BaseModel):
     id: uuid.UUID
-    max_size: int
+    sizes: list[int]
     kind: MemoryKind | None
     limit: int
     concurrency: int
@@ -371,6 +381,9 @@ class ThumbnailPreheatJobRead(BaseModel):
     generated: int
     cached: int
     failed: int
+    source_bytes_downloaded: int
+    derivative_duration_ms: int
+    size_results: dict[str, dict[str, int]]
     message: str | None
     created_at: datetime
     started_at: datetime | None

@@ -5,6 +5,7 @@ import Button from "@/components/ui/Button";
 import ProgressBar from "@/components/ui/ProgressBar";
 import { brand } from "@/lib/brand";
 import type { ThumbnailPreheatJob } from "@/lib/api";
+import { formatBytes } from "@/lib/format";
 
 type ThumbnailPreheatCardProps = {
   job: ThumbnailPreheatJob | null;
@@ -12,13 +13,17 @@ type ThumbnailPreheatCardProps = {
   isCancelling?: boolean;
   onCancel?: () => void;
   onStart: (payload: {
-    max_size: "240" | "480" | "768" | "1280";
+    sizes: number[];
     kind?: "photo" | "video";
     limit: number;
   }) => Promise<void>;
 };
 
-const sizes = ["240", "480", "768", "1280"] as const;
+const sizePresets = {
+  home: [240],
+  detail: [480, 1280],
+} as const;
+type SizePreset = keyof typeof sizePresets;
 const statusCopy = {
   queued: brand.copy.adminPreheatQueued,
   running: brand.copy.adminPreheatRunning,
@@ -34,7 +39,7 @@ export default function ThumbnailPreheatCard({
   onCancel,
   onStart,
 }: ThumbnailPreheatCardProps) {
-  const [maxSize, setMaxSize] = useState<(typeof sizes)[number]>("240");
+  const [sizePreset, setSizePreset] = useState<SizePreset>("home");
   const [kind, setKind] = useState<"" | "photo" | "video">("");
   const isJobActive = job?.status === "queued" || job?.status === "running";
   const scopeCopy =
@@ -74,7 +79,7 @@ export default function ThumbnailPreheatCard({
             disabled={isStarting || isJobActive}
             onClick={() =>
               void onStart({
-                max_size: maxSize,
+                sizes: [...sizePresets[sizePreset]],
                 kind: kind || undefined,
                 limit: 0,
               })
@@ -94,15 +99,12 @@ export default function ThumbnailPreheatCard({
             className="select min-h-11"
             id="preheat-size"
             onChange={(event) =>
-              setMaxSize(event.target.value as (typeof sizes)[number])
+              setSizePreset(event.target.value as SizePreset)
             }
-            value={maxSize}
+            value={sizePreset}
           >
-            {sizes.map((size) => (
-              <option key={size} value={size}>
-                {size}px
-              </option>
-            ))}
+            <option value="home">{brand.copy.adminPreheatHome}</option>
+            <option value="detail">{brand.copy.adminPreheatDetail}</option>
           </select>
         </label>
 
@@ -144,7 +146,7 @@ export default function ThumbnailPreheatCard({
               job.total > 0 ? (job.processed / job.total) * 100 : 0
             }
           />
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-8">
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminPreheatGenerated}</dt>
               <dd className="text-sm font-medium">{job.generated}</dd>
@@ -159,7 +161,17 @@ export default function ThumbnailPreheatCard({
             </div>
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminPreheatSize}</dt>
-              <dd className="text-sm font-medium">{job.max_size}px</dd>
+              <dd className="text-sm font-medium">{job.sizes.join(" / ")}px</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminPreheatSourceBytes}</dt>
+              <dd className="text-sm font-medium">
+                {formatBytes(job.source_bytes_downloaded) ?? "-"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminPreheatDuration}</dt>
+              <dd className="text-sm font-medium">{job.derivative_duration_ms}ms</dd>
             </div>
             <div>
               <dt className="text-xs text-muted">

@@ -34,6 +34,11 @@ from app.services.baidu_oauth import load_baidu_credentials
 from app.services.baidu_pan import download_url_cache
 from app.services.resource_metrics import collect_resource_metrics
 from app.services.source_zero import collect_source_zero_status
+from app.services.thumbnail_preheat import (
+    count_public_detail_derivative_cache_hits,
+    count_public_derivative_candidates,
+    count_public_derivative_cache_hits,
+)
 from app.services.task_limits import task_limiter, task_metrics
 
 
@@ -148,6 +153,9 @@ def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
         )
         .group_by(MemoryFile.thumbnail_failure_kind)
     ).all()
+    home_derivative_ready = count_public_derivative_cache_hits(db)
+    detail_derivative_total = count_public_derivative_candidates(db)
+    detail_derivative_ready = count_public_detail_derivative_cache_hits(db)
 
     return RemoteStorageCounts(
         total=int(total or 0),
@@ -163,6 +171,9 @@ def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
         },
         stream_ready=int(stream_ready or 0),
         stream_failed=int(stream_failed or 0),
+        home_derivative_ready=int(home_derivative_ready or 0),
+        detail_derivative_ready=int(detail_derivative_ready or 0),
+        detail_derivative_total=int(detail_derivative_total or 0),
     )
 
 
