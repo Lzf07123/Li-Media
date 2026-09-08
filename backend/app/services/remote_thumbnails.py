@@ -135,7 +135,7 @@ def classify_remote_error(exc: Exception) -> str:
     return DerivativeFailureKind.UNKNOWN.value
 
 
-def _temporary_directory_has_capacity(temporary_dir: Path) -> bool:
+def temporary_directory_has_capacity(temporary_dir: Path) -> bool:
     settings = get_settings()
     files = [path for path in temporary_dir.rglob("*") if path.is_file()]
     if len(files) >= settings.remote_thumbnail_max_temp_files:
@@ -149,6 +149,9 @@ def _temporary_directory_has_capacity(temporary_dir: Path) -> bool:
             return False
 
     return used_bytes < settings.remote_thumbnail_disk_quota_bytes
+
+
+_temporary_directory_has_capacity = temporary_directory_has_capacity
 
 
 def cleanup_stale_remote_temporary_files(media_root: Path) -> int:

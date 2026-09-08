@@ -78,6 +78,15 @@ def test_public_endpoints_exclude_unrenderable_media(tmp_path: Path) -> None:
         kind=MemoryKind.VIDEO,
         thumbnail_state=RemoteThumbnailState.FAILED,
     )
+    unsupported_video = add_memory(
+        session_factory,
+        title="unsupported video",
+        kind=MemoryKind.VIDEO,
+        thumbnail_state=RemoteThumbnailState.READY,
+    )
+    with session_factory.begin() as session:
+        memory = session.get(Memory, unsupported_video)
+        memory.files[0].browser_compatibility = BrowserCompatibilityState.UNSUPPORTED
 
     def override_get_db():
         session = session_factory()
@@ -102,6 +111,7 @@ def test_public_endpoints_exclude_unrenderable_media(tmp_path: Path) -> None:
 
             assert client.get(f"/api/v1/memories/{ready_photo}").status_code == 200
             assert client.get(f"/api/v1/memories/{failed_photo}").status_code == 404
+            assert client.get(f"/api/v1/memories/{unsupported_video}/thumbnail").status_code == 404
     finally:
         app.dependency_overrides.clear()
 

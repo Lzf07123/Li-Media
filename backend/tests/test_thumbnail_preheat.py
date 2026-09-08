@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
+import time
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -13,6 +14,7 @@ from app.core.config import Settings
 from app.db.session import Base, get_session_factory
 from app.main import app
 from app.models.memory import (
+    BrowserCompatibilityState,
     DerivativeFailureKind,
     Memory,
     MemoryFile,
@@ -64,6 +66,7 @@ def add_memory(
             thumbnail_state=thumbnail_state,
             thumbnail_failure_kind=failure_kind,
             stream_state=RemoteStreamState.READY,
+            browser_compatibility=BrowserCompatibilityState.SUPPORTED,
         )
         session.add_all([memory, memory_file])
 
@@ -111,6 +114,42 @@ def test_candidate_pairs_follow_home_order_and_skip_non_retryable(
     assert pairs[1][0] == UUID("00000000-0000-0000-0000-000000000001")
 
 
+def test_candidate_pairs_select_one_file_per_memory(tmp_path: Path) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000020")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="duplicate source",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+    )
+
+    with session_factory.begin() as session:
+        memory = session.get(Memory, memory_id)
+        assert memory is not None
+        session.add(
+            MemoryFile(
+                memory_id=memory.id,
+                source="baidupan",
+                remote_id="remote-duplicate",
+                remote_path="/cloud/duplicate.jpg",
+                parent_path="/cloud",
+                filename="duplicate.jpg",
+                mime_type="image/jpeg",
+                remote_state=RemoteFileState.READY,
+                stream_state=RemoteStreamState.READY,
+                browser_compatibility=BrowserCompatibilityState.SUPPORTED,
+            )
+        )
+
+    with session_factory() as db:
+        pairs = _candidate_pairs(db, kind=None, limit=0)
+
+    assert len(pairs) == 1
+    assert pairs[0][0] == memory_id
+
+
 def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> None:
     session_factory = configure_admin_app(tmp_path, monkeypatch)
     media_root = tmp_path / "media"
@@ -136,6 +175,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             filename="photo.png",
             mime_type="image/png",
             source_path="photos/photo.png",
+            remote_state=RemoteFileState.READY,
             thumbnail_state=RemoteThumbnailState.MISSING,
         )
         session.add_all([memory, memory_file])
@@ -150,7 +190,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
 
             response = client.post(
                 "/api/v1/admin/thumbnails/preheat",
-                json={"max_size": "480", "kind": "photo", "limit": 0},
+                json={"sizes": ["480"], "kind": "photo", "limit": 0},
             )
             assert response.status_code == 202
             assert response.json()["status"] in {"queued", "running", "completed"}
@@ -169,6 +209,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             assert payload["generated"] == 1
             assert payload["failed"] == 0
             assert payload["status"] == "completed", payload
+            assert payload["sizes"] == [480]
 
         with session_factory() as session:
             memory = session.get(Memory, memory_id)

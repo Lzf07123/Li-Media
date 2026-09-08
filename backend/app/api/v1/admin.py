@@ -561,7 +561,7 @@ def start_thumbnail_preheat(
 ) -> ThumbnailPreheatJob:
     settings = get_settings()
     job, started = thumbnail_preheat_registry.start(
-        max_size=int(payload.max_size),
+        sizes=tuple(dict.fromkeys(int(size) for size in payload.sizes)),
         kind=payload.kind,
         limit=payload.limit,
         concurrency=settings.preheat_concurrency_limit,

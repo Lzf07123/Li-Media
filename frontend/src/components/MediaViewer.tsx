@@ -18,6 +18,7 @@ import {
 import { createPortal } from "react-dom";
 
 import VideoPlayer from "@/components/VideoPlayer";
+
 import {
   resolveMediaUrl,
   resolveThumbnailUrl,

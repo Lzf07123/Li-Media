@@ -47,6 +47,7 @@ const memoryList = {
   page: 1,
   page_size: 24,
   counts: { photo: 1, video: 0 },
+  public_counts: { photo: 1, video: 0 },
 };
 
 async function mockMemoryRoutes(page: Page, listResponse = memoryList) {
@@ -156,7 +157,9 @@ test("home preheat state is explicit and cards use responsive priority", async (
   await expect(page.getByTestId("preheat-status")).toContainText("2/5");
 
   const firstImage = page.locator(".masonry .post-card").first().locator("img");
-  await expect(firstImage).toHaveAttribute("srcset", /240w.*480w.*768w.*1280w/s);
+  await expect
+    .poll(async () => await firstImage.getAttribute("src"))
+    .toContain("size=240");
   await expect(firstImage).toHaveAttribute("fetchpriority", "high");
   await expect(firstImage).toBeVisible();
   await expect(
@@ -295,6 +298,7 @@ test("large viewer navigates with arrows and keyboard", async ({ page }) => {
           page: 1,
           page_size: 24,
           counts: { photo: items.length, video: 0 },
+          public_counts: { photo: items.length, video: 0 },
         },
       });
       return;
@@ -333,6 +337,10 @@ test("video playback uses server stream and avoids direct links", async ({ page 
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
 
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
     if (url.pathname === "/api/v1/memories") {
       await route.fulfill({
         json: {
@@ -460,6 +468,7 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
           page: pageNumber,
           page_size: 18,
           counts: { photo: items.length, video: 0 },
+          public_counts: { photo: items.length, video: 0 },
         },
       });
       return;
@@ -512,6 +521,7 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
           page: pageNumber,
           page_size: 18,
           counts: { photo: items.length, video: 0 },
+          public_counts: { photo: items.length, video: 0 },
         },
       });
       return;
@@ -560,6 +570,7 @@ test("thumbnail image loads are queued with bounded concurrency", async ({ page 
           page: 1,
           page_size: 24,
           counts: { photo: items.length, video: 0 },
+          public_counts: { photo: items.length, video: 0 },
         },
       });
       return;

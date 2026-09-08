@@ -94,6 +94,10 @@ export type MemorySummaryListResponse = {
     photo: number;
     video: number;
   };
+  public_counts: {
+    photo: number;
+    video: number;
+  };
 };
 
 export type PublicPreheatStatus = {
@@ -298,6 +302,9 @@ export type RemoteStorageCounts = {
   thumbnail_missing: number;
   thumbnail_failed: number;
   thumbnail_failure_kinds: Record<string, number>;
+  home_derivative_ready: number;
+  detail_derivative_ready: number;
+  detail_derivative_total: number;
   stream_ready: number;
   stream_failed: number;
 };
@@ -359,6 +366,8 @@ export type SystemStatus = {
       oom: number | null;
       oom_kill: number | null;
     };
+    garbage_collection: Record<string, number>;
+    temporary_registry: Record<string, number>;
     temporary: {
       files: number | null;
       bytes: number | null;
@@ -395,7 +404,7 @@ export type SystemStatus = {
 
 export type ThumbnailPreheatJob = {
   id: string;
-  max_size: number;
+  sizes: number[];
   kind: "photo" | "video" | null;
   limit: number;
   concurrency: number;
@@ -410,10 +419,13 @@ export type ThumbnailPreheatJob = {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  source_bytes_downloaded: number;
+  derivative_duration_ms: number;
+  size_results: Record<string, Record<string, number>>;
 };
 
 export type ThumbnailPreheatPayload = {
-  max_size: "240" | "480" | "768" | "1280";
+  sizes: ("240" | "480" | "768" | "1280")[];
   kind?: "photo" | "video";
   limit: number;
 };
@@ -471,7 +483,7 @@ export function resolveThumbnailSrcSet(
     return null;
   }
 
-  return (["240", "480", "768", "1280"] as const)
+  return (["480", "768", "1280"] as const)
     .map((size) => {
       const url = resolveThumbnailUrl(path, size);
       return url ? `${url} ${size}w` : null;

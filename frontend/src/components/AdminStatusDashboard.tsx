@@ -269,6 +269,14 @@ export default function AdminStatusDashboard({
               value={status.remote_storage.counts.thumbnail_failed}
             />
             <Metric
+              label={brand.copy.adminDerivativeHome}
+              value={`${status.remote_storage.counts.home_derivative_ready}/${status.remote_storage.counts.detail_derivative_total}`}
+            />
+            <Metric
+              label={brand.copy.adminDerivativeDetail}
+              value={`${status.remote_storage.counts.detail_derivative_ready}/${status.remote_storage.counts.detail_derivative_total}`}
+            />
+            <Metric
               label={brand.copy.adminRemoteStorageStreamFailed}
               value={status.remote_storage.counts.stream_failed}
             />
@@ -359,6 +367,14 @@ export default function AdminStatusDashboard({
             <Metric
               label={brand.copy.adminResourceThreads}
               value={status.resources.process.threads ?? "-"}
+            />
+            <Metric
+              label={brand.copy.adminResourceGarbageCollection}
+              value={`${status.resources.garbage_collection.gen0}/${status.resources.garbage_collection.gen1}/${status.resources.garbage_collection.gen2}`}
+            />
+            <Metric
+              label={brand.copy.adminResourceTemporaryRegistry}
+              value={status.resources.temporary_registry.paths}
             />
             <Metric
               label={brand.copy.adminResourcePids}

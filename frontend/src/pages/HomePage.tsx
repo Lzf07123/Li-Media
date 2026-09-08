@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Images } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
-import MediaViewer from "@/components/MediaViewer";
 import { brand } from "@/lib/brand";
 import {
   getMemoryById,
   getMemories,
-  getPublicMediaCounts,
   getMemoryRecommendations,
   getPublicPreheatStatus,
   type MemorySummary,
@@ -24,6 +22,8 @@ const PAGE_SIZE = 18;
 const RECOMMENDATION_COUNT = 8;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
 let scrollBeforeViewer = 0;
+
+const MediaViewer = lazy(() => import("@/components/MediaViewer"));
 
 type ColumnBreakpoint = {
   query: string;
@@ -138,6 +138,17 @@ export default function HomePage() {
       });
       setTotal(data.total);
       setCounts(data.counts ?? { photo: 0, video: 0 });
+      if (data.public_counts) {
+        setPublicCounts({
+          total: data.public_counts.photo + data.public_counts.video,
+          photo: data.public_counts.photo,
+          video: data.public_counts.video,
+        });
+        setPublicCountState("ready");
+      } else {
+        setPublicCounts(null);
+        setPublicCountState("error");
+      }
       setError(null);
       setLoadMoreError(null);
       return true;
@@ -164,29 +175,6 @@ export default function HomePage() {
   useEffect(() => {
     void loadPage(1, "replace");
   }, [loadPage]);
-
-  useEffect(() => {
-    let active = true;
-    setPublicCountState("loading");
-    getPublicMediaCounts()
-      .then((data) => {
-        if (!active) {
-          return;
-        }
-        setPublicCounts(data);
-        setPublicCountState("ready");
-      })
-      .catch(() => {
-        if (active) {
-          setPublicCounts(null);
-          setPublicCountState("error");
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -255,6 +243,16 @@ export default function HomePage() {
     });
     return columns;
   }, [canvasMemories, columnCount]);
+  const firstRowIds = useMemo(
+    () =>
+      new Set(
+        canvasColumns
+          .map((column) => column[0])
+          .filter((memory): memory is MemorySummary => Boolean(memory))
+          .map((memory) => memory.id),
+      ),
+    [canvasColumns],
+  );
   useEffect(() => {
     if (!viewerId || viewerMemories.some((memory) => memory.id === viewerId)) {
       return;
@@ -541,7 +539,7 @@ export default function HomePage() {
                     key={memory.id}
                     memory={memory}
                     onOpen={openViewer}
-                    priority={columnIndex === 0 && memory.id === canvasColumns[0][0]?.id}
+                    priority={firstRowIds.has(memory.id)}
                   />
                 ))}
               </div>
@@ -578,12 +576,14 @@ export default function HomePage() {
         </Notice>
       ) : null}
       {activeMemory ? (
-        <MediaViewer
-          memory={activeMemory}
-          onClose={closeViewer}
-          onNext={nextMemory ? () => openViewer(nextMemory.id) : undefined}
-          onPrev={previousMemory ? () => openViewer(previousMemory.id) : undefined}
-        />
+        <Suspense fallback={null}>
+          <MediaViewer
+            memory={activeMemory}
+            onClose={closeViewer}
+            onNext={nextMemory ? () => openViewer(nextMemory.id) : undefined}
+            onPrev={previousMemory ? () => openViewer(previousMemory.id) : undefined}
+          />
+        </Suspense>
       ) : null}
     </section>
   );

@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     baidu_retry_base_delay: float = 0.5
     baidu_retry_max_delay: float = 8.0
     baidu_download_url_ttl_seconds: int = 300
+    baidu_download_url_cache_size: int = Field(
+        default=256,
+        ge=16,
+        le=4096,
+    )
     baidu_thumbnail_size: str = "c1600_u1600"
 
     @model_validator(mode="after")

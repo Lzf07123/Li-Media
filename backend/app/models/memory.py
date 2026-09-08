@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, Uuid, func
+from sqlalchemy import Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -40,6 +41,11 @@ class RemoteFileState(StrEnum):
 
 class RemoteThumbnailState(StrEnum):
     MISSING = "missing"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class DerivativeCacheStatus(StrEnum):
     READY = "ready"
     FAILED = "failed"
 
@@ -114,6 +120,28 @@ class RemoteScanTask(Base):
 class Memory(Base):
     __tablename__ = "memories"
 
+    __table_args__ = (
+        Index("ix_memories_public_order", "status", "kind", "captured_at", "id"),
+        Index(
+            "ix_memories_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_memories_description_trgm",
+            "description",
+            postgresql_using="gin",
+            postgresql_ops={"description": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_memories_location_trgm",
+            "location",
+            postgresql_using="gin",
+            postgresql_ops={"location": "gin_trgm_ops"},
+        ),
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
@@ -134,11 +162,26 @@ class Memory(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    files: Mapped[list["MemoryFile"]] = relationship(back_populates="memory")
+    files: Mapped[list["MemoryFile"]] = relationship(
+        back_populates="memory",
+        order_by="MemoryFile.id",
+    )
 
 
 class MemoryFile(Base):
     __tablename__ = "memory_files"
+
+    __table_args__ = (
+        Index(
+            "ix_memory_files_public_visibility",
+            "memory_id",
+            "source",
+            "remote_state",
+            "thumbnail_state",
+            "stream_state",
+            "browser_compatibility",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     memory_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -199,3 +242,49 @@ class MemoryFile(Base):
     )
 
     memory: Mapped[Memory | None] = relationship(back_populates="files")
+    derivative_caches: Mapped[list["MemoryDerivativeCache"]] = relationship(
+        back_populates="memory_file",
+        cascade="all, delete-orphan",
+    )
+
+
+class MemoryDerivativeCache(Base):
+    __tablename__ = "memory_derivative_caches"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "memory_file_id",
+            "max_size",
+            "derivative_version",
+            name="uq_memory_derivative_cache_identity",
+        ),
+        Index(
+            "ix_memory_derivative_caches_lookup",
+            "memory_file_id",
+            "max_size",
+            "derivative_version",
+            "status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    memory_file_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("memory_files.id", ondelete="CASCADE"),
+    )
+    max_size: Mapped[int] = mapped_column(Integer)
+    derivative_version: Mapped[str] = mapped_column(String(64))
+    status: Mapped[DerivativeCacheStatus] = mapped_column(String(32))
+    failure_kind: Mapped[str | None] = mapped_column(String(64))
+    output_path: Mapped[str | None] = mapped_column(String(512))
+    output_bytes: Mapped[int | None] = mapped_column(Integer)
+    source_bytes: Mapped[int | None] = mapped_column(Integer)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    memory_file: Mapped["MemoryFile"] = relationship(back_populates="derivative_caches")
