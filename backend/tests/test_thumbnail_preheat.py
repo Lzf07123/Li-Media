@@ -29,6 +29,7 @@ from app.models.memory import (
 from app.services.thumbnail_preheat import _candidate_pairs
 from app.services.memory_thumbnails import derivative_cache_path
 from app.services.thumbnail_preheat import _process_pair
+from app.services.thumbnail_preheat import _set_derivative_cache_state
 from app.services.baidu_pan import BaiduPanError
 from tests.test_admin_security import configure_admin_app
 
@@ -341,3 +342,49 @@ def test_preheat_reconciles_existing_file_without_remote_read(tmp_path: Path) ->
         assert memory.thumbnail_path == target_path.relative_to(Path(settings.media_root)).as_posix()
         assert cache.status == DerivativeCacheStatus.READY
         assert cache.max_size == 240
+
+
+def test_derivative_cache_state_accepts_relative_media_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000050")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="relative media root",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+    )
+    settings = Settings(
+        media_root="./media",
+        media_derivative_version="relative-version",
+    )
+    monkeypatch.chdir(tmp_path)
+    output_path = Path("media/thumbnails") / str(memory_id) / "relative-version/240.webp"
+    output_path.parent.mkdir(parents=True)
+    output_path.write_bytes(b"webp")
+
+    with session_factory() as db:
+        memory_file_id = db.scalar(select(MemoryFile.id))
+        _set_derivative_cache_state(
+            db,
+            memory_file_id=memory_file_id,
+            settings=settings,
+            max_size=240,
+            status=DerivativeCacheStatus.READY,
+            output_path=output_path,
+            source_bytes=4,
+            duration_ms=3,
+        )
+        db.commit()
+
+    with session_factory() as db:
+        cache = db.scalar(select(MemoryDerivativeCache))
+        assert cache is not None
+        assert cache.status == DerivativeCacheStatus.READY
+        assert cache.output_path == output_path.relative_to(
+            Path(settings.media_root)
+        ).as_posix()
+        assert cache.output_bytes == 4

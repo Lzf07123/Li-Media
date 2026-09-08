@@ -462,6 +462,15 @@ def _set_derivative_cache_state(
     source_bytes: int | None = None,
     duration_ms: int | None = None,
 ) -> None:
+    media_root = Path(settings.media_root).resolve()
+    resolved_output_path: Path | None = None
+    relative_output_path: str | None = None
+    if output_path is not None:
+        resolved_output_path = (
+            output_path if output_path.is_absolute() else Path.cwd() / output_path
+        ).resolve()
+        relative_output_path = resolved_output_path.relative_to(media_root).as_posix()
+
     cache = db.scalar(
         select(MemoryDerivativeCache).where(
             MemoryDerivativeCache.memory_file_id == memory_file_id,
@@ -481,13 +490,9 @@ def _set_derivative_cache_state(
 
     cache.status = status
     cache.failure_kind = None if status == DerivativeCacheStatus.READY else failure_kind
-    cache.output_path = (
-        output_path.relative_to(Path(settings.media_root).resolve()).as_posix()
-        if status == DerivativeCacheStatus.READY and output_path is not None
-        else None
-    )
+    cache.output_path = relative_output_path if status == DerivativeCacheStatus.READY else None
     cache.output_bytes = (
-        output_path.stat().st_size
+        resolved_output_path.stat().st_size
         if status == DerivativeCacheStatus.READY and output_path is not None
         else None if status == DerivativeCacheStatus.READY else cache.output_bytes
     )
@@ -605,7 +610,7 @@ def _process_pair_sizes(
             failure_kind=DerivativeFailureKind.CANCELLED.value,
         )
 
-    media_root = Path(settings.media_root)
+    media_root = Path(settings.media_root).resolve()
     outcomes: dict[int, str] = {}
     failure_kind: str | None = None
     source_bytes_downloaded = 0
