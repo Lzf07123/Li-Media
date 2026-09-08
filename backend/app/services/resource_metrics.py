@@ -69,12 +69,13 @@ def _read_disk(temporary_dir: Path) -> dict[str, int | None]:
     try:
         # A clean deployment may not yet have media/tmp; still report the
         # filesystem visible to the container rather than misleading nulls.
+        resolved_directory = temporary_dir.resolve()
         directory = (
             temporary_dir
             if temporary_dir.exists()
-            else temporary_dir.parent
-            if temporary_dir.parent.exists()
-            else temporary_dir.anchor
+            else resolved_directory.parent
+            if resolved_directory.parent.exists()
+            else resolved_directory.anchor
         )
         usage = shutil.disk_usage(directory)
     except OSError:
