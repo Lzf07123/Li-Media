@@ -13,15 +13,15 @@ type ThumbnailPreheatCardProps = {
   isCancelling?: boolean;
   onCancel?: () => void;
   onStart: (payload: {
-    sizes: number[];
+    sizes: ("240" | "480" | "768" | "1280")[];
     kind?: "photo" | "video";
     limit: number;
   }) => Promise<void>;
 };
 
 const sizePresets = {
-  home: [240],
-  detail: [480, 1280],
+  home: ["240"],
+  detail: ["480", "1280"],
 } as const;
 type SizePreset = keyof typeof sizePresets;
 const statusCopy = {

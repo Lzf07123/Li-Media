@@ -425,7 +425,7 @@ export type ThumbnailPreheatJob = {
 };
 
 export type ThumbnailPreheatPayload = {
-  sizes: number[];
+  sizes: ("240" | "480" | "768" | "1280")[];
   kind?: "photo" | "video";
   limit: number;
 };
