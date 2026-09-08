@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,6 +27,7 @@ from app.services.derivative_tasks import (
     run_local_derivative,
     run_remote_derivative,
 )
+from app.services.remote_thumbnails import classify_remote_error
 from app.services.memory_thumbnails import (
     derivative_cache_path,
     resolve_media_path,
@@ -34,6 +36,9 @@ from app.services.display_health import public_files_condition
 from app.services.task_limits import TaskCancelled, TaskRejected, task_metrics
 from app.services.task_limits import TaskType
 from app.services.task_limits import task_limiter
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -294,6 +299,7 @@ def _process_pair(
     max_size: int,
     failure_sink: dict[str, str] | None = None,
     cancel_event: Event | None = None,
+    client: BaiduPanClient | None = None,
 ) -> str:
     memory = db.get(Memory, memory_id)
     memory_file = db.get(MemoryFile, memory_file_id)
@@ -328,9 +334,9 @@ def _process_pair(
                 cancel_event=cancel_event,
             )
         else:
-            client = BaiduPanClient(settings)
+            remote_client = client or BaiduPanClient(settings)
             generated_path = run_remote_derivative(
-                client,
+                remote_client,
                 memory_file.remote_id,
                 media_root,
                 memory=memory,
@@ -344,7 +350,9 @@ def _process_pair(
     except TaskRejected:
         task_metrics.record_failed(TaskType.DERIVATIVE)
         return "failed"
-    except BaiduPanError:
+    except BaiduPanError as exc:
+        if failure_sink is not None:
+            failure_sink["kind"] = classify_remote_error(exc)
         task_metrics.record_failed(TaskType.DERIVATIVE)
         return "failed"
 
@@ -383,6 +391,7 @@ def _process_candidate(
     settings: Settings,
     max_size: int,
     cancel_event: Event,
+    client: BaiduPanClient | None = None,
 ) -> str:
     failure_sink: dict[str, str] = {}
     try:
@@ -400,6 +409,7 @@ def _process_candidate(
                     max_size=max_size,
                     failure_sink=failure_sink,
                     cancel_event=cancel_event,
+                    client=client,
                 )
 
         if outcome == "failed":
@@ -418,6 +428,11 @@ def _process_candidate(
         task_metrics.record_cancelled(TaskType.PREHEAT)
         return "cancelled"
     except Exception:
+        logger.exception(
+            "thumbnail preheat candidate failed; memory_id=%s file_id=%s",
+            memory_id,
+            memory_file_id,
+        )
         task_metrics.record_failed(TaskType.PREHEAT)
         _mark_failure(
             session_factory,
@@ -450,6 +465,14 @@ def run_thumbnail_preheat(
             )
         registry.mark_running(job_id, total=len(pairs))
 
+        shared_client: BaiduPanClient | None = None
+        if settings is not None:
+            try:
+                shared_client = BaiduPanClient(settings)
+            except BaiduPanError as exc:
+                registry.mark_failed(job_id, str(exc)[:255])
+                return
+
         candidate_iterator = iter(pairs)
         futures: dict[Future[str], tuple[UUID, UUID]] = {}
         max_pending = job.concurrency + job.queue_limit
@@ -476,6 +499,7 @@ def run_thumbnail_preheat(
                         settings=settings,
                         max_size=job.max_size,
                         cancel_event=job.cancel_event,
+                        client=shared_client,
                     )
                     futures[future] = pair
 

@@ -53,7 +53,7 @@ def create_remote_thumbnail(
                 range_header=None,
             )
         except BaiduPanError as exc:
-            record_failure(_classify_remote_error(exc))
+            record_failure(classify_remote_error(exc))
             return None
 
         if status_code is not None and status_code >= 400:
@@ -105,7 +105,7 @@ def create_remote_thumbnail(
             failure_sink=failure_sink,
         )
     except Exception as exc:
-        record_failure(_classify_remote_error(exc))
+        record_failure(classify_remote_error(exc))
         return None
     finally:
         if stream is not None:
@@ -114,18 +114,20 @@ def create_remote_thumbnail(
         unregister_temporary_path(temporary_path.resolve())
 
 
-def _classify_remote_error(exc: Exception) -> str:
+def classify_remote_error(exc: Exception) -> str:
     message = str(exc)
+    if "凭证无效" in message or "凭证已过期" in message:
+        return DerivativeFailureKind.REMOTE_AUTH.value
+    if "凭证" in message:
+        return DerivativeFailureKind.REMOTE_AUTH.value
+    if "限流" in message:
+        return DerivativeFailureKind.BAIDU_RATE_LIMITED.value
+    if "不存在" in message or "路径已变化" in message:
+        return DerivativeFailureKind.REMOTE_NOT_FOUND.value
     if "不可用" in message or "暂时无法读取" in message:
         return DerivativeFailureKind.REMOTE_UNAVAILABLE.value
     if "403" in message or "直链被拒绝" in message:
         return DerivativeFailureKind.REMOTE_FORBIDDEN.value
-    if "不存在" in message:
-        return DerivativeFailureKind.REMOTE_NOT_FOUND.value
-    if "限流" in message:
-        return DerivativeFailureKind.BAIDU_RATE_LIMITED.value
-    if "凭证" in message:
-        return DerivativeFailureKind.REMOTE_AUTH.value
     if isinstance(exc, TimeoutError):
         return DerivativeFailureKind.TIMEOUT.value
     if isinstance(exc, OSError):
