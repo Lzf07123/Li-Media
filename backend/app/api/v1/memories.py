@@ -108,6 +108,8 @@ def recommend_memories(
 
 @router.get("", response_model=MemorySummaryListResponse)
 def list_memories(
+    request: Request,
+    response: Response,
     kind: MemoryKind | None = None,
     keyword: str | None = Query(default=None, max_length=100),
     page: int = Query(default=1, ge=1),
@@ -118,6 +120,16 @@ def list_memories(
     ),
     db: Session = Depends(get_db),
 ) -> MemorySummaryListResponse:
+    has_session_or_credentials = bool(
+        request.headers.get("authorization") or request.cookies
+    )
+    # The gateway caches only the anonymous public list; any cookie or
+    # authorization header must fall through as a private response.
+    response.headers["Cache-Control"] = (
+        "no-store"
+        if has_session_or_credentials
+        else "public, max-age=15, stale-while-revalidate=30"
+    )
     statement = _public_memory_statement()
 
     if kind is not None:

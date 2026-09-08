@@ -143,6 +143,12 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
             assert admin_list.status_code == 200
             assert admin_list.json()["total"] == 1
             assert [item["id"] for item in admin_list.json()["items"]] == [remote_id]
+            admin_file = admin_list.json()["items"][0]["primary_file"]
+            assert admin_file["remote_path"] == "/cloud/photo.jpg"
+            assert admin_file["parent_path"] == "/cloud"
+            assert admin_file["status"] == "matched"
+            assert admin_file["last_synced_at"] is None
+            assert admin_file["sync_error"] is None
 
             public_list = client.get("/api/v1/memories")
             assert public_list.status_code == 200

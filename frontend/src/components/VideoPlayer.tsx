@@ -6,6 +6,7 @@ import { brand } from "@/lib/brand";
 type VideoPlayerProps = {
   onSourceError?: (error?: MediaError) => void;
   onReady?: () => void;
+  onBufferingChange?: (isBuffering: boolean) => void;
   src: string;
   poster?: string | null;
   duration?: string | null;
@@ -15,6 +16,7 @@ type VideoPlayerProps = {
 export default function VideoPlayer({
   onSourceError,
   onReady,
+  onBufferingChange,
   src,
   poster,
   duration,
@@ -85,17 +87,25 @@ export default function VideoPlayer({
         onCanPlay={() => {
           setIsReady(true);
           onReady?.();
+          onBufferingChange?.(false);
           setIsBuffering(false);
           setIsSeeking(false);
         }}
         onLoadedData={() => setIsReady(true)}
         onPlaying={() => {
+          onBufferingChange?.(false);
           setIsBuffering(false);
           setIsSeeking(false);
         }}
         onSeeked={() => setIsSeeking(false)}
-        onSeeking={() => setIsSeeking(true)}
-        onWaiting={() => setIsBuffering(true)}
+        onSeeking={() => {
+          setIsSeeking(true);
+          onBufferingChange?.(true);
+        }}
+        onWaiting={() => {
+          setIsBuffering(true);
+          onBufferingChange?.(true);
+        }}
         poster={poster ?? undefined}
         preload="metadata"
         ref={videoRef}

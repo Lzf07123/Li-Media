@@ -21,14 +21,24 @@ import BlurText from "@/components/ui/BlurText";
 const PAGE_SIZE = 18;
 const RECOMMENDATION_COUNT = 8;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
+const PREHEAT_POLL_INTERVAL_MS = 20000;
+const PREHEAT_RETRY_DELAYS_MS = [500, 1000, 2000] as const;
 let scrollBeforeViewer = 0;
 
 const MediaViewer = lazy(() => import("@/components/MediaViewer"));
+
+function prefetchMediaViewerChunk() {
+  void import("@/components/MediaViewer").catch(() => {
+    // Prefetching is an optimization; lazy loading remains the fallback.
+  });
+}
 
 type ColumnBreakpoint = {
   query: string;
   count: 2 | 3 | 4 | 5 | 6;
 };
+
+type CanvasFooterState = "hidden" | "loading" | "retry" | "end";
 
 const columnBreakpoints: ColumnBreakpoint[] = [
   { query: "(min-width: 1600px)", count: 6 },
@@ -181,6 +191,17 @@ export default function HomePage() {
 
   useEffect(() => {
     let active = true;
+    let pollTimer = 0;
+    let failureAttempts = 0;
+
+    const clearPollTimer = () => {
+      window.clearTimeout(pollTimer);
+    };
+
+    const schedulePoll = (delayMs: number) => {
+      clearPollTimer();
+      pollTimer = window.setTimeout(loadPreheatStatus, delayMs);
+    };
 
     const loadPreheatStatus = () => {
       getPublicPreheatStatus()
@@ -190,21 +211,39 @@ export default function HomePage() {
           }
           setPreheatSummary(summary);
           setPreheatState("ready");
+          failureAttempts = 0;
+          if (summary.status !== "ready") {
+            schedulePoll(PREHEAT_POLL_INTERVAL_MS);
+          }
         })
         .catch(() => {
-          if (active) {
-            setPreheatSummary(null);
-            setPreheatState("error");
+          if (!active) {
+            return;
+          }
+          setPreheatSummary(null);
+          setPreheatState("error");
+          if (failureAttempts < PREHEAT_RETRY_DELAYS_MS.length) {
+            const delay = PREHEAT_RETRY_DELAYS_MS[failureAttempts];
+            failureAttempts += 1;
+            schedulePoll(delay);
           }
         });
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        failureAttempts = 0;
+        schedulePoll(0);
+      }
+    };
+
     loadPreheatStatus();
-    const pollTimer = window.setInterval(loadPreheatStatus, 20000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       active = false;
-      window.clearInterval(pollTimer);
+      clearPollTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -237,6 +276,15 @@ export default function HomePage() {
     });
     return Array.from(unique.values());
   }, [recommendations, memories]);
+  const canvasFooterState: CanvasFooterState = canvasMemories.length === 0
+    ? "hidden"
+    : loadMoreError
+      ? "retry"
+      : isLoadingMore
+        ? "loading"
+        : memories.length >= total
+          ? "end"
+          : "hidden";
 
   const viewerMemories = canvasMemories;
   const canvasColumns = useMemo(() => {
@@ -307,6 +355,20 @@ export default function HomePage() {
       });
     });
   }, [isLoadingInitial, pathname]);
+
+  useEffect(() => {
+    if (isLoadingInitial || canvasMemories.length === 0) {
+      return;
+    }
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(() => prefetchMediaViewerChunk());
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timer = window.setTimeout(prefetchMediaViewerChunk, 1);
+    return () => window.clearTimeout(timer);
+  }, [canvasMemories.length, isLoadingInitial]);
 
   useEffect(() => {
     if (viewerId) {
@@ -468,7 +530,7 @@ export default function HomePage() {
         ) : preheatSummary?.status === "degraded" ? (
           brand.copy.preheatStatusDegraded
         ) : (
-          brand.copy.preheatStatusReady
+          null
         )}
       </p>
 
@@ -540,6 +602,7 @@ export default function HomePage() {
                   <MemoryCard
                     key={memory.id}
                     memory={memory}
+                    onPrefetch={prefetchMediaViewerChunk}
                     onOpen={openViewer}
                     priority={firstRowIds.has(memory.id)}
                   />
@@ -548,27 +611,38 @@ export default function HomePage() {
             ))}
           </div>
           <div aria-hidden="true" className="canvas-sentinel" ref={sentinelRef} />
-          {loadMoreError ? (
-            <div className="canvas-loading flex justify-center">
-              <span aria-live="assertive" className="text-sm text-muted">
-                {loadMoreError}
-              </span>
-              <Button
-                className="ml-2"
-                onClick={() => {
-                  setLoadMoreError(null);
-                  loadNextPage();
-                }}
-                variant="secondary"
-              >
-                {brand.copy.retryLoadMore}
-              </Button>
-            </div>
-          ) : (
-            <p aria-live="polite" className="canvas-loading">
-              {isLoadingMore ? brand.copy.loadingMoreLibrary : ""}
-            </p>
-          )}
+          <div
+            aria-live="polite"
+            className="canvas-loading"
+            data-testid="canvas-footer"
+            data-state={canvasFooterState}
+            role="status"
+          >
+            {canvasFooterState === "loading" ? (
+              <span>{brand.copy.loadingMoreLibrary}</span>
+            ) : canvasFooterState === "retry" ? (
+              <>
+                <span>{loadMoreError}</span>
+                <Button
+                  className="ml-2"
+                  onClick={() => {
+                    setLoadMoreError(null);
+                    loadNextPage();
+                  }}
+                  variant="secondary"
+                >
+                  {brand.copy.retryLoadMore}
+                </Button>
+              </>
+            ) : canvasFooterState === "end" ? (
+              <>
+                <span>{brand.copy.canvasEnd}</span>
+                <span className="ml-2">
+                  {brand.copy.canvasEndTotal.replace("{total}", String(total))}
+                </span>
+              </>
+            ) : null}
+          </div>
         </section>
       )}
 

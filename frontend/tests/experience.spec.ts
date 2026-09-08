@@ -134,6 +134,20 @@ test("photo viewer supports keyboard zoom and restores scroll lock", async ({ pa
   await expect(viewer).toHaveCount(0);
 });
 
+test("viewer chunk is prefetched after the home list renders", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  const chunkRequest = page.waitForRequest(/assets\/MediaViewer-.*\.js/);
+  const adminChunkRequest = page.waitForRequest(/assets\/AdminPage-.*\.js/, {
+    timeout: 1000,
+  }).catch(() => null);
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await chunkRequest;
+  const adminChunk = await adminChunkRequest;
+  expect(adminChunk).toBeNull();
+});
+
 test("home preheat state is explicit and cards use responsive priority", async ({ page }) => {
   await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories/preheat-status", async (route) => {
@@ -152,7 +166,7 @@ test("home preheat state is explicit and cards use responsive priority", async (
     page.locator(".masonry .post-card").first().locator(".card-shimmer"),
   ).toBeVisible();
   await expect(page.getByTestId("preheat-status")).toContainText(
-    "后台正在预热预览",
+    "正在优化预览",
   );
   await expect(page.getByTestId("preheat-status")).toContainText("2/5");
 
@@ -176,7 +190,7 @@ test("home preheat notice converges and stays clear at 375px", async ({ page }) 
   await page.setViewportSize({ width: 375, height: 720 });
   await page.goto("/");
   const notice = page.getByTestId("preheat-status");
-  await expect(notice).toHaveText("预览缓存未预热，首次加载可能较慢");
+  await expect(notice).toHaveText("正在优化预览，首次加载可能稍慢");
   await expect(notice).toHaveAttribute("aria-live", "polite");
 
   const boxes = [
@@ -217,7 +231,7 @@ test("home preheat notice converges and stays clear at 375px", async ({ page }) 
     await route.fulfill({ json: { status: "ready", processed: 1, total: 1 } });
   });
   await page.reload();
-  await expect(page.getByTestId("preheat-status")).toHaveText("预览已就绪");
+  await expect(page.getByTestId("preheat-status")).toHaveText("");
 });
 
 test("home shows an independent preheat unavailable state", async ({ page }) => {
@@ -228,9 +242,61 @@ test("home shows an independent preheat unavailable state", async ({ page }) => 
 
   await page.goto("/");
   await expect(page.getByTestId("preheat-status")).toHaveText(
-    "预热状态不可用",
+    "预览状态暂不可用",
   );
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+});
+
+test("preheat polling stops when ready and refreshes once on visibility", async ({ page }) => {
+  let statusRequests = 0;
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    statusRequests += 1;
+    await route.fulfill({
+      json: { status: "ready", processed: 1, total: 1 },
+    });
+  });
+
+  await page.goto("/");
+  await expect.poll(() => statusRequests).toBe(1);
+  await page.waitForTimeout(1100);
+  expect(statusRequests).toBe(1);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+  });
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => statusRequests).toBe(2);
+  await page.waitForTimeout(100);
+  expect(statusRequests).toBe(2);
+});
+
+test("preheat status retries failures with finite backoff", async ({ page }) => {
+  let statusRequests = 0;
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    statusRequests += 1;
+    if (statusRequests <= 3) {
+      await route.fulfill({ status: 503, json: { detail: "unavailable" } });
+      return;
+    }
+    await route.fulfill({
+      json: { status: "running", processed: 1, total: 2 },
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByTestId("preheat-status")).toHaveText("预览状态暂不可用");
+  await page.waitForTimeout(2300);
+  expect(statusRequests).toBeGreaterThanOrEqual(3);
+  const failedRequests = statusRequests;
+  await page.waitForTimeout(300);
+  expect(statusRequests).toBe(failedRequests);
 });
 
 test("home card shimmer is disabled under reduced motion", async ({ page }) => {
@@ -489,9 +555,14 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
 
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect.poll(() => requestedPages).toContain("2");
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "loading");
+  await expect(page.getByTestId("canvas-footer")).toContainText("正在加载更多回忆");
   releasePageTwo?.();
   await expect(page.locator(".masonry .post-card")).toHaveCount(36);
   await expect(page.locator(".pagination")).toHaveCount(0);
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "end");
+  await expect(page.getByTestId("canvas-footer")).toContainText("已经到底了");
+  await expect(page.getByTestId("canvas-footer")).toContainText("当前筛选共 36 条");
 });
 
 test("infinite canvas advances pages when appended items overlap", async ({ page }) => {
@@ -543,6 +614,7 @@ test("infinite canvas advances pages when appended items overlap", async ({ page
 
 test("infinite canvas keeps content when appending fails", async ({ page }) => {
   const requestedPages: number[] = [];
+  let pageThreeFailed = false;
   const items = Array.from({ length: 54 }, (_, index) => ({
     ...memory,
     id: `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`,
@@ -557,7 +629,8 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
       if (url.searchParams.get("page")) {
         requestedPages.push(pageNumber);
       }
-      if (pageNumber >= 3) {
+      if (pageNumber >= 3 && !pageThreeFailed) {
+        pageThreeFailed = true;
         await route.fulfill({ status: 429, json: { detail: "rate limited" } });
         return;
       }
@@ -592,6 +665,8 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
     .poll(() => requestedPages.filter((pageNumber) => pageNumber === 3).length)
     .toBe(1);
   await expect(page.getByRole("button", { name: "重试加载" })).toBeVisible();
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "retry");
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("aria-live", "polite");
   const loadingStyle = await page.evaluate(() => {
     const canvas = document.querySelector(".infinite-canvas")!.getBoundingClientRect();
     const row = document.querySelector(".canvas-loading") as HTMLElement;
@@ -605,6 +680,9 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
   expect(loadingStyle.display).toBe("flex");
   expect(loadingStyle.justifyContent).toBe("center");
   expect(loadingStyle.widthRatio).toBeCloseTo(1, 2);
+  await page.getByRole("button", { name: "重试加载" }).click();
+  await expect(page.locator(".masonry .post-card")).toHaveCount(54);
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "end");
 });
 
 test("thumbnail image loads are queued with bounded concurrency", async ({ page }) => {
@@ -903,6 +981,10 @@ test("video does not request playback until play and can use server fallback", a
           counts: { photo: 0, video: 1 },
         },
       });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
       return;
     }
     if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {

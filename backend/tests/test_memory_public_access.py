@@ -50,6 +50,7 @@ def test_published_memory_is_visible_and_hidden_memory_is_not(tmp_path: Path) ->
                     source="baidupan",
                     remote_path="published.jpg",
                     source_path="photos/published.jpg",
+                    filename="published.jpg",
                     mime_type="image/jpeg",
                     size_bytes=128,
                     status=MemoryFileStatus.MATCHED,
@@ -67,11 +68,41 @@ def test_published_memory_is_visible_and_hidden_memory_is_not(tmp_path: Path) ->
             assert "remote_md5" not in public_item["primary_file"]
             assert "parent_path" not in public_item["primary_file"]
             assert "modified_at" not in public_item["primary_file"]
+            assert "remote_id" not in public_item["primary_file"]
+            assert "remote_path" not in public_item["primary_file"]
+            assert "status" not in public_item["primary_file"]
+            assert "thumbnail_failure_kind" not in public_item["primary_file"]
+            assert "browser_format_summary" not in public_item["primary_file"]
+            assert "browser_compatibility_error" not in public_item["primary_file"]
+            assert "last_synced_at" not in public_item["primary_file"]
             assert "sync_error" not in public_item["primary_file"]
+            assert public_item["primary_file"]["filename"] == "published.jpg"
+
+            recommendation = client.get("/api/v1/memories/recommend?limit=1")
+            assert recommendation.status_code == 200
+            recommended_item = recommendation.json()[0]
+            assert recommended_item["title"] == "published memory"
+            assert "remote_id" not in recommended_item["primary_file"]
+            assert "remote_path" not in recommended_item["primary_file"]
+            assert "status" not in recommended_item["primary_file"]
+            assert "thumbnail_failure_kind" not in recommended_item["primary_file"]
+            assert "browser_format_summary" not in recommended_item["primary_file"]
+            assert "browser_compatibility_error" not in recommended_item["primary_file"]
+            assert "last_synced_at" not in recommended_item["primary_file"]
+            assert "sync_error" not in recommended_item["primary_file"]
 
             published_detail = client.get(f"/api/v1/memories/{published.id}")
             assert published_detail.status_code == 200
-            assert published_detail.json()["primary_file"]["status"] == "matched"
+            detail_file = published_detail.json()["primary_file"]
+            assert detail_file["filename"] == "published.jpg"
+            assert "remote_id" not in detail_file
+            assert "remote_path" not in detail_file
+            assert "status" not in detail_file
+            assert "thumbnail_failure_kind" not in detail_file
+            assert "browser_format_summary" not in detail_file
+            assert "browser_compatibility_error" not in detail_file
+            assert "last_synced_at" not in detail_file
+            assert "sync_error" not in detail_file
 
             hidden_detail = client.get(f"/api/v1/memories/{hidden.id}")
             assert hidden_detail.status_code == 404
