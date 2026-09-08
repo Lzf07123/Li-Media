@@ -148,8 +148,9 @@ def test_in_flight_registry_merges_duplicate_work() -> None:
         assert calls == ["run"]
 
 
-def test_cleanup_skips_active_temporary_file(tmp_path: Path) -> None:
+def test_cleanup_skips_active_temporary_file(tmp_path: Path, monkeypatch) -> None:
     from app.api.v1.admin import _remove_derived_media
+    from app.core.config import Settings
 
     temporary_dir = tmp_path / "media" / "tmp"
     temporary_dir.mkdir(parents=True)
@@ -158,6 +159,13 @@ def test_cleanup_skips_active_temporary_file(tmp_path: Path) -> None:
     active_path.write_bytes(b"active")
     inactive_path.write_bytes(b"inactive")
     register_temporary_path(active_path)
+    monkeypatch.setattr(
+        "app.api.v1.admin.get_settings",
+        lambda: Settings(
+            media_root=str(tmp_path / "media"),
+            nginx_cache_root=str(tmp_path / "nginx-cache"),
+        ),
+    )
 
     try:
         removed_files, _, error = _remove_derived_media(tmp_path / "media")
