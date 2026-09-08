@@ -494,6 +494,53 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
   await expect(page.locator(".pagination")).toHaveCount(0);
 });
 
+test("infinite canvas advances pages when appended items overlap", async ({ page }) => {
+  const requestedPages: string[] = [];
+  const firstPage = Array.from({ length: 18 }, (_, index) => ({
+    ...memory,
+    id: `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`,
+  }));
+  const duplicatePage = [...firstPage];
+  const thirdPage = Array.from({ length: 18 }, (_, index) => ({
+    ...memory,
+    id: `${memoryId.slice(0, -1)}${String(index + 18).padStart(2, "0")}`,
+  }));
+
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      const pageNumber = Number(url.searchParams.get("page") ?? "1");
+      requestedPages.push(String(pageNumber));
+      const items = pageNumber === 1 ? firstPage : pageNumber === 2 ? duplicatePage : thirdPage;
+      await route.fulfill({
+        json: {
+          items,
+          total: 54,
+          page: pageNumber,
+          page_size: 18,
+          counts: { photo: 54, video: 0 },
+          public_counts: { photo: 54, video: 0 },
+        },
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    await route.fulfill({
+      body: Buffer.from(pngBase64, "base64"),
+      contentType: "image/webp",
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(18);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(() => requestedPages).toContain("3");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(36);
+});
+
 test("infinite canvas keeps content when appending fails", async ({ page }) => {
   const requestedPages: number[] = [];
   const items = Array.from({ length: 54 }, (_, index) => ({
@@ -545,6 +592,19 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
     .poll(() => requestedPages.filter((pageNumber) => pageNumber === 3).length)
     .toBe(1);
   await expect(page.getByRole("button", { name: "重试加载" })).toBeVisible();
+  const loadingStyle = await page.evaluate(() => {
+    const canvas = document.querySelector(".infinite-canvas")!.getBoundingClientRect();
+    const row = document.querySelector(".canvas-loading") as HTMLElement;
+    const style = getComputedStyle(row);
+    return {
+      widthRatio: row.getBoundingClientRect().width / canvas.width,
+      display: style.display,
+      justifyContent: style.justifyContent,
+    };
+  });
+  expect(loadingStyle.display).toBe("flex");
+  expect(loadingStyle.justifyContent).toBe("center");
+  expect(loadingStyle.widthRatio).toBeCloseTo(1, 2);
 });
 
 test("thumbnail image loads are queued with bounded concurrency", async ({ page }) => {

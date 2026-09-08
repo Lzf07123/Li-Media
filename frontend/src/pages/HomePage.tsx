@@ -89,6 +89,7 @@ export default function HomePage() {
   const hasRestoredScroll = useRef(false);
   const isLoadingMoreRef = useRef(false);
   const requestTokenRef = useRef(0);
+  const pageRef = useRef(1);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
   const columnCount = useCanvasColumnCount();
@@ -124,6 +125,8 @@ export default function HomePage() {
       if (requestToken !== requestTokenRef.current) {
         return false;
       }
+
+      pageRef.current = page;
 
       setMemories((current) => {
         if (mode === "replace") {
@@ -326,7 +329,7 @@ export default function HomePage() {
     }
 
     isLoadingMoreRef.current = true;
-    void loadPage(Math.floor(memories.length / PAGE_SIZE) + 1, "append").finally(() => {
+    void loadPage(pageRef.current + 1, "append").finally(() => {
       isLoadingMoreRef.current = false;
     });
   }, [
@@ -336,7 +339,6 @@ export default function HomePage() {
     isLoadingMore,
     loadMoreError,
     loadPage,
-    memories.length,
   ]);
 
   useEffect(() => {
