@@ -1,4 +1,14 @@
-import { Activity, HardDrive, RefreshCw, Server } from "lucide-react";
+import {
+  Activity,
+  Database,
+  Gauge,
+  HardDrive,
+  Layers,
+  RefreshCw,
+  Server,
+  SlidersHorizontal,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { brand } from "@/lib/brand";
 import { formatBytes, formatDateTime } from "@/lib/format";
@@ -30,9 +40,9 @@ function failureKindLabel(kind: string) {
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div>
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className="mt-1 text-sm font-medium">{value}</dd>
+    <div className="flex min-w-0 items-baseline justify-between gap-3">
+      <dt className="shrink-0 text-xs text-muted">{label}</dt>
+      <dd className="min-w-0 text-right text-sm font-medium">{value}</dd>
     </div>
   );
 }
@@ -45,12 +55,61 @@ function ServiceMetric({
   service: ServiceStatus;
 }) {
   return (
-    <div>
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className="mt-1 inline-flex items-center gap-2 text-sm font-medium">
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      <dt className="shrink-0 text-xs text-muted">{label}</dt>
+      <dd className="inline-flex min-w-0 items-center gap-2 text-right text-sm font-medium">
         <StatusDot tone={statusTone(service.status)} />
         {statusLabel(service)}
       </dd>
+    </div>
+  );
+}
+
+function SectionHeader({
+  icon: Icon,
+  id,
+  title,
+}: {
+  icon: LucideIcon;
+  id: string;
+  title: string;
+}) {
+  return (
+    <div className="flex h-6 items-center gap-2">
+      <Icon aria-hidden="true" className="size-4 shrink-0 text-primary" />
+      <h3 className="truncate text-sm font-semibold" id={id}>
+        {title}
+      </h3>
+    </div>
+  );
+}
+
+function QueueMetric({
+  label,
+  queue,
+  completed,
+  rejected,
+}: {
+  label: string;
+  queue: { active: number; limit: number; queued: number; queue_limit: number };
+  completed: number;
+  rejected: number;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-baseline justify-between gap-3">
+        <dt className="shrink-0 text-xs text-muted">{label}</dt>
+        <dd className="min-w-0 text-right text-sm font-medium">
+          {queue.active}/{queue.limit}
+          {" · "}
+          {queue.queued}/{queue.queue_limit}
+        </dd>
+      </div>
+      <p className="mt-1 text-right text-xs text-muted">
+        {brand.copy.adminQueueCompleted} {completed}
+        {" · "}
+        {brand.copy.adminQueueRejected} {rejected}
+      </p>
     </div>
   );
 }
@@ -131,15 +190,14 @@ export default function AdminStatusDashboard({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-6 lg:grid-cols-3">
+      <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         <section aria-labelledby="backend-stack-status">
-          <div className="flex items-center gap-2">
-            <Server aria-hidden="true" className="size-4 text-primary" />
-            <h3 className="text-sm font-semibold" id="backend-stack-status">
-              {brand.copy.adminBackendTitle}
-            </h3>
-          </div>
-          <dl className="mt-3 grid grid-cols-2 gap-3">
+          <SectionHeader
+            icon={Server}
+            id="backend-stack-status"
+            title={brand.copy.adminBackendTitle}
+          />
+          <dl className="mt-3 space-y-2">
             <ServiceMetric
               label={brand.copy.adminBackendApi}
               service={{ status: "ok", detail: null, pool_status: null, dialect: null, used_memory_bytes: null, max_memory_bytes: null, connected_clients: null }}
@@ -165,30 +223,15 @@ export default function AdminStatusDashboard({
               value={status.backend.task_thread_pool_size}
             />
           </dl>
-          {Object.entries(status.remote_storage.counts.thumbnail_failure_kinds ?? {}).length > 0 ? (
-            <div className="mt-3 space-y-1">
-              <p className="text-xs font-medium text-muted">
-                {brand.copy.adminScanFailure}
-              </p>
-              {Object.entries(
-                status.remote_storage.counts.thumbnail_failure_kinds,
-              ).map(([kind, count]) => (
-                <p className="text-xs text-muted" key={kind}>
-                  {failureKindLabel(kind)}: {count}
-                </p>
-              ))}
-            </div>
-          ) : null}
         </section>
 
         <section aria-labelledby="remote-storage-status">
-          <div className="flex items-center gap-2">
-            <HardDrive aria-hidden="true" className="size-4 text-primary" />
-            <h3 className="text-sm font-semibold" id="remote-storage-status">
-              {brand.copy.adminRemoteStorageTitle}
-            </h3>
-          </div>
-          <dl className="mt-3 grid grid-cols-2 gap-3">
+          <SectionHeader
+            icon={HardDrive}
+            id="remote-storage-status"
+            title={brand.copy.adminRemoteStorageTitle}
+          />
+          <dl className="mt-3 space-y-2">
             <Metric
               label={brand.copy.adminRemoteStorageProvider}
               value={brand.copy.adminRemoteStorageBaidu}
@@ -230,15 +273,28 @@ export default function AdminStatusDashboard({
               value={status.remote_storage.counts.stream_failed}
             />
           </dl>
+          {Object.entries(status.remote_storage.counts.thumbnail_failure_kinds ?? {}).length > 0 ? (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs font-medium text-muted">
+                {brand.copy.adminScanFailure}
+              </p>
+              {Object.entries(
+                status.remote_storage.counts.thumbnail_failure_kinds,
+              ).map(([kind, count]) => (
+                <p className="text-xs text-muted" key={kind}>
+                  {failureKindLabel(kind)}: {count}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <section aria-labelledby="resource-queue-status">
-          <div className="flex items-center gap-2">
-            <Activity aria-hidden="true" className="size-4 text-primary" />
-            <h3 className="text-sm font-semibold" id="resource-queue-status">
-              {brand.copy.adminResourceTitle}
-            </h3>
-          </div>
+          <SectionHeader
+            icon={Activity}
+            id="resource-queue-status"
+            title={brand.copy.adminResourceTitle}
+          />
 
           <div className="mt-3 space-y-3">
             {filesystemRatio !== null ? (
@@ -257,18 +313,10 @@ export default function AdminStatusDashboard({
               />
             ) : null}
 
-            <dl className="grid grid-cols-2 gap-3">
+            <dl className="space-y-2">
               <Metric
                 label={brand.copy.adminResourceMemory}
                 value={`${formatBytes(memoryCurrent) ?? "-"} / ${formatBytes(memoryLimit) ?? "-"}`}
-              />
-              <Metric
-                label={brand.copy.adminResourceThreads}
-                value={status.resources.process.threads ?? "-"}
-              />
-              <Metric
-                label={brand.copy.adminResourcePids}
-                value={status.resources.cgroup.pids_current ?? "-"}
               />
               <Metric
                 label={brand.copy.adminResourceTemp}
@@ -283,103 +331,10 @@ export default function AdminStatusDashboard({
                 value={status.metrics.active_jobs ?? 0}
               />
               <Metric
-                label={brand.copy.adminResourceQueueDepth}
-                value={status.metrics.queue_depth ?? 0}
-              />
-              <Metric
                 label={brand.copy.adminResourceOom}
                 value={status.resources.cgroup.oom_kill ?? 0}
               />
             </dl>
-
-            <div>
-              <h4 className="text-sm font-semibold">
-                {brand.copy.adminCacheTitle}
-              </h4>
-              <dl className="mt-2 grid gap-2 sm:grid-cols-3">
-                {(
-                  [
-                    ["derived_thumbnails", brand.copy.adminCacheDerived],
-                    ["temporary", brand.copy.adminCacheTemporary],
-                    ["nginx", brand.copy.adminCacheNginx],
-                  ] as const
-                ).map(([key, label]) => {
-                  const cache = status.resources.caches[key];
-                  const statusText = cacheStatus[cache.status];
-                  return (
-                    <div className="rounded-lg border border-border p-3" key={key}>
-                      <dt className="text-xs text-muted">{label}</dt>
-                      <dd className="mt-1 text-sm font-medium">
-                        {cache.files} {brand.copy.adminCacheFiles} ·{" "}
-                        {formatBytes(cache.bytes) ?? 0}
-                      </dd>
-                      {statusText ? (
-                        <p className="mt-1 text-xs text-muted">{statusText}</p>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </dl>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-semibold">
-                {brand.copy.adminConfigurationTitle}
-              </h4>
-              <dl className="mt-2 grid grid-cols-2 gap-2">
-                <Metric
-                  label={brand.copy.adminConfigPreheatConcurrency}
-                  value={`${configuration.preheat_concurrency_limit} / ${configuration.preheat_queue_limit}`}
-                />
-                <Metric
-                  label={brand.copy.adminConfigDerivative}
-                  value={`${configuration.derivative_concurrency_limit} / ${configuration.derivative_queue_limit}`}
-                />
-                <Metric
-                  label={brand.copy.adminConfigDirectProbe}
-                  value={`${configuration.direct_probe_concurrency_limit} / ${configuration.direct_probe_queue_limit}`}
-                />
-                <Metric
-                  label={brand.copy.adminConfigScan}
-                  value={configuration.scan_concurrency_limit}
-                />
-                <Metric
-                  label={brand.copy.adminConfigStreamGlobal}
-                  value={`${configuration.stream_global_concurrency_limit} / ${configuration.stream_user_concurrency_limit}`}
-                />
-                <Metric
-                  label={brand.copy.adminConfigTemp}
-                  value={`${configuration.temp_max_files} / ${formatBytes(configuration.temp_disk_quota_bytes) ?? "-"}`}
-                />
-              </dl>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-semibold">
-                {brand.copy.adminQueueTitle}
-              </h4>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {Object.entries(status.tasks).map(([key, queue]) => (
-                  <div className="rounded-lg border border-border p-3" key={key}>
-                    <p className="text-sm font-medium">
-                      {queueLabels[key] ?? key}
-                    </p>
-                    <p className="mt-1 text-xs text-muted">
-                      {brand.copy.adminQueueActive} {queue.active}/{queue.limit}
-                      {" · "}
-                      {brand.copy.adminQueueQueued} {queue.queued}/{queue.queue_limit}
-                    </p>
-                    <p className="mt-1 text-xs text-muted">
-                      {brand.copy.adminQueueCompleted}{" "}
-                      {status.metrics[`${key}.completed`] ?? 0}
-                      {" · "}
-                      {brand.copy.adminQueueRejected}{" "}
-                      {status.metrics[`${key}.rejected`] ?? 0}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
 
             {tempRatio !== null ? (
               <ProgressBar
@@ -389,6 +344,122 @@ export default function AdminStatusDashboard({
               />
             ) : null}
           </div>
+        </section>
+
+      </div>
+
+      <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <section aria-labelledby="workload-status">
+          <SectionHeader
+            icon={Gauge}
+            id="workload-status"
+            title={brand.copy.adminWorkloadTitle}
+          />
+          <dl className="mt-3 space-y-2">
+            <Metric
+              label={brand.copy.adminResourceThreads}
+              value={status.resources.process.threads ?? "-"}
+            />
+            <Metric
+              label={brand.copy.adminResourcePids}
+              value={status.resources.cgroup.pids_current ?? "-"}
+            />
+            <Metric
+              label={brand.copy.adminResourceActiveJobs}
+              value={status.metrics.active_jobs ?? 0}
+            />
+            <Metric
+              label={brand.copy.adminResourceQueueDepth}
+              value={status.metrics.queue_depth ?? 0}
+            />
+          </dl>
+        </section>
+
+        <section aria-labelledby="cache-status">
+          <SectionHeader
+            icon={Layers}
+            id="cache-status"
+            title={brand.copy.adminCacheTitle}
+          />
+          <dl className="mt-3 space-y-2">
+            {(
+              [
+                ["derived_thumbnails", brand.copy.adminCacheDerived],
+                ["temporary", brand.copy.adminCacheTemporary],
+                ["nginx", brand.copy.adminCacheNginx],
+              ] as const
+            ).map(([key, label]) => {
+              const cache = status.resources.caches[key];
+              const statusText = cacheStatus[cache.status];
+              return (
+                <div key={key}>
+                  <div className="flex min-w-0 items-baseline justify-between gap-3">
+                    <dt className="shrink-0 text-xs text-muted">{label}</dt>
+                    <dd className="min-w-0 text-right text-sm font-medium">
+                      {cache.files} {brand.copy.adminCacheFiles} ·{" "}
+                      {formatBytes(cache.bytes) ?? 0}
+                    </dd>
+                  </div>
+                  {statusText ? (
+                    <p className="text-right text-xs text-muted">{statusText}</p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </dl>
+        </section>
+
+        <section aria-labelledby="resource-configuration-status">
+          <SectionHeader
+            icon={SlidersHorizontal}
+            id="resource-configuration-status"
+            title={brand.copy.adminConfigurationTitle}
+          />
+          <dl className="mt-3 space-y-2">
+            <Metric
+              label={brand.copy.adminConfigPreheatConcurrency}
+              value={`${configuration.preheat_concurrency_limit} / ${configuration.preheat_queue_limit}`}
+            />
+            <Metric
+              label={brand.copy.adminConfigDerivative}
+              value={`${configuration.derivative_concurrency_limit} / ${configuration.derivative_queue_limit}`}
+            />
+            <Metric
+              label={brand.copy.adminConfigDirectProbe}
+              value={`${configuration.direct_probe_concurrency_limit} / ${configuration.direct_probe_queue_limit}`}
+            />
+            <Metric
+              label={brand.copy.adminConfigScan}
+              value={configuration.scan_concurrency_limit}
+            />
+            <Metric
+              label={brand.copy.adminConfigStreamGlobal}
+              value={`${configuration.stream_global_concurrency_limit} / ${configuration.stream_user_concurrency_limit}`}
+            />
+            <Metric
+              label={brand.copy.adminConfigTemp}
+              value={`${configuration.temp_max_files} / ${formatBytes(configuration.temp_disk_quota_bytes) ?? "-"}`}
+            />
+          </dl>
+        </section>
+
+        <section aria-labelledby="task-queue-status">
+          <SectionHeader
+            icon={Database}
+            id="task-queue-status"
+            title={brand.copy.adminQueueTitle}
+          />
+          <dl className="mt-3 space-y-2">
+            {Object.entries(status.tasks).map(([key, queue]) => (
+              <QueueMetric
+                completed={status.metrics[`${key}.completed`] ?? 0}
+                key={key}
+                label={queueLabels[key] ?? key}
+                queue={queue}
+                rejected={status.metrics[`${key}.rejected`] ?? 0}
+              />
+            ))}
+          </dl>
         </section>
       </div>
     </div>

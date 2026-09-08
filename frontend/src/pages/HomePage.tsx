@@ -506,7 +506,7 @@ export default function HomePage() {
       {isLoadingInitial ? (
         <>
           <span className="sr-only">{brand.copy.loadingLibrary}</span>
-          <MediaSkeleton />
+          <MediaSkeleton columnCount={columnCount} />
         </>
       ) : error ? (
         <Notice className="mt-8" tone="error">

@@ -1,13 +1,47 @@
-export default function MediaSkeleton({ count = 8 }: { count?: number }) {
+import { Image as ImageIcon } from "lucide-react";
+
+const skeletonRatios = [
+  "4 / 5",
+  "3 / 4",
+  "1 / 1",
+  "4 / 3",
+  "3 / 4",
+  "5 / 4",
+] as const;
+
+type MediaSkeletonProps = {
+  columnCount?: number;
+  count?: number;
+};
+
+export default function MediaSkeleton({
+  columnCount = 2,
+  count = 18,
+}: MediaSkeletonProps = {}) {
+  const columns = Array.from(
+    { length: columnCount },
+    () => [] as number[],
+  );
+  Array.from({ length: count }).forEach((_, index) => {
+    columns[index % columnCount]?.push(index);
+  });
+
   return (
     <div aria-label="loading" aria-live="polite" className="masonry">
-      {Array.from({ length: count }).map((_, index) => (
-        <div className="post-card overflow-hidden" key={index}>
-          <div className="shimmer h-44 rounded-xl" />
-          <div className="mt-4 space-y-2">
-            <div className="shimmer h-4 w-3/4 rounded-full" />
-            <div className="shimmer h-3 w-1/2 rounded-full" />
-          </div>
+      {columns.map((column, columnIndex) => (
+        <div className="canvas-column" key={columnIndex}>
+          {column.map((index) => (
+            <div className="post-card overflow-hidden" key={index}>
+              <div
+                className="media-frame card-shimmer"
+                style={{ aspectRatio: skeletonRatios[index % skeletonRatios.length] }}
+              >
+                <div className="media-placeholder">
+                  <ImageIcon aria-hidden="true" className="size-8 opacity-40" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ))}
     </div>
