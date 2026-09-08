@@ -16,12 +16,18 @@ type MemoryCardProps = {
   memory: MemorySummary;
   priority?: boolean;
   onOpen: (memoryId: string) => void;
+  onPrefetch?: () => void;
 };
 
 const AUTO_RETRY_LIMIT = 3;
 const AUTO_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
-export default function MemoryCard({ memory, onOpen, priority = false }: MemoryCardProps) {
+export default function MemoryCard({
+  memory,
+  onOpen,
+  onPrefetch,
+  priority = false,
+}: MemoryCardProps) {
   const [mediaState, dispatchMediaState] = useReducer(
     reduceMediaLifecycle,
     undefined,
@@ -193,6 +199,8 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     <div
       className="post-card relative block w-full overflow-hidden"
       data-preview-state={mediaState.preview}
+      onFocus={onPrefetch}
+      onPointerEnter={onPrefetch}
       ref={cardRef}
     >
       <button

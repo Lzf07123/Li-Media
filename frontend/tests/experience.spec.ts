@@ -134,6 +134,20 @@ test("photo viewer supports keyboard zoom and restores scroll lock", async ({ pa
   await expect(viewer).toHaveCount(0);
 });
 
+test("viewer chunk is prefetched after the home list renders", async ({ page }) => {
+  await mockMemoryRoutes(page);
+  const chunkRequest = page.waitForRequest(/assets\/MediaViewer-.*\.js/);
+  const adminChunkRequest = page.waitForRequest(/assets\/AdminPage-.*\.js/, {
+    timeout: 1000,
+  }).catch(() => null);
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await chunkRequest;
+  const adminChunk = await adminChunkRequest;
+  expect(adminChunk).toBeNull();
+});
+
 test("home preheat state is explicit and cards use responsive priority", async ({ page }) => {
   await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories/preheat-status", async (route) => {

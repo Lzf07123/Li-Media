@@ -27,6 +27,12 @@ let scrollBeforeViewer = 0;
 
 const MediaViewer = lazy(() => import("@/components/MediaViewer"));
 
+function prefetchMediaViewerChunk() {
+  void import("@/components/MediaViewer").catch(() => {
+    // Prefetching is an optimization; lazy loading remains the fallback.
+  });
+}
+
 type ColumnBreakpoint = {
   query: string;
   count: 2 | 3 | 4 | 5 | 6;
@@ -351,6 +357,20 @@ export default function HomePage() {
   }, [isLoadingInitial, pathname]);
 
   useEffect(() => {
+    if (isLoadingInitial || canvasMemories.length === 0) {
+      return;
+    }
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(() => prefetchMediaViewerChunk());
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timer = window.setTimeout(prefetchMediaViewerChunk, 1);
+    return () => window.clearTimeout(timer);
+  }, [canvasMemories.length, isLoadingInitial]);
+
+  useEffect(() => {
     if (viewerId) {
       return;
     }
@@ -582,6 +602,7 @@ export default function HomePage() {
                   <MemoryCard
                     key={memory.id}
                     memory={memory}
+                    onPrefetch={prefetchMediaViewerChunk}
                     onOpen={openViewer}
                     priority={firstRowIds.has(memory.id)}
                   />
