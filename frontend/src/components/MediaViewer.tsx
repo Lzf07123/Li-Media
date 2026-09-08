@@ -86,11 +86,10 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
   const videoShellStyle = {
     "--aspect-ratio": String(aspectRatio),
   } as CSSProperties;
-  const fileStatus = memory.primary_file?.status;
   const remoteState = memory.primary_file?.remote_state;
   const thumbnailState = memory.primary_file?.thumbnail_state;
   const streamState = memory.primary_file?.stream_state;
-  const hasIndexFailure = [fileStatus, remoteState, thumbnailState, streamState].some(
+  const hasIndexFailure = [remoteState, thumbnailState, streamState].some(
     (value) => value === "failed" || value === "missing" || value === "unavailable",
   );
   const activeMediaState = selectActiveMediaState([

@@ -41,26 +41,17 @@ export type Memory = {
   updated_at: string;
 };
 
-type MemoryFileStatus = NonNullable<Memory["primary_file"]>["status"];
 type MemoryRemoteState = NonNullable<Memory["primary_file"]>["remote_state"];
 type MemoryThumbnailState = NonNullable<Memory["primary_file"]>["thumbnail_state"];
 type MemoryStreamState = NonNullable<Memory["primary_file"]>["stream_state"];
 
 export type MemoryFileSummary = {
   id: string;
-  source: string;
-  remote_id: string | null;
-  remote_path: string;
   filename: string;
-  status: MemoryFileStatus;
   remote_state: MemoryRemoteState;
   thumbnail_state: MemoryThumbnailState;
-  thumbnail_failure_kind: string | null;
   stream_state: MemoryStreamState;
   browser_compatibility: "supported" | "unsupported" | "unknown";
-  browser_format_summary: Record<string, unknown>;
-  browser_compatibility_error: string | null;
-  browser_compatibility_checked_at: string | null;
 };
 
 export type MemorySummary = {

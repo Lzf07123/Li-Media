@@ -83,9 +83,10 @@ test("list cache does not reuse photo and video responses across filters", async
 
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  const filteredRequest = page.waitForRequest((request) => request.url().includes("/api/v1/memories?"));
   await page.locator(".segmented button").nth(2).click();
   await page.waitForURL(/kind=video/);
-  await page.waitForRequest((request) => request.url().includes("/api/v1/memories?"));
+  await filteredRequest;
   await expect(page.locator(".masonry .post-card button")).toHaveAttribute(
     "aria-label",
     "回忆预览",

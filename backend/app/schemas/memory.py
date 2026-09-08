@@ -54,15 +54,11 @@ class MemoryCardFileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    source: str
-    remote_id: str | None
-    remote_path: str
     filename: str
-    status: MemoryFileStatus
     remote_state: RemoteFileState
     thumbnail_state: RemoteThumbnailState
-    thumbnail_failure_kind: str | None
     stream_state: RemoteStreamState
+    browser_compatibility: BrowserCompatibilityState
 
 
 class MemorySummaryRead(BaseModel):
