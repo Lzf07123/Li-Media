@@ -138,12 +138,17 @@ export default function HomePage() {
       });
       setTotal(data.total);
       setCounts(data.counts ?? { photo: 0, video: 0 });
-      setPublicCounts({
-        total: data.public_counts.photo + data.public_counts.video,
-        photo: data.public_counts.photo,
-        video: data.public_counts.video,
-      });
-      setPublicCountState("ready");
+      if (data.public_counts) {
+        setPublicCounts({
+          total: data.public_counts.photo + data.public_counts.video,
+          photo: data.public_counts.photo,
+          video: data.public_counts.video,
+        });
+        setPublicCountState("ready");
+      } else {
+        setPublicCounts(null);
+        setPublicCountState("error");
+      }
       setError(null);
       setLoadMoreError(null);
       return true;

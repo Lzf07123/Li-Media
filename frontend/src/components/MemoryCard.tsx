@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
 import {
-  resolveThumbnailSrcSet,
   resolveThumbnailUrl,
   type MemorySummary,
 } from "@/lib/api";
@@ -30,7 +29,6 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, "240");
-  const thumbnailSrcSet = resolveThumbnailSrcSet(memory.thumbnail_url);
   const thumbnailRetryUrl = retryAttempt > 0
     ? `${thumbnailUrl}&retry=${retryAttempt}`
     : null;
@@ -221,11 +219,6 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
               setLoadState("ready");
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
-            srcSet={
-              loadState === "ready" && !thumbnailRetryUrl
-                ? thumbnailSrcSet ?? undefined
-                : undefined
-            }
             src={thumbnailRetryUrl ?? queuedThumbnailUrl ?? undefined}
             ref={imageRef}
             width={memory.width ?? undefined}

@@ -1,9 +1,7 @@
 import {
   useCallback,
   useEffect,
-  lazy,
   useRef,
-  Suspense,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
@@ -18,6 +16,8 @@ import {
   X,
 } from "lucide-react";
 import { createPortal } from "react-dom";
+
+import VideoPlayer from "@/components/VideoPlayer";
 
 import {
   resolveMediaUrl,
@@ -41,7 +41,6 @@ type PlaybackSource = {
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
-const VideoPlayer = lazy(() => import("@/components/VideoPlayer"));
 
 export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -424,15 +423,13 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
         <div className="photo-viewer-stage is-video">
           <div className="video-viewer-shell" style={videoShellStyle}>
             {playbackSource ? (
-              <Suspense fallback={null}>
-                <VideoPlayer
-                  key={memory.id}
-                  onReady={() => setPlaybackState("ready")}
-                  onSourceError={(error) => handleVideoSourceError(playbackSource, error)}
-                  poster={queuedPosterSrc ?? queuedSmallSrc ?? undefined}
-                  src={playbackSource.src}
-                />
-              </Suspense>
+              <VideoPlayer
+                key={memory.id}
+                onReady={() => setPlaybackState("ready")}
+                onSourceError={(error) => handleVideoSourceError(playbackSource, error)}
+                poster={queuedPosterSrc ?? queuedSmallSrc ?? undefined}
+                src={playbackSource.src}
+              />
             ) : (
               <>
                 {queuedPosterSrc || queuedSmallSrc ? (

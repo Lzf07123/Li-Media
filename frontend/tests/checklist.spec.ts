@@ -67,6 +67,7 @@ test("home public count, loading feedback and persistent footer", async ({ page 
             photo: kind === "video" ? 0 : 4,
             video: kind === "video" ? 3 : 3,
           },
+          public_counts: { photo: 4, video: 3 },
         },
       });
       return;

@@ -398,7 +398,16 @@ test("remote photo without preview uses placeholder", async ({ page }) => {
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/memories") {
-      await route.fulfill({ json: { items: [remoteMemory], total: 1, page: 1, page_size: 24 } });
+      await route.fulfill({
+        json: {
+          items: [remoteMemory],
+          total: 1,
+          page: 1,
+          page_size: 24,
+          counts: { photo: 1, video: 0 },
+          public_counts: { photo: 1, video: 0 },
+        },
+      });
       return;
     }
     if (url.pathname === "/api/v1/memories/recommend") {
@@ -462,7 +471,10 @@ test("remote video playback failure can be retried", async ({ page }) => {
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === `/api/v1/memories/${memoryId}/file`) {
-      await route.abort();
+      await route.fulfill({
+        body: Buffer.from("broken-video"),
+        contentType: "video/mp4",
+      });
       return;
     }
     if (url.pathname === "/api/v1/memories/recommend") {
