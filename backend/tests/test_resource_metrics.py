@@ -70,3 +70,12 @@ def test_directory_scan_respects_file_count_boundary(tmp_path: Path) -> None:
         "bytes": 15,
         "status": "ok",
     }
+
+
+def test_clean_deployment_still_reports_filesystem_metrics(tmp_path: Path) -> None:
+    metrics = collect_resource_metrics(tmp_path / "missing" / "media")
+
+    assert metrics["filesystem"]["total_bytes"] > 0
+    assert metrics["filesystem"]["used_bytes"] > 0
+    assert metrics["filesystem"]["free_bytes"] > 0
+    assert metrics["filesystem"]["usage_ratio"] is not None
