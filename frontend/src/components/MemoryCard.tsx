@@ -1,5 +1,5 @@
 import { Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
 import {
@@ -7,6 +7,10 @@ import {
   type MemorySummary,
 } from "@/lib/api";
 import { loadQueuedImage } from "@/lib/image-load-queue";
+import {
+  createMediaLifecycleMap,
+  reduceMediaLifecycle,
+} from "@/lib/media-state";
 
 type MemoryCardProps = {
   memory: MemorySummary;
@@ -18,7 +22,11 @@ const AUTO_RETRY_LIMIT = 3;
 const AUTO_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export default function MemoryCard({ memory, onOpen, priority = false }: MemoryCardProps) {
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [mediaState, dispatchMediaState] = useReducer(
+    reduceMediaLifecycle,
+    undefined,
+    createMediaLifecycleMap,
+  );
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [queuedThumbnailUrl, setQueuedThumbnailUrl] = useState<string | null>(null);
@@ -103,12 +111,14 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   useEffect(() => {
     if (!thumbnailUrl || !isIntersecting) {
       setQueuedThumbnailUrl(null);
+      dispatchMediaState({ type: "reset" });
       return;
     }
 
     const controller = new AbortController();
     let autoRetryTimer = 0;
-    setLoadState("loading");
+    dispatchMediaState({ scope: "preview", type: "queued" });
+    dispatchMediaState({ scope: "preview", type: "load" });
     setThumbnailFailed(false);
     setNaturalSize(null);
     setQueuedThumbnailUrl(null);
@@ -126,21 +136,22 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
         if (image.naturalWidth > 0 && image.naturalHeight > 0) {
           setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
         }
-        setLoadState("ready");
+        dispatchMediaState({ scope: "preview", type: "ready" });
       })
       .catch((error) => {
         if (controller.signal.aborted || error.name === "AbortError") {
           return;
         }
-        setLoadState("error");
         setThumbnailFailed(true);
+        dispatchMediaState({ scope: "preview", type: "fail" });
 
         if (retryAttempt < AUTO_RETRY_LIMIT) {
           autoRetryTimer = window.setTimeout(() => {
-            if (controller.signal.aborted) {
-              return;
-            }
-            setRetryAttempt(retryAttempt + 1);
+          if (controller.signal.aborted) {
+            return;
+          }
+          dispatchMediaState({ scope: "preview", type: "retry" });
+          setRetryAttempt(retryAttempt + 1);
           }, AUTO_RETRY_DELAYS_MS[retryAttempt]);
         }
       });
@@ -152,7 +163,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   }, [isIntersecting, priority, retryAttempt, thumbnailRetryUrl, thumbnailUrl]);
 
   useEffect(() => {
-    if (loadState !== "loading") {
+    if (mediaState.preview !== "loading") {
       setShowShimmer(false);
       return;
     }
@@ -162,16 +173,16 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
     }, 150);
 
     return () => window.clearTimeout(timer);
-  }, [loadState]);
+  }, [mediaState.preview]);
 
-  const showError = thumbnailFailed || loadState === "error";
+  const showError = thumbnailFailed || mediaState.preview === "failed";
 
   const retryThumbnail = () => {
     if (!thumbnailUrl) {
       return;
     }
 
-    setLoadState("loading");
+    dispatchMediaState({ scope: "preview", type: "retry" });
     setThumbnailFailed(false);
     setNaturalSize(null);
     setQueuedThumbnailUrl(null);
@@ -179,7 +190,11 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
   };
 
   return (
-    <div className="post-card relative block w-full overflow-hidden" ref={cardRef}>
+    <div
+      className="post-card relative block w-full overflow-hidden"
+      data-preview-state={mediaState.preview}
+      ref={cardRef}
+    >
       <button
         aria-label={brand.copy.detailPreviewAlt}
         className="block w-full cursor-pointer text-left"
@@ -192,7 +207,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
             <span
               aria-hidden="true"
               className={`media-placeholder media-crossfade ${
-                isInView && loadState !== "ready" ? "is-visible" : "is-hidden"
+                isInView && mediaState.preview !== "ready" ? "is-visible" : "is-hidden"
               } ${showShimmer ? "card-shimmer" : ""}`}
             >
               <ImageIcon className="size-8 opacity-40" />
@@ -201,14 +216,14 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
           <img
             alt={brand.copy.detailPreviewAlt}
             className={`post-cover media-reveal media-crossfade ${
-              loadState === "ready" && isInView ? "is-visible" : "is-hidden"
+              mediaState.preview === "ready" && isInView ? "is-visible" : "is-hidden"
             }`}
             decoding="async"
             fetchPriority={priority ? "high" : "low"}
             height={memory.height ?? undefined}
             loading={priority ? "eager" : "lazy"}
             onError={() => {
-              setLoadState("error");
+              dispatchMediaState({ scope: "preview", type: "fail" });
               setThumbnailFailed(true);
             }}
             onLoad={(event) => {
@@ -216,7 +231,7 @@ export default function MemoryCard({ memory, onOpen, priority = false }: MemoryC
               if (image.naturalWidth > 0 && image.naturalHeight > 0) {
                 setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
               }
-              setLoadState("ready");
+              dispatchMediaState({ scope: "preview", type: "ready" });
             }}
             sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
             src={thumbnailRetryUrl ?? queuedThumbnailUrl ?? undefined}

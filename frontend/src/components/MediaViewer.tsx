@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -26,6 +27,12 @@ import {
 } from "@/lib/api";
 import { loadQueuedImage } from "@/lib/image-load-queue";
 import { brand } from "@/lib/brand";
+import {
+  createMediaLifecycleMap,
+  isFailureMediaState,
+  reduceMediaLifecycle,
+  selectActiveMediaState,
+} from "@/lib/media-state";
 
 type MediaViewerProps = {
   memory: MemorySummary;
@@ -59,13 +66,13 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
   const [queuedPosterSrc, setQueuedPosterSrc] = useState<string | null>(null);
   const [smallImageReady, setSmallImageReady] = useState(false);
   const [smallImageFailed, setSmallImageFailed] = useState(false);
-  const [photoState, setPhotoState] = useState<"loading" | "ready" | "error">("loading");
   const [photoRetryKey, setPhotoRetryKey] = useState(0);
-
+  const [mediaState, dispatchMediaState] = useReducer(
+    reduceMediaLifecycle,
+    undefined,
+    createMediaLifecycleMap,
+  );
   const [playbackSource, setPlaybackSource] = useState<PlaybackSource | null>(null);
-  const [playbackState, setPlaybackState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [playbackUnsupported, setPlaybackUnsupported] = useState(false);
-  const [downloadState, setDownloadState] = useState<"idle" | "loading" | "error">("idle");
   const [posterSize, setPosterSize] = useState<"480" | "1280">(() => {
     return window.matchMedia("(max-width: 767px)").matches ? "480" : "1280";
   });
@@ -86,14 +93,35 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
   const hasIndexFailure = [fileStatus, remoteState, thumbnailState, streamState].some(
     (value) => value === "failed" || value === "missing" || value === "unavailable",
   );
+  const activeMediaState = selectActiveMediaState([
+    { scope: "download", state: mediaState.download },
+    { scope: "playback", state: mediaState.playback },
+    { scope: "preview", state: mediaState.preview },
+  ]);
   const statusText = hasIndexFailure
     ? brand.copy.viewerStatusFailed
-    : photoState === "error" || playbackState === "error" || downloadState === "error"
-      ? brand.copy.viewerStatusRetrying
-      : photoState === "loading"
-        ? brand.copy.viewerStatusLoading
-        : brand.copy.viewerStatusReady;
-  const shouldShowStatus = !isVideo || playbackState === "ready" || playbackState === "error";
+    : activeMediaState.scope === "download"
+      ? activeMediaState.state === "loading"
+        ? brand.copy.viewerDownloading
+        : isFailureMediaState(activeMediaState.state)
+          ? brand.copy.viewerDownloadFailed
+          : brand.copy.viewerStatusReady
+      : activeMediaState.scope === "playback"
+        ? activeMediaState.state === "unsupported"
+          ? brand.copy.videoCodecUnsupported
+          : activeMediaState.state === "loading"
+            ? brand.copy.viewerPreparingPlayback
+            : activeMediaState.state === "buffering"
+              ? brand.copy.detailBuffering
+              : isFailureMediaState(activeMediaState.state)
+                ? brand.copy.detailPlaybackFailed
+                : brand.copy.viewerStatusReady
+        : activeMediaState.state === "loading" || activeMediaState.state === "queued"
+          ? brand.copy.viewerStatusLoading
+          : isFailureMediaState(activeMediaState.state)
+            ? brand.copy.viewerStatusRetrying
+            : brand.copy.viewerStatusReady;
+  const shouldShowStatus = true;
 
   const resetTransform = useCallback(() => {
     setZoom(1);
@@ -135,7 +163,8 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     setPhotoLargeSrc(null);
     setSmallImageReady(false);
     setSmallImageFailed(false);
-    setPhotoState(smallSrc ? "loading" : "error");
+    dispatchMediaState({ scope: "preview", type: smallSrc ? "queued" : "fail" });
+    dispatchMediaState({ scope: "preview", type: smallSrc ? "load" : "fail" });
     resetTransform();
     if (!largeSrc) {
       return;
@@ -152,13 +181,13 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
           return;
         }
         setPhotoLargeSrc(largeSrc);
-        setPhotoState("ready");
+        dispatchMediaState({ scope: "preview", type: "ready" });
       })
       .catch((error) => {
         if (controller.signal.aborted || error.name === "AbortError") {
           return;
         }
-        setPhotoState("error");
+        dispatchMediaState({ scope: "preview", type: "fail" });
       });
 
     return () => controller.abort();
@@ -201,6 +230,8 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     }
 
     const controller = new AbortController();
+    dispatchMediaState({ scope: "preview", type: "queued" });
+    dispatchMediaState({ scope: "preview", type: "load" });
     loadQueuedImage(posterSource, {
       priority: "high",
       retries: 4,
@@ -209,6 +240,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
       .then(() => {
         if (!controller.signal.aborted) {
           setQueuedPosterSrc(posterSource);
+          dispatchMediaState({ scope: "preview", type: "ready" });
         }
       })
       .catch(() => {
@@ -354,16 +386,18 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     const taskId = playbackTask.current + 1;
     playbackTask.current = taskId;
     isStartingPlayback.current = true;
-    setPlaybackState("loading");
+    dispatchMediaState({ scope: "playback", type: "load" });
     setPlaybackSource({ kind: "server", src: resolveMediaUrl(memory.file_url) });
     isStartingPlayback.current = false;
   };
 
   const handleVideoSourceError = (source: PlaybackSource, error?: MediaError) => {
-    setPlaybackUnsupported(
-      error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED,
-    );
-    setPlaybackState("error");
+    dispatchMediaState({
+      scope: "playback",
+      type: error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+        ? "unsupported"
+        : "fail",
+    });
   };
 
   const startDownload = async () => {
@@ -372,7 +406,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     }
 
     isRefreshingDownload.current = true;
-    setDownloadState("loading");
+    dispatchMediaState({ scope: "download", type: "load" });
     try {
       const anchor = document.createElement("a");
       anchor.href = resolveMediaUrl(memory.file_url);
@@ -382,9 +416,9 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
       anchor.click();
       anchor.remove();
       downloadRetried.current = false;
-      setDownloadState("idle");
+      dispatchMediaState({ scope: "download", type: "ready" });
     } catch {
-      setDownloadState("error");
+      dispatchMediaState({ scope: "download", type: "fail" });
     } finally {
       isRefreshingDownload.current = false;
     }
@@ -396,9 +430,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     isRefreshingDownload.current = false;
     downloadRetried.current = false;
     setPlaybackSource(null);
-    setPlaybackState("idle");
-    setPlaybackUnsupported(false);
-    setDownloadState("idle");
+    dispatchMediaState({ type: "reset" });
 
     return () => {
       playbackTask.current += 1;
@@ -425,7 +457,11 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
             {playbackSource ? (
               <VideoPlayer
                 key={memory.id}
-                onReady={() => setPlaybackState("ready")}
+                onBufferingChange={(isBuffering) => dispatchMediaState({
+                  scope: "playback",
+                  type: isBuffering ? "buffer" : "ready",
+                })}
+                onReady={() => dispatchMediaState({ scope: "playback", type: "ready" })}
                 onSourceError={(error) => handleVideoSourceError(playbackSource, error)}
                 poster={queuedPosterSrc ?? queuedSmallSrc ?? undefined}
                 src={playbackSource.src}
@@ -445,7 +481,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
                 <button
                   aria-label={brand.copy.viewerPlay}
                   className="video-viewer-play"
-                  disabled={playbackState === "loading"}
+                  disabled={mediaState.playback === "loading"}
                   onClick={() => void startPlayback()}
                   type="button"
                 >
@@ -454,9 +490,9 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
               </>
             )}
           </div>
-          {playbackState === "loading" || playbackState === "error" ? (
+          {mediaState.playback === "loading" || isFailureMediaState(mediaState.playback) ? (
             <div aria-live="assertive" className="video-playback-overlay">
-              {playbackState === "loading" ? (
+              {mediaState.playback === "loading" ? (
                 <p className="video-playback-message">
                   <span className="spinner text-primary" />
                   <span>{brand.copy.viewerPreparingPlayback}</span>
@@ -464,7 +500,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
               ) : (
                 <>
                   <p>
-                    {playbackUnsupported
+                    {mediaState.playback === "unsupported"
                       ? brand.copy.videoCodecUnsupported
                       : brand.copy.detailPlaybackFailed}
                   </p>
@@ -496,7 +532,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
               decoding="async"
               onError={() => {
                 setSmallImageFailed(true);
-                setPhotoState("error");
+                dispatchMediaState({ scope: "preview", type: "fail" });
               }}
               onLoad={() => setSmallImageReady(true)}
               src={queuedSmallSrc ?? undefined}
@@ -505,23 +541,23 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
           {photoLargeSrc ? (
             <img
               alt={memory.title || brand.copy.detailPreviewAlt}
-              className={`photo-viewer-image ${photoState === "ready" ? "is-loaded" : ""}`}
+              className={`photo-viewer-image ${mediaState.preview === "ready" ? "is-loaded" : ""}`}
               draggable={false}
               key={photoRetryKey}
-              onLoad={() => setPhotoState("ready")}
+              onLoad={() => dispatchMediaState({ scope: "preview", type: "ready" })}
               src={photoLargeSrc}
               style={{
                 transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})`,
               }}
             />
           ) : null}
-          {photoState === "loading" ? (
+          {mediaState.preview === "loading" || mediaState.preview === "queued" ? (
             <p aria-live="polite" className="photo-viewer-loading">
               <span className="spinner text-primary" />
               <span className="sr-only">{brand.copy.detailMediaLoading}</span>
             </p>
           ) : null}
-          {photoState === "error" ? (
+          {mediaState.preview === "failed" ? (
             <p aria-live="assertive" className="photo-viewer-error">
               {brand.copy.detailImageLoadFailed}
             </p>
@@ -530,8 +566,20 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
       )}
 
       {shouldShowStatus ? (
-        <div aria-live="polite" className="viewer-status">
-          <span className={`badge ${hasIndexFailure ? "badge-warning" : "badge-success"}`}>
+        <div
+          aria-live={isFailureMediaState(activeMediaState.state) ? "assertive" : "polite"}
+          className="viewer-status"
+          data-scope={activeMediaState.scope}
+          data-state={activeMediaState.state}
+          role="status"
+        >
+          <span
+            className={`badge ${
+              hasIndexFailure || isFailureMediaState(activeMediaState.state)
+                ? "badge-warning"
+                : "badge-success"
+            }`}
+          >
             {statusText}
           </span>
         </div>
@@ -567,7 +615,7 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
               void startPlayback();
               return;
             }
-            setPhotoState("loading");
+            dispatchMediaState({ scope: "preview", type: "retry" });
             setPhotoRetryKey((current) => current + 1);
           }}
           type="button"
@@ -575,13 +623,15 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
           <RefreshCw aria-hidden="true" />
         </button>
         <button
-          aria-label={downloadState === "error" ? brand.copy.viewerRetryDownload : brand.copy.viewerDownload}
+          aria-label={mediaState.download === "failed"
+            ? brand.copy.viewerRetryDownload
+            : brand.copy.viewerDownload}
           className="photo-viewer-button"
-          disabled={downloadState === "loading"}
+          disabled={mediaState.download === "loading"}
           onClick={() => void startDownload()}
           type="button"
         >
-          {downloadState === "error" ? (
+          {mediaState.download === "failed" ? (
             <TriangleAlert aria-hidden="true" />
           ) : (
             <Download aria-hidden="true" />
