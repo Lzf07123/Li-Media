@@ -489,9 +489,14 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
 
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect.poll(() => requestedPages).toContain("2");
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "loading");
+  await expect(page.getByTestId("canvas-footer")).toContainText("正在加载更多回忆");
   releasePageTwo?.();
   await expect(page.locator(".masonry .post-card")).toHaveCount(36);
   await expect(page.locator(".pagination")).toHaveCount(0);
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "end");
+  await expect(page.getByTestId("canvas-footer")).toContainText("已经到底了");
+  await expect(page.getByTestId("canvas-footer")).toContainText("当前筛选共 36 条");
 });
 
 test("infinite canvas advances pages when appended items overlap", async ({ page }) => {
@@ -543,6 +548,7 @@ test("infinite canvas advances pages when appended items overlap", async ({ page
 
 test("infinite canvas keeps content when appending fails", async ({ page }) => {
   const requestedPages: number[] = [];
+  let pageThreeFailed = false;
   const items = Array.from({ length: 54 }, (_, index) => ({
     ...memory,
     id: `${memoryId.slice(0, -1)}${String(index).padStart(2, "0")}`,
@@ -557,7 +563,8 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
       if (url.searchParams.get("page")) {
         requestedPages.push(pageNumber);
       }
-      if (pageNumber >= 3) {
+      if (pageNumber >= 3 && !pageThreeFailed) {
+        pageThreeFailed = true;
         await route.fulfill({ status: 429, json: { detail: "rate limited" } });
         return;
       }
@@ -592,6 +599,8 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
     .poll(() => requestedPages.filter((pageNumber) => pageNumber === 3).length)
     .toBe(1);
   await expect(page.getByRole("button", { name: "重试加载" })).toBeVisible();
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "retry");
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("aria-live", "polite");
   const loadingStyle = await page.evaluate(() => {
     const canvas = document.querySelector(".infinite-canvas")!.getBoundingClientRect();
     const row = document.querySelector(".canvas-loading") as HTMLElement;
@@ -605,6 +614,9 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
   expect(loadingStyle.display).toBe("flex");
   expect(loadingStyle.justifyContent).toBe("center");
   expect(loadingStyle.widthRatio).toBeCloseTo(1, 2);
+  await page.getByRole("button", { name: "重试加载" }).click();
+  await expect(page.locator(".masonry .post-card")).toHaveCount(54);
+  await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "end");
 });
 
 test("thumbnail image loads are queued with bounded concurrency", async ({ page }) => {

@@ -30,6 +30,8 @@ type ColumnBreakpoint = {
   count: 2 | 3 | 4 | 5 | 6;
 };
 
+type CanvasFooterState = "hidden" | "loading" | "retry" | "end";
+
 const columnBreakpoints: ColumnBreakpoint[] = [
   { query: "(min-width: 1600px)", count: 6 },
   { query: "(min-width: 1280px)", count: 5 },
@@ -237,6 +239,15 @@ export default function HomePage() {
     });
     return Array.from(unique.values());
   }, [recommendations, memories]);
+  const canvasFooterState: CanvasFooterState = canvasMemories.length === 0
+    ? "hidden"
+    : loadMoreError
+      ? "retry"
+      : isLoadingMore
+        ? "loading"
+        : memories.length >= total
+          ? "end"
+          : "hidden";
 
   const viewerMemories = canvasMemories;
   const canvasColumns = useMemo(() => {
@@ -548,27 +559,38 @@ export default function HomePage() {
             ))}
           </div>
           <div aria-hidden="true" className="canvas-sentinel" ref={sentinelRef} />
-          {loadMoreError ? (
-            <div className="canvas-loading flex justify-center">
-              <span aria-live="assertive" className="text-sm text-muted">
-                {loadMoreError}
-              </span>
-              <Button
-                className="ml-2"
-                onClick={() => {
-                  setLoadMoreError(null);
-                  loadNextPage();
-                }}
-                variant="secondary"
-              >
-                {brand.copy.retryLoadMore}
-              </Button>
-            </div>
-          ) : (
-            <p aria-live="polite" className="canvas-loading">
-              {isLoadingMore ? brand.copy.loadingMoreLibrary : ""}
-            </p>
-          )}
+          <div
+            aria-live="polite"
+            className="canvas-loading"
+            data-testid="canvas-footer"
+            data-state={canvasFooterState}
+            role="status"
+          >
+            {canvasFooterState === "loading" ? (
+              <span>{brand.copy.loadingMoreLibrary}</span>
+            ) : canvasFooterState === "retry" ? (
+              <>
+                <span>{loadMoreError}</span>
+                <Button
+                  className="ml-2"
+                  onClick={() => {
+                    setLoadMoreError(null);
+                    loadNextPage();
+                  }}
+                  variant="secondary"
+                >
+                  {brand.copy.retryLoadMore}
+                </Button>
+              </>
+            ) : canvasFooterState === "end" ? (
+              <>
+                <span>{brand.copy.canvasEnd}</span>
+                <span className="ml-2">
+                  {brand.copy.canvasEndTotal.replace("{total}", String(total))}
+                </span>
+              </>
+            ) : null}
+          </div>
         </section>
       )}
 

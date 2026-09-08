@@ -20,6 +20,8 @@ export const brand = {
     preheatStatusProgress: "已处理",
     recommendationTitle: "为你推荐",
     loadingMoreLibrary: "正在加载更多回忆",
+    canvasEnd: "已经到底了",
+    canvasEndTotal: "当前筛选共 {total} 条",
     allKinds: "全部",
     photoKind: "照片",
     videoKind: "视频",
