@@ -152,7 +152,7 @@ test("home preheat state is explicit and cards use responsive priority", async (
     page.locator(".masonry .post-card").first().locator(".card-shimmer"),
   ).toBeVisible();
   await expect(page.getByTestId("preheat-status")).toContainText(
-    "后台正在预热预览",
+    "正在优化预览",
   );
   await expect(page.getByTestId("preheat-status")).toContainText("2/5");
 
@@ -176,7 +176,7 @@ test("home preheat notice converges and stays clear at 375px", async ({ page }) 
   await page.setViewportSize({ width: 375, height: 720 });
   await page.goto("/");
   const notice = page.getByTestId("preheat-status");
-  await expect(notice).toHaveText("预览缓存未预热，首次加载可能较慢");
+  await expect(notice).toHaveText("正在优化预览，首次加载可能稍慢");
   await expect(notice).toHaveAttribute("aria-live", "polite");
 
   const boxes = [
@@ -217,7 +217,7 @@ test("home preheat notice converges and stays clear at 375px", async ({ page }) 
     await route.fulfill({ json: { status: "ready", processed: 1, total: 1 } });
   });
   await page.reload();
-  await expect(page.getByTestId("preheat-status")).toHaveText("预览已就绪");
+  await expect(page.getByTestId("preheat-status")).toHaveText("");
 });
 
 test("home shows an independent preheat unavailable state", async ({ page }) => {
@@ -228,9 +228,61 @@ test("home shows an independent preheat unavailable state", async ({ page }) => 
 
   await page.goto("/");
   await expect(page.getByTestId("preheat-status")).toHaveText(
-    "预热状态不可用",
+    "预览状态暂不可用",
   );
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+});
+
+test("preheat polling stops when ready and refreshes once on visibility", async ({ page }) => {
+  let statusRequests = 0;
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    statusRequests += 1;
+    await route.fulfill({
+      json: { status: "ready", processed: 1, total: 1 },
+    });
+  });
+
+  await page.goto("/");
+  await expect.poll(() => statusRequests).toBe(1);
+  await page.waitForTimeout(1100);
+  expect(statusRequests).toBe(1);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+  });
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => statusRequests).toBe(2);
+  await page.waitForTimeout(100);
+  expect(statusRequests).toBe(2);
+});
+
+test("preheat status retries failures with finite backoff", async ({ page }) => {
+  let statusRequests = 0;
+  await mockMemoryRoutes(page);
+  await page.route("**/api/v1/memories/preheat-status", async (route) => {
+    statusRequests += 1;
+    if (statusRequests <= 3) {
+      await route.fulfill({ status: 503, json: { detail: "unavailable" } });
+      return;
+    }
+    await route.fulfill({
+      json: { status: "running", processed: 1, total: 2 },
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByTestId("preheat-status")).toHaveText("预览状态暂不可用");
+  await page.waitForTimeout(2300);
+  expect(statusRequests).toBeGreaterThanOrEqual(3);
+  const failedRequests = statusRequests;
+  await page.waitForTimeout(300);
+  expect(statusRequests).toBe(failedRequests);
 });
 
 test("home card shimmer is disabled under reduced motion", async ({ page }) => {

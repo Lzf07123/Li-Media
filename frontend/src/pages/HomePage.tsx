@@ -21,6 +21,8 @@ import BlurText from "@/components/ui/BlurText";
 const PAGE_SIZE = 18;
 const RECOMMENDATION_COUNT = 8;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
+const PREHEAT_POLL_INTERVAL_MS = 20000;
+const PREHEAT_RETRY_DELAYS_MS = [500, 1000, 2000] as const;
 let scrollBeforeViewer = 0;
 
 const MediaViewer = lazy(() => import("@/components/MediaViewer"));
@@ -183,6 +185,17 @@ export default function HomePage() {
 
   useEffect(() => {
     let active = true;
+    let pollTimer = 0;
+    let failureAttempts = 0;
+
+    const clearPollTimer = () => {
+      window.clearTimeout(pollTimer);
+    };
+
+    const schedulePoll = (delayMs: number) => {
+      clearPollTimer();
+      pollTimer = window.setTimeout(loadPreheatStatus, delayMs);
+    };
 
     const loadPreheatStatus = () => {
       getPublicPreheatStatus()
@@ -192,21 +205,39 @@ export default function HomePage() {
           }
           setPreheatSummary(summary);
           setPreheatState("ready");
+          failureAttempts = 0;
+          if (summary.status !== "ready") {
+            schedulePoll(PREHEAT_POLL_INTERVAL_MS);
+          }
         })
         .catch(() => {
-          if (active) {
-            setPreheatSummary(null);
-            setPreheatState("error");
+          if (!active) {
+            return;
+          }
+          setPreheatSummary(null);
+          setPreheatState("error");
+          if (failureAttempts < PREHEAT_RETRY_DELAYS_MS.length) {
+            const delay = PREHEAT_RETRY_DELAYS_MS[failureAttempts];
+            failureAttempts += 1;
+            schedulePoll(delay);
           }
         });
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        failureAttempts = 0;
+        schedulePoll(0);
+      }
+    };
+
     loadPreheatStatus();
-    const pollTimer = window.setInterval(loadPreheatStatus, 20000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       active = false;
-      window.clearInterval(pollTimer);
+      clearPollTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -479,7 +510,7 @@ export default function HomePage() {
         ) : preheatSummary?.status === "degraded" ? (
           brand.copy.preheatStatusDegraded
         ) : (
-          brand.copy.preheatStatusReady
+          null
         )}
       </p>
 
