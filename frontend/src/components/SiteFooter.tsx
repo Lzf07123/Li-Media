@@ -13,7 +13,7 @@ export default function SiteFooter() {
         </span>
         {brand.icp ? <span>{brand.icp}</span> : null}
         {brand.publicSecurityFiling ? <span>{brand.publicSecurityFiling}</span> : null}
-        <span>{brand.description}</span>
+        <span className="hidden sm:inline">{brand.description}</span>
         {brand.footerLinks.map((link) => (
           <a href={link.href} key={link.href}>
             {link.label}
