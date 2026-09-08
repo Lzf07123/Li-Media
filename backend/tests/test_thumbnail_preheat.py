@@ -153,6 +153,41 @@ def test_candidate_pairs_select_one_file_per_memory(tmp_path: Path) -> None:
     assert pairs[0][0] == memory_id
 
 
+def test_candidate_pairs_include_detail_size_when_home_is_cached(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000040")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="detail candidate",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+    )
+
+    version = "test-version"
+    with session_factory.begin() as session:
+        memory = session.get(Memory, memory_id)
+        memory.thumbnail_path = f"thumbnails/{memory_id}/{version}/240.webp"
+
+    with session_factory() as db:
+        assert _candidate_pairs(
+            db,
+            kind=MemoryKind.PHOTO,
+            limit=0,
+            sizes=(480,),
+            derivative_version=version,
+        ) != []
+        assert _candidate_pairs(
+            db,
+            kind=MemoryKind.PHOTO,
+            limit=0,
+            sizes=(240,),
+            derivative_version=version,
+        ) == []
+
+
 def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> None:
     session_factory = configure_admin_app(tmp_path, monkeypatch)
     media_root = tmp_path / "media"
