@@ -162,7 +162,10 @@ class Memory(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    files: Mapped[list["MemoryFile"]] = relationship(back_populates="memory")
+    files: Mapped[list["MemoryFile"]] = relationship(
+        back_populates="memory",
+        order_by="MemoryFile.id",
+    )
 
 
 class MemoryFile(Base):

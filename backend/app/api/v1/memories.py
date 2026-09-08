@@ -71,6 +71,15 @@ def _public_memory_statement():
     )
 
 
+def _primary_memory_file(db: Session, memory_id: uuid.UUID) -> MemoryFile | None:
+    return db.scalar(
+        select(MemoryFile)
+        .where(MemoryFile.memory_id == memory_id)
+        .order_by(MemoryFile.id)
+        .limit(1)
+    )
+
+
 def _task_http_error(exc: TaskRejected) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -252,9 +261,7 @@ def get_memory_direct_url(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    memory_file = db.scalar(
-        select(MemoryFile).where(MemoryFile.memory_id == memory_id)
-    )
+    memory_file = _primary_memory_file(db, memory_id)
 
     if memory_file is None or not memory_file.remote_id:
         raise HTTPException(
@@ -328,9 +335,7 @@ def stream_memory(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    memory_file = db.scalar(
-        select(MemoryFile).where(MemoryFile.memory_id == memory_id)
-    )
+    memory_file = _primary_memory_file(db, memory_id)
 
     if memory_file is None:
         raise HTTPException(
@@ -442,14 +447,13 @@ def get_memory_thumbnail(
         memory is None
         or memory.status != MemoryStatus.PUBLISHED
         or not any(memory_file.source == "baidupan" for memory_file in memory.files)
+        or get_public_visibility_state(memory) == "excluded"
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    memory_file = db.scalar(
-        select(MemoryFile).where(MemoryFile.memory_id == memory_id)
-    )
+    memory_file = _primary_memory_file(db, memory_id)
 
     if (
         not memory.thumbnail_path
