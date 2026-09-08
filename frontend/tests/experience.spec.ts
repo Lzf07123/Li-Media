@@ -983,6 +983,10 @@ test("video does not request playback until play and can use server fallback", a
       });
       return;
     }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
     if (url.pathname === `/api/v1/memories/${memoryId}/thumbnail`) {
       await route.fulfill({
         body: Buffer.from(pngBase64, "base64"),
