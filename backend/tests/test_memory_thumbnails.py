@@ -154,6 +154,47 @@ def test_video_poster_uses_ffmpeg_and_scales_long_edge(tmp_path: Path, monkeypat
     assert (media_root / thumbnail_path).is_file()
 
 
+def test_webp_photo_thumbnail_uses_ffmpeg(tmp_path: Path, monkeypatch) -> None:
+    settings = configure_test_settings(monkeypatch, tmp_path)
+    media_root = Path(settings.media_root)
+    source_dir = media_root / "photos"
+    source_dir.mkdir(parents=True)
+    source_path = source_dir / "photo.webp"
+    Image.new("RGB", (3024, 3024), "white").save(source_path, format="WEBP")
+    memory_id = uuid.uuid4()
+
+    def run_ffmpeg(command, **kwargs):
+        assert command[0] == "ffmpeg"
+        assert "-nostdin" in command
+        assert "-frames:v" in command
+        assert command[command.index("-threads") + 1] == "1"
+        assert str(source_path) in command
+        assert (
+            "scale='if(gt(iw,ih),min(240,iw),-2)':"
+            "'if(gt(iw,ih),-2,min(240,ih))'" in command
+        )
+        output_path = Path(command[-1])
+        Image.new("RGB", (240, 240), "white").save(output_path, format="WEBP")
+        return CompletedProcess(command, 0)
+
+    monkeypatch.setattr(
+        "app.services.memory_thumbnails.subprocess.run", run_ffmpeg
+    )
+
+    thumbnail_path = create_memory_derivative(
+        source_path,
+        media_root,
+        kind=MemoryKind.PHOTO,
+        memory_id=memory_id,
+        max_size=240,
+    )
+
+    assert thumbnail_path == (
+        f"thumbnails/{memory_id}/{settings.media_derivative_version}/240.webp"
+    )
+    assert (media_root / thumbnail_path).is_file()
+
+
 def test_thumbnail_url_is_absent_without_derivative() -> None:
     memory = MemoryRead(
         id=uuid.uuid4(),
