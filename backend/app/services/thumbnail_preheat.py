@@ -607,6 +607,38 @@ def _process_pair_sizes(
     source_bytes_downloaded = 0
     derivative_duration_ms = 0
     downloaded_remote_source: Path | None = None
+
+    # Reconcile files already produced by an earlier run before touching Baidu.
+    # Older workers could persist the file but be killed before recording state.
+    for max_size in sizes:
+        target_path = derivative_cache_path(
+            media_root,
+            memory.id,
+            max_size=max_size,
+            version=settings.media_derivative_version,
+        )
+        if not target_path.is_file():
+            continue
+        _set_derivative_cache_state(
+            db,
+            memory_file_id=memory_file_id,
+            settings=settings,
+            max_size=max_size,
+            status=DerivativeCacheStatus.READY,
+            output_path=target_path,
+            source_bytes=0,
+            duration_ms=0,
+        )
+        outcomes[max_size] = "cached"
+        if max_size == HOME_PREHEAT_SIZE or memory.thumbnail_path is None:
+            memory.thumbnail_path = target_path.relative_to(media_root).as_posix()
+
+    if len(outcomes) == len(sizes):
+        memory_file.thumbnail_state = RemoteThumbnailState.READY
+        memory_file.thumbnail_failure_kind = None
+        db.commit()
+        return PreheatCandidateResult(outcomes=outcomes)
+
     source_path: Path | None = resolve_media_path(
         media_root, memory_file.source_path or ""
     )
@@ -638,6 +670,8 @@ def _process_pair_sizes(
 
     try:
         for max_size in sizes:
+            if max_size in outcomes:
+                continue
             target_path = derivative_cache_path(
                 media_root,
                 memory.id,

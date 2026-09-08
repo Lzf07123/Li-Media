@@ -15,8 +15,10 @@ from app.db.session import Base, get_session_factory
 from app.main import app
 from app.models.memory import (
     BrowserCompatibilityState,
+    DerivativeCacheStatus,
     DerivativeFailureKind,
     Memory,
+    MemoryDerivativeCache,
     MemoryFile,
     MemoryKind,
     MemoryStatus,
@@ -25,6 +27,7 @@ from app.models.memory import (
     RemoteFileState,
 )
 from app.services.thumbnail_preheat import _candidate_pairs
+from app.services.memory_thumbnails import derivative_cache_path
 from app.services.thumbnail_preheat import _process_pair
 from app.services.baidu_pan import BaiduPanError
 from tests.test_admin_security import configure_admin_app
@@ -254,3 +257,52 @@ def test_remote_preheat_failure_is_classified(tmp_path: Path) -> None:
 
     assert outcome == "failed"
     assert failure_sink["kind"] == DerivativeFailureKind.BAIDU_RATE_LIMITED.value
+
+
+def test_preheat_reconciles_existing_file_without_remote_read(tmp_path: Path) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000030")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="existing cache",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+    )
+    settings = Settings(
+        media_root=str(tmp_path / "media"),
+        media_derivative_version="test-version",
+    )
+    target_path = derivative_cache_path(
+        Path(settings.media_root),
+        memory_id,
+        max_size=240,
+        version=settings.media_derivative_version,
+    )
+    target_path.parent.mkdir(parents=True)
+    Image.new("RGB", (20, 10), "blue").save(target_path, format="WEBP")
+
+    class ForbidRemoteClient:
+        def open_stream(self, remote_id: str, *, range_header: str | None):
+            raise AssertionError("existing derivative must not read remote source")
+
+    with session_factory() as db:
+        memory_file_id = db.scalar(select(MemoryFile.id))
+        outcome = _process_pair(
+            db,
+            memory_id=memory_id,
+            memory_file_id=memory_file_id,
+            settings=settings,
+            max_size=240,
+            client=ForbidRemoteClient(),
+        )
+
+    assert outcome == "cached"
+    with session_factory() as db:
+        memory = db.get(Memory, memory_id)
+        cache = db.scalar(select(MemoryDerivativeCache))
+        assert memory is not None
+        assert cache is not None
+        assert memory.thumbnail_path == target_path.relative_to(Path(settings.media_root)).as_posix()
+        assert cache.status == DerivativeCacheStatus.READY
+        assert cache.max_size == 240
