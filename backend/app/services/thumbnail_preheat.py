@@ -262,7 +262,7 @@ def _candidate_pairs(
     derivative_version: str | None = None,
 ) -> list[tuple[UUID, UUID]]:
     statement = (
-        select(Memory.id, func.min(MemoryFile.id).label("primary_file_id"))
+        select(Memory.id, MemoryFile.id)
         .join(MemoryFile, Memory.files)
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
@@ -270,7 +270,6 @@ def _candidate_pairs(
             MemoryFile.remote_id.is_not(None),
         )
     )
-    statement = statement.group_by(Memory.id)
     statement = statement.where(
         MemoryFile.remote_state == RemoteFileState.READY,
         browser_playable_files_condition(),
@@ -304,14 +303,17 @@ def _candidate_pairs(
         statement.order_by(Memory.captured_at.desc().nulls_last())
         .order_by(Memory.updated_at.desc())
         .order_by(Memory.id.desc())
+        .order_by(MemoryFile.id)
     )
-    if limit > 0:
-        ordered_statement = ordered_statement.limit(limit)
-
-    return [
-        (memory_id, file_id)
-        for memory_id, file_id in db.execute(ordered_statement).all()
-    ]
+    rows = db.execute(ordered_statement).all()
+    pairs: list[tuple[UUID, UUID]] = []
+    seen_memories: set[UUID] = set()
+    for memory_id, file_id in rows:
+        if memory_id in seen_memories:
+            continue
+        seen_memories.add(memory_id)
+        pairs.append((memory_id, file_id))
+    return pairs[:limit] if limit > 0 else pairs
 
 
 def count_public_derivative_candidates(db: Session) -> int:
