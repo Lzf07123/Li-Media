@@ -148,4 +148,4 @@
 - 资源基线：backend cgroup 峰值 93,507,584 字节（小于 256m），进程 7，PID 上限 64，OOM 事件 0，临时文件残留 0；快照 Source Zero 合规。
 - 配置重启：以临时 override 将 `STREAM_USER_CONCURRENCY_LIMIT` 改为 5 并重建 backend，后台状态显示 5；恢复默认后显示 3。
 - 缓存状态重启：重建并重启 backend 后，公开预热状态基于持久化缓存命中仍返回 `ready 47/47`，不会因内存任务历史丢失误报未预热。
-- 自动化：后端 92 pytest；前端 typecheck/build 和 32 个 Playwright 通过，含四视口、减动效、预热状态、磁盘面板、配置生效值、CLS < 0.05 和传输预算。
+- 自动化：后端 93 pytest；前端 typecheck/build 和 32 个 Playwright 通过，含四视口、减动效、预热状态、磁盘面板、配置生效值、CLS < 0.05 和传输预算。
