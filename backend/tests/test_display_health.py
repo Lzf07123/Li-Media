@@ -66,6 +66,12 @@ def add_memory(
 def test_public_endpoints_exclude_unrenderable_media(tmp_path: Path) -> None:
     session_factory = create_database(tmp_path)
     ready_photo = add_memory(session_factory, title="ready photo", kind=MemoryKind.PHOTO)
+    retryable_photo = add_memory(
+        session_factory,
+        title="retryable photo",
+        kind=MemoryKind.PHOTO,
+        thumbnail_state=RemoteThumbnailState.RETRYABLE,
+    )
     failed_photo = add_memory(
         session_factory,
         title="failed photo",
@@ -101,15 +107,21 @@ def test_public_endpoints_exclude_unrenderable_media(tmp_path: Path) -> None:
             listed = client.get("/api/v1/memories").json()
             assert {item["title"] for item in listed["items"]} == {
                 "ready photo",
+                "retryable photo",
                 "ready video",
             }
-            assert listed["counts"] == {"photo": 1, "video": 1}
+            assert listed["counts"] == {"photo": 2, "video": 1}
             assert all(item["media_display_state"] == "displayable" for item in listed["items"])
 
             recommended = client.get("/api/v1/memories/recommend?limit=10").json()
-            assert {item["title"] for item in recommended} == {"ready photo", "ready video"}
+            assert {item["title"] for item in recommended} == {
+                "ready photo",
+                "retryable photo",
+                "ready video",
+            }
 
             assert client.get(f"/api/v1/memories/{ready_photo}").status_code == 200
+            assert client.get(f"/api/v1/memories/{retryable_photo}").status_code == 200
             assert client.get(f"/api/v1/memories/{failed_photo}").status_code == 404
             assert client.get(f"/api/v1/memories/{unsupported_video}/thumbnail").status_code == 404
     finally:

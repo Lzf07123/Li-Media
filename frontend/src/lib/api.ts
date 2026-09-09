@@ -27,7 +27,7 @@ export type Memory = {
     modified_at: string | null;
     status: "discovered" | "pending" | "syncing" | "matched" | "missing" | "removed" | "failed";
     remote_state: "unverified" | "ready" | "missing" | "failed";
-    thumbnail_state: "missing" | "ready" | "failed";
+    thumbnail_state: "missing" | "ready" | "failed" | "retryable";
     thumbnail_failure_kind: string | null;
     stream_state: "unavailable" | "ready" | "failed";
     browser_compatibility: "supported" | "unsupported" | "unknown";
@@ -291,6 +291,7 @@ export type RemoteStorageCounts = {
   remote_failed: number;
   thumbnail_ready: number;
   thumbnail_missing: number;
+  thumbnail_retryable: number;
   thumbnail_failed: number;
   thumbnail_failure_kinds: Record<string, number>;
   home_derivative_ready: number;

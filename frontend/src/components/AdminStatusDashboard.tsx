@@ -265,6 +265,10 @@ export default function AdminStatusDashboard({
               value={status.remote_storage.counts.thumbnail_ready}
             />
             <Metric
+              label={brand.copy.adminRemoteStoragePreviewRetryable}
+              value={status.remote_storage.counts.thumbnail_retryable}
+            />
+            <Metric
               label={brand.copy.adminRemoteStoragePreviewFailed}
               value={status.remote_storage.counts.thumbnail_failed}
             />

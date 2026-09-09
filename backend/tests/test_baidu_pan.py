@@ -1,6 +1,8 @@
 import httpx
 import pytest
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 from app.core.config import Settings
 from app.services.baidu_pan import (
@@ -110,6 +112,39 @@ def test_thumbnail_request_does_not_append_access_token(monkeypatch):
     assert "test-access-token" not in str(requests[0].url)
     assert "Authorization" not in requests[0].headers
     assert str(requests[0].url).endswith("size=c640_u640&expires=8h")
+
+
+def test_request_interval_is_serialized_between_threads(monkeypatch):
+    settings = Settings(
+        baidu_access_token="test-access-token",
+        baidu_request_interval_seconds=0.2,
+    )
+    client = BaiduPanClient(settings)
+    clock = {"now": 100.0}
+    sleeps: list[float] = []
+
+    def fake_monotonic():
+        return clock["now"]
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock["now"] += max(seconds, 0.001)
+
+    monkeypatch.setattr("app.services.baidu_pan.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("app.services.baidu_pan.time.sleep", fake_sleep)
+
+    workers = 3
+    barrier = Barrier(workers)
+
+    def wait_for_interval():
+        barrier.wait(timeout=1)
+        client._wait_for_request_interval()
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        list(executor.map(lambda _: wait_for_interval(), range(workers)))
+
+    assert len(sleeps) == workers - 1
+    assert all(delay == 0.2 for delay in sleeps)
 
 
 def test_thumbnail_request_supports_detail_size(monkeypatch):

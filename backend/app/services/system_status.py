@@ -80,7 +80,7 @@ def get_redis_status(redis_url: str) -> ServiceStatus:
 
 
 def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
-    total, remote_ready, remote_missing, remote_failed, thumbnail_ready, thumbnail_missing, thumbnail_failed, stream_ready, stream_failed = db.execute(
+    total, remote_ready, remote_missing, remote_failed, thumbnail_ready, thumbnail_missing, thumbnail_failed, thumbnail_retryable, stream_ready, stream_failed = db.execute(
         select(
             func.count(MemoryFile.id),
             func.sum(
@@ -130,6 +130,15 @@ def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
             ),
             func.sum(
                 case(
+                    (
+                        MemoryFile.thumbnail_state == RemoteThumbnailState.RETRYABLE,
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+            func.sum(
+                case(
                     (MemoryFile.stream_state == RemoteStreamState.READY, 1),
                     else_=0,
                 )
@@ -149,7 +158,9 @@ def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
         )
         .where(
             MemoryFile.source == "baidupan",
-            MemoryFile.thumbnail_state == RemoteThumbnailState.FAILED,
+            MemoryFile.thumbnail_state.in_(
+                [RemoteThumbnailState.FAILED, RemoteThumbnailState.RETRYABLE]
+            ),
         )
         .group_by(MemoryFile.thumbnail_failure_kind)
     ).all()
@@ -164,6 +175,7 @@ def _remote_storage_counts(db: Session) -> RemoteStorageCounts:
         remote_failed=int(remote_failed or 0),
         thumbnail_ready=int(thumbnail_ready or 0),
         thumbnail_missing=int(thumbnail_missing or 0),
+        thumbnail_retryable=int(thumbnail_retryable or 0),
         thumbnail_failed=int(thumbnail_failed or 0),
         thumbnail_failure_kinds={
             str(kind if kind is not None else "unclassified"): int(count)

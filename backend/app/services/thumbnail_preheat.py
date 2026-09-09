@@ -37,10 +37,13 @@ from app.services.remote_thumbnails import (
     temporary_directory_has_capacity,
 )
 from app.services.memory_thumbnails import (
+    classify_derivative_exception,
     derivative_cache_path,
     resolve_media_path,
 )
 from app.services.display_health import (
+    PERMANENT_THUMBNAIL_FAILURE_KINDS,
+    classify_thumbnail_failure_state,
     browser_playable_files_condition,
     public_files_condition,
 )
@@ -222,14 +225,7 @@ class ThumbnailPreheatRegistry:
 
 thumbnail_preheat_registry = ThumbnailPreheatRegistry()
 
-NON_RETRYABLE_FAILURE_KINDS = frozenset(
-    {
-        DerivativeFailureKind.SOURCE_TRUNCATED.value,
-        DerivativeFailureKind.MOV_MOOV.value,
-        DerivativeFailureKind.CODEC_UNSUPPORTED.value,
-        DerivativeFailureKind.FORMAT_UNSUPPORTED.value,
-    }
-)
+NON_RETRYABLE_FAILURE_KINDS = PERMANENT_THUMBNAIL_FAILURE_KINDS
 
 
 def _public_file_statement():
@@ -669,6 +665,9 @@ def _process_pair_sizes(
         )
         failure_kind = remote_failure_sink.get("kind")
         if source_path is None:
+            memory_file.thumbnail_state = classify_thumbnail_failure_state(failure_kind)
+            memory_file.thumbnail_failure_kind = failure_kind or "unknown"
+            db.commit()
             return PreheatCandidateResult(
                 outcomes={size: "failed" for size in sizes},
                 source_bytes_downloaded=source_bytes_downloaded,
@@ -721,7 +720,10 @@ def _process_pair_sizes(
                     )
                 except TaskRejected:
                     task_metrics.record_failed(TaskType.DERIVATIVE)
-                    failure_sink.setdefault("kind", "queue_rejected")
+                    failure_sink.setdefault(
+                        "kind",
+                        DerivativeFailureKind.QUEUE_REJECTED.value,
+                    )
                     generated_path = None
                 duration_ms = int((time.monotonic() - started_at) * 1000)
 
@@ -765,7 +767,7 @@ def _process_pair_sizes(
             memory_file.thumbnail_state = RemoteThumbnailState.READY
             memory_file.thumbnail_failure_kind = None
         else:
-            memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+            memory_file.thumbnail_state = classify_thumbnail_failure_state(failure_kind)
             memory_file.thumbnail_failure_kind = failure_kind or "unknown"
         db.commit()
         return PreheatCandidateResult(
@@ -793,7 +795,7 @@ def _mark_failure(
         with session_factory.begin() as db:
             memory_file = db.get(MemoryFile, memory_file_id)
             if memory_file is not None:
-                memory_file.thumbnail_state = RemoteThumbnailState.FAILED
+                memory_file.thumbnail_state = classify_thumbnail_failure_state(failure_kind)
                 memory_file.thumbnail_failure_kind = failure_kind
     except Exception:
         # 预热失败状态不应让单个坏资源中断整批任务。
@@ -868,28 +870,29 @@ def _process_candidate(
             outcomes={size: "cancelled" for size in sizes},
             failure_kind=DerivativeFailureKind.CANCELLED.value,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "thumbnail preheat candidate failed; memory_id=%s file_id=%s",
             memory_id,
             memory_file_id,
         )
+        failure_kind = classify_derivative_exception(exc)
         task_metrics.record_failed(TaskType.PREHEAT)
         _mark_failure(
             session_factory,
             memory_file_id=memory_file_id,
-            failure_kind=failure_sink.get("kind", "unknown"),
+            failure_kind=failure_kind,
         )
         _mark_unexpected_cache_failure(
             session_factory,
             memory_file_id=memory_file_id,
             sizes=sizes,
             settings=settings,
-            failure_kind=failure_sink.get("kind", "unknown"),
+            failure_kind=failure_kind,
         )
         return PreheatCandidateResult(
             outcomes={size: "failed" for size in sizes},
-            failure_kind=failure_sink.get("kind", "unknown"),
+            failure_kind=failure_kind,
         )
 
 
