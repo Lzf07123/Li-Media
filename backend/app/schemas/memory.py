@@ -90,7 +90,10 @@ class MemorySummaryRead(BaseModel):
     @property
     def thumbnail_url(self) -> str | None:
         if not self.thumbnail_path:
-            if self.primary_file and self.primary_file.thumbnail_state.value == "ready":
+            if self.primary_file and self.primary_file.thumbnail_state.value in {
+                "ready",
+                "retryable",
+            }:
                 return f"/api/v1/memories/{self.id}/thumbnail"
             return None
 
@@ -126,7 +129,10 @@ class MemoryRead(BaseModel):
     @property
     def thumbnail_url(self) -> str | None:
         if not self.thumbnail_path:
-            if self.primary_file and self.primary_file.thumbnail_state.value == "ready":
+            if self.primary_file and self.primary_file.thumbnail_state.value in {
+                "ready",
+                "retryable",
+            }:
                 return f"/api/v1/memories/{self.id}/thumbnail"
             return None
 

@@ -27,10 +27,12 @@ from app.models.memory import (
     RemoteFileState,
 )
 from app.services.thumbnail_preheat import _candidate_pairs
+from app.services.thumbnail_preheat import _process_candidate
 from app.services.memory_thumbnails import derivative_cache_path
 from app.services.thumbnail_preheat import _process_pair
 from app.services.thumbnail_preheat import _set_derivative_cache_state
 from app.services.baidu_pan import BaiduPanError
+from threading import Event
 from tests.test_admin_security import configure_admin_app
 
 
@@ -293,6 +295,53 @@ def test_remote_preheat_failure_is_classified(tmp_path: Path) -> None:
 
     assert outcome == "failed"
     assert failure_sink["kind"] == DerivativeFailureKind.BAIDU_RATE_LIMITED.value
+    with session_factory() as db:
+        memory_file = db.scalar(select(MemoryFile))
+        assert memory_file is not None
+        assert memory_file.thumbnail_state == RemoteThumbnailState.RETRYABLE
+        assert memory_file.thumbnail_failure_kind == (
+            DerivativeFailureKind.BAIDU_RATE_LIMITED.value
+        )
+
+
+def test_unexpected_preheat_failure_is_retryable(tmp_path: Path, monkeypatch) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000011")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="unexpected failure",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 4, 2, tzinfo=timezone.utc),
+    )
+    settings = Settings(media_root=str(tmp_path / "media"))
+
+    def raise_unexpected(*args, **kwargs):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat._process_pair_sizes",
+        raise_unexpected,
+    )
+
+    with session_factory() as db:
+        memory_file_id = db.scalar(select(MemoryFile.id))
+
+    result = _process_candidate(
+        session_factory,
+        memory_id=memory_id,
+        memory_file_id=memory_file_id,
+        settings=settings,
+        sizes=(240,),
+        cancel_event=Event(),
+    )
+
+    assert result.failure_kind == DerivativeFailureKind.UNKNOWN.value
+    with session_factory() as db:
+        memory_file = db.scalar(select(MemoryFile))
+        assert memory_file is not None
+        assert memory_file.thumbnail_state == RemoteThumbnailState.RETRYABLE
+        assert memory_file.thumbnail_failure_kind == "unknown"
 
 
 def test_preheat_reconciles_existing_file_without_remote_read(tmp_path: Path) -> None:

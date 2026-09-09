@@ -36,6 +36,7 @@ from app.services.memory_thumbnails import (
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.display_health import (
+    classify_thumbnail_failure_state,
     get_public_visibility_state,
     public_files_condition,
 )
@@ -584,8 +585,10 @@ def get_memory_thumbnail(
                 headers=cache_headers,
             )
 
-    memory_file.thumbnail_state = RemoteThumbnailState.FAILED
     memory_file.thumbnail_failure_kind = failure_sink.get("kind", "unknown")
+    memory_file.thumbnail_state = classify_thumbnail_failure_state(
+        memory_file.thumbnail_failure_kind
+    )
     task_metrics.record_failed(TaskType.DERIVATIVE)
     record_admin_operation(
         db,

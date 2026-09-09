@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from threading import RLock
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -46,53 +47,60 @@ class DownloadUrlCache:
     """Process-local cache for Baidu links; links must never reach storage."""
 
     def __init__(self, ttl_seconds: int, max_entries: int) -> None:
+        self._lock = RLock()
         self._ttl_seconds = ttl_seconds
         self._urls: OrderedDict[str, tuple[str, float]] = OrderedDict()
         self._max_entries = max(1, max_entries)
 
     def get(self, remote_id: str) -> str | None:
-        entry = self.get_entry(remote_id)
-        return entry[0] if entry else None
+        with self._lock:
+            entry = self.get_entry(remote_id)
+            return entry[0] if entry else None
 
     def get_entry(self, remote_id: str) -> tuple[str, int] | None:
-        entry = self._urls.get(remote_id)
-        if entry is None:
-            return None
+        with self._lock:
+            entry = self._urls.get(remote_id)
+            if entry is None:
+                return None
 
-        url, expires_at = entry
-        if time.monotonic() >= expires_at:
-            self._urls.pop(remote_id, None)
-            return None
+            url, expires_at = entry
+            if time.monotonic() >= expires_at:
+                self._urls.pop(remote_id, None)
+                return None
 
-        return url, max(0, int(expires_at - time.monotonic()))
+            return url, max(0, int(expires_at - time.monotonic()))
 
     def set(self, remote_id: str, url: str) -> str:
-        if self._ttl_seconds <= 0:
-            self._urls.pop(remote_id, None)
+        with self._lock:
+            if self._ttl_seconds <= 0:
+                self._urls.pop(remote_id, None)
+                return url
+
+            now = time.monotonic()
+            for key in list(self._urls):
+                entry = self._urls.get(key)
+                if entry is None or now >= entry[1]:
+                    self._urls.pop(key, None)
+
+            self._urls[remote_id] = (
+                url,
+                now + max(1, self._ttl_seconds - 5),
+            )
+            while len(self._urls) > self._max_entries:
+                self._urls.popitem(last=False)
             return url
 
-        now = time.monotonic()
-        for key in list(self._urls):
-            entry = self._urls.get(key)
-            if entry is None or now >= entry[1]:
-                self._urls.pop(key, None)
-
-        self._urls[remote_id] = (
-            url,
-            now + max(1, self._ttl_seconds - 5),
-        )
-        while len(self._urls) > self._max_entries:
-            self._urls.popitem(last=False)
-        return url
-
     def invalidate(self, remote_id: str) -> None:
-        self._urls.pop(remote_id, None)
+        with self._lock:
+            self._urls.pop(remote_id, None)
 
     def clear(self) -> None:
-        self._urls.clear()
+        with self._lock:
+            self._urls.clear()
 
     def size(self) -> int:
-        return len(self._urls)
+        with self._lock:
+            return len(self._urls)
 
 
 download_url_cache = DownloadUrlCache(
@@ -127,6 +135,7 @@ class BaiduPanClient:
             update={"baidu_access_token": access_token}
         )
         self._last_request_at: float | None = None
+        self._request_interval_lock = RLock()
 
     def list_page(
         self,
@@ -451,13 +460,14 @@ class BaiduPanClient:
 
     def _wait_for_request_interval(self) -> None:
         interval = max(0.0, self._settings.baidu_request_interval_seconds)
-        now = time.monotonic()
-        if self._last_request_at is not None:
-            remaining = interval - (now - self._last_request_at)
-            if remaining > 0:
-                time.sleep(remaining)
+        with self._request_interval_lock:
+            now = time.monotonic()
+            if self._last_request_at is not None:
+                remaining = interval - (now - self._last_request_at)
+                if remaining > 0:
+                    time.sleep(remaining)
 
-        self._last_request_at = time.monotonic()
+            self._last_request_at = time.monotonic()
 
     def _sleep_backoff(self, attempt: int) -> None:
         delay = min(

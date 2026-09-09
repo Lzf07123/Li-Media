@@ -43,6 +43,7 @@ class RemoteThumbnailState(StrEnum):
     MISSING = "missing"
     READY = "ready"
     FAILED = "failed"
+    RETRYABLE = "retryable"
 
 
 class DerivativeCacheStatus(StrEnum):
@@ -78,6 +79,7 @@ class DerivativeFailureKind(StrEnum):
     MOV_MOOV = "mov_moov"
     CODEC_UNSUPPORTED = "codec_unsupported"
     TEMPORARY_IO = "temporary_io"
+    QUEUE_REJECTED = "queue_rejected"
 
 
 class RemoteScanStatus(StrEnum):

@@ -282,6 +282,7 @@ class RemoteStorageCounts(BaseModel):
     remote_failed: int
     thumbnail_ready: int
     thumbnail_missing: int
+    thumbnail_retryable: int
     thumbnail_failed: int
     thumbnail_failure_kinds: dict[str, int]
     stream_ready: int

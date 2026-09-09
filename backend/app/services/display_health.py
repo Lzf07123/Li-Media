@@ -16,6 +16,25 @@ from app.models.memory import (
 
 MediaDisplayState = str
 
+PERMANENT_THUMBNAIL_FAILURE_KINDS = frozenset(
+    {
+        "source_truncated",
+        "mov_moov",
+        "codec_unsupported",
+        "format_unsupported",
+    }
+)
+
+
+def classify_thumbnail_failure_state(
+    failure_kind: str | None,
+) -> RemoteThumbnailState:
+    """Keep transient preview errors visible and retryable."""
+
+    if failure_kind in PERMANENT_THUMBNAIL_FAILURE_KINDS:
+        return RemoteThumbnailState.FAILED
+    return RemoteThumbnailState.RETRYABLE
+
 
 def displayable_files_condition() -> object:
     """Return a SQLAlchemy condition for memories with a usable public surface."""
