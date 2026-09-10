@@ -575,7 +575,6 @@ export default function HomePage() {
       </p>
 
       <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
-        <span aria-hidden="true" className="size-11 shrink-0" />
         <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
           <button
             aria-pressed={!activeKind}
