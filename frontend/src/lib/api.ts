@@ -546,7 +546,8 @@ export async function getMemories(params: {
   kind?: string;
   page?: number;
   page_size?: number;
-  sort?: string;
+  sort?: "captured_desc" | "captured_asc" | "updated_desc" | "random";
+  seed?: string;
 } = {}): Promise<MemoryListResponse> {
   const search = new URLSearchParams();
 
@@ -568,6 +569,10 @@ export async function getMemories(params: {
 
   if (params.sort) {
     search.set("sort", params.sort);
+  }
+
+  if (params.seed) {
+    search.set("seed", params.seed);
   }
 
   const query = search.toString();

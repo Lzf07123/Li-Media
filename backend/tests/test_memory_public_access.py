@@ -243,3 +243,70 @@ def test_memory_recommendations_are_public_and_not_cached(tmp_path: Path) -> Non
             assert kind_response.json() == []
     finally:
         app.dependency_overrides.clear()
+
+
+def test_random_list_pages_keep_one_seed_and_refresh_can_reorder(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
+    testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    def override_get_db() -> Generator[Session, None, None]:
+        session = testing_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with testing_session.begin() as session:
+            memories = [
+                Memory(
+                    title=f"photo {index}",
+                    kind=MemoryKind.PHOTO,
+                    status=MemoryStatus.PUBLISHED,
+                )
+                for index in range(9)
+            ]
+            session.add_all(memories)
+            session.flush()
+            for memory in memories:
+                session.add(
+                    MemoryFile(
+                        memory_id=memory.id,
+                        source="baidupan",
+                        remote_path=f"/remote/{memory.id}.jpg",
+                        mime_type="image/jpeg",
+                        status=MemoryFileStatus.MATCHED,
+                        remote_state=RemoteFileState.READY,
+                        thumbnail_state=RemoteThumbnailState.READY,
+                        stream_state=RemoteStreamState.READY,
+                        browser_compatibility=BrowserCompatibilityState.SUPPORTED,
+                    )
+                )
+
+        def get_random_page(page: int, seed: str) -> list[str]:
+            response = client.get(
+                f"/api/v1/memories?sort=random&seed={seed}"
+                f"&page={page}&page_size=3",
+            )
+            assert response.status_code == 200
+            assert response.headers["cache-control"] == "no-store"
+            return [item["title"] for item in response.json()["items"]]
+
+        with TestClient(app) as client:
+            first_visit = get_random_page(1, "visit-a")
+            assert first_visit == get_random_page(1, "visit-a")
+            assert first_visit != get_random_page(1, "visit-b")
+
+            all_titles = [
+                *first_visit,
+                *get_random_page(2, "visit-a"),
+                *get_random_page(3, "visit-a"),
+            ]
+            assert len(all_titles) == len(set(all_titles)) == 9
+            assert set(all_titles) == {f"photo {index}" for index in range(9)}
+    finally:
+        app.dependency_overrides.clear()

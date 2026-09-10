@@ -1,4 +1,5 @@
 import mimetypes
+from random import Random
 import uuid
 from typing import Literal
 from datetime import datetime, timedelta, timezone
@@ -89,6 +90,56 @@ def _task_http_error(exc: TaskRejected) -> HTTPException:
     )
 
 
+def _ordered_public_memories(
+    db: Session,
+    statement,
+    *,
+    sort: str,
+    page: int,
+    page_size: int,
+    random_seed: str | None,
+) -> list[Memory]:
+    if sort != "random":
+        if sort == "captured_asc":
+            primary_order = Memory.captured_at.asc().nulls_last()
+            secondary_order = Memory.updated_at.asc()
+        elif sort == "updated_desc":
+            primary_order = Memory.updated_at.desc()
+            secondary_order = Memory.captured_at.desc().nulls_last()
+        else:
+            primary_order = Memory.captured_at.desc().nulls_last()
+            secondary_order = Memory.updated_at.desc()
+
+        return list(
+            db.scalars(
+                statement.order_by(primary_order)
+                .order_by(secondary_order)
+                .order_by(Memory.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+
+    # A stable per-visit seed keeps paged requests in the same shuffled order
+    # while still allowing the frontend to create a new order on every reload.
+    random_order = list(db.scalars(statement.with_only_columns(Memory.id)))
+    Random(random_seed or uuid.uuid4().hex).shuffle(random_order)
+    page_ids = set(random_order[(page - 1) * page_size : page * page_size])
+
+    if not page_ids:
+        return []
+
+    memories_by_id = {
+        memory.id: memory
+        for memory in db.scalars(statement.where(Memory.id.in_(page_ids)))
+    }
+    return [
+        memories_by_id[memory_id]
+        for memory_id in random_order[(page - 1) * page_size : page * page_size]
+        if memory_id in memories_by_id
+    ]
+
+
 @router.get("/recommend", response_model=list[MemorySummaryRead])
 def recommend_memories(
     response: Response,
@@ -117,7 +168,11 @@ def list_memories(
     page_size: int = Query(default=24, ge=1, le=100),
     sort: str = Query(
         default="captured_desc",
-        pattern="^(captured_desc|captured_asc|updated_desc)$",
+        pattern="^(captured_desc|captured_asc|updated_desc|random)$",
+    ),
+    seed: str | None = Query(
+        default=None,
+        pattern="^[A-Za-z0-9_-]{1,64}$",
     ),
     db: Session = Depends(get_db),
 ) -> MemorySummaryListResponse:
@@ -125,10 +180,11 @@ def list_memories(
         request.headers.get("authorization") or request.cookies
     )
     # The gateway caches only the anonymous public list; any cookie or
-    # authorization header must fall through as a private response.
+    # authorization header must fall through as a private response. A random
+    # visit has its own seed, so caching it would only waste gateway space.
     response.headers["Cache-Control"] = (
         "no-store"
-        if has_session_or_credentials
+        if has_session_or_credentials or sort == "random"
         else "public, max-age=15, stale-while-revalidate=30"
     )
     statement = _public_memory_statement()
@@ -167,23 +223,14 @@ def list_memories(
         or 0
     )
 
-    if sort == "captured_asc":
-        primary_order = Memory.captured_at.asc().nulls_last()
-        secondary_order = Memory.updated_at.asc()
-    elif sort == "updated_desc":
-        primary_order = Memory.updated_at.desc()
-        secondary_order = Memory.captured_at.desc().nulls_last()
-    else:
-        primary_order = Memory.captured_at.desc().nulls_last()
-        secondary_order = Memory.updated_at.desc()
-
-    memories = db.scalars(
-        statement.order_by(primary_order)
-        .order_by(secondary_order)
-        .order_by(Memory.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    memories = _ordered_public_memories(
+        db,
+        statement,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+        random_seed=seed,
+    )
 
     return MemorySummaryListResponse(
         items=[to_memory_summary(memory) for memory in memories],
