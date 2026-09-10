@@ -55,6 +55,8 @@ test("list cache does not reuse photo and video responses across filters", async
     if (url.pathname === "/api/v1/memories") {
       const kind = url.searchParams.get("kind");
       listRequests.push(kind ?? "all");
+      expect(url.searchParams.get("sort")).toBe("random");
+      expect(url.searchParams.get("seed")).toMatch(/^[0-9a-f-]{36}$/);
       const items = kind === "video" ? [memory(videoId, "video")] : [memory(photoId, "photo")];
       await route.fulfill({
         json: {

@@ -27,6 +27,14 @@ let scrollBeforeViewer = 0;
 
 const MediaViewer = lazy(() => import("@/components/MediaViewer"));
 
+function createRandomSeed() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function prefetchMediaViewerChunk() {
   void import("@/components/MediaViewer").catch(() => {
     // Prefetching is an optimization; lazy loading remains the fallback.
@@ -103,6 +111,7 @@ export default function HomePage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
   const columnCount = useCanvasColumnCount();
+  const randomSeed = useMemo(() => createRandomSeed(), [activeKind]);
   const hasNextPage = memories.length > 0 && memories.length < total;
 
   const updateParams = (next: URLSearchParams) => {
@@ -130,6 +139,8 @@ export default function HomePage() {
         kind: activeKind,
         page,
         page_size: PAGE_SIZE,
+        seed: randomSeed,
+        sort: "random",
       });
 
       if (requestToken !== requestTokenRef.current) {
@@ -183,7 +194,7 @@ export default function HomePage() {
         }
       }
     }
-  }, [activeKind]);
+  }, [activeKind, randomSeed]);
 
   useEffect(() => {
     void loadPage(1, "replace");

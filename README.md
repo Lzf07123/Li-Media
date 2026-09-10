@@ -98,7 +98,7 @@ CHECKLIST.md          当前版本验收基线
 ## 运行时行为
 
 - 公开首页是无限瀑布画布，保留版心两侧留白；每页 18 条，滚动接近底部时继续分段追加。
-- 页面不提供搜索和排序入口；推荐内容按当前类型随机取 8 条，并置入画布最前且与列表去重。
+- 页面不提供搜索和排序入口；首页每次加载生成新随机种子打乱公开列表，翻页沿用同一种子保证不重不漏。推荐内容按当前类型随机取 8 条，并置入画布最前且与列表去重。
 - 公开列表和详情返回瘦身 DTO，只包含首页卡片和查看器需要的字段。
 - 派生图矩阵为 240 / 480 / 768 / 1280px；首页按列宽和 DPR 选择最小可用尺寸，查看器移动端用 480px、桌面端用 1280px。
 - 视频仅在用户触发播放后申请百度短时直链；直链只在应用内存中短期复用，失败后最多强制刷新一次再回退服务端流。
@@ -141,7 +141,7 @@ CHECKLIST.md          当前版本验收基线
 | --- | --- |
 | `GET /api/v1/healthz` | 进程健康检查 |
 | `GET /api/v1/readyz` | 数据库与 Redis 就绪检查 |
-| `GET /api/v1/memories` | 公开瘦身列表；支持 `kind`、`page`、`page_size`，并返回 `public_counts` |
+| `GET /api/v1/memories` | 公开瘦身列表；支持 `kind`、`page`、`page_size`、`sort=random` 与 `seed`，并返回 `public_counts` |
 | `GET /api/v1/memories/recommend` | 随机推荐；`limit` 最大 24，响应 `no-store` |
 | `GET /api/v1/memories/:id` | 公开瘦身详情 |
 | `GET /api/v1/memories/:id/thumbnail` | 派生图；`size=240|480|768|1280` |
