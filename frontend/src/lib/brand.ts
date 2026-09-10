@@ -7,6 +7,7 @@ export const brand = {
   copy: {
     libraryTitle: "回忆库",
     libraryDescription: "按拍摄时间浏览照片与视频回忆。",
+    homeRefresh: "换一批",
     publicCountLabel: "已收录媒体",
     publicCountDetail: "公开照片 / 公开视频",
     publicCountLoading: "收录统计加载中",
