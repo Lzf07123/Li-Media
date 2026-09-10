@@ -478,20 +478,29 @@ test("kind and scroll restore after closing viewer", async ({ page }) => {
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
 });
 
-test("kind filter is centered and visually compact", async ({ page }) => {
+test("kind filter and refresh button are centered together", async ({ page }) => {
   await mockMemoryRoutes(page);
   await page.goto("/");
 
   const toolbarBox = await page.locator(".filter-toolbar").boundingBox();
   const controlBox = await page.locator(".segmented").boundingBox();
+  const refreshBox = await page
+    .locator(".filter-toolbar .icon-btn")
+    .boundingBox();
   expect(toolbarBox).not.toBeNull();
   expect(controlBox).not.toBeNull();
-  if (!toolbarBox || !controlBox) {
+  expect(refreshBox).not.toBeNull();
+  if (!toolbarBox || !controlBox || !refreshBox) {
     return;
   }
 
-  const leftMargin = controlBox.x - toolbarBox.x;
-  const rightMargin = toolbarBox.x + toolbarBox.width - controlBox.x - controlBox.width;
+  const groupLeft = Math.min(controlBox.x, refreshBox.x);
+  const groupRight = Math.max(
+    controlBox.x + controlBox.width,
+    refreshBox.x + refreshBox.width,
+  );
+  const leftMargin = groupLeft - toolbarBox.x;
+  const rightMargin = toolbarBox.x + toolbarBox.width - groupRight;
   expect(Math.abs(leftMargin - rightMargin)).toBeLessThanOrEqual(1);
 
   const height = await page
