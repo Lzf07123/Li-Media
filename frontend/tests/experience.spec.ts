@@ -771,6 +771,33 @@ test("recommendations render first inside the canvas without a separate rail", a
   await expect.poll(() => requestedRecommendations).toContain("photo");
 });
 
+test("home refresh button requests a new random canvas", async ({ page }) => {
+  const randomListRequests: URL[] = [];
+  const recommendationRequests: URL[] = [];
+
+  await mockMemoryRoutes(page);
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/memories") {
+      randomListRequests.push(url);
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      recommendationRequests.push(url);
+    }
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  const refreshButton = page.getByRole("button", { name: "换一批" });
+  await expect(refreshButton).toBeEnabled();
+
+  await refreshButton.click();
+  await expect.poll(() => randomListRequests.length).toBe(2);
+  await expect.poll(() => recommendationRequests.length).toBe(2);
+  expect(randomListRequests.every((url) => url.searchParams.get("sort") === "random")).toBe(true);
+  expect(new Set(randomListRequests.map((url) => url.searchParams.get("seed"))).size).toBe(2);
+});
+
 test("video preparation shows one playback overlay", async ({ page }) => {
   await page.route("**/api/v1/memories**", async (route) => {
     const url = new URL(route.request().url());

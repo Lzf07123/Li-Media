@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Images } from "lucide-react";
+import { Images, RefreshCw } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
@@ -47,6 +47,11 @@ type ColumnBreakpoint = {
 };
 
 type CanvasFooterState = "hidden" | "loading" | "retry" | "end";
+
+type RandomSeedState = {
+  kind: "photo" | "video" | undefined;
+  seed: string;
+};
 
 const columnBreakpoints: ColumnBreakpoint[] = [
   { query: "(min-width: 1600px)", count: 6 },
@@ -111,7 +116,19 @@ export default function HomePage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
   const columnCount = useCanvasColumnCount();
-  const randomSeed = useMemo(() => createRandomSeed(), [activeKind]);
+  const [seedState, setSeedState] = useState<RandomSeedState>(() => ({
+    kind: activeKind,
+    seed: createRandomSeed(),
+  }));
+
+  if (seedState.kind !== activeKind) {
+    setSeedState({
+      kind: activeKind,
+      seed: createRandomSeed(),
+    });
+  }
+
+  const randomSeed = seedState.seed;
   const hasNextPage = memories.length > 0 && memories.length < total;
 
   const updateParams = (next: URLSearchParams) => {
@@ -278,7 +295,19 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, [activeKind]);
+  }, [activeKind, randomSeed]);
+
+  const refreshRandomOrder = useCallback(() => {
+    if (isLoadingInitial) {
+      return;
+    }
+
+    setSeedState((current) => ({
+      ...current,
+      seed: createRandomSeed(),
+    }));
+    window.scrollTo({ behavior: "auto", top: 0 });
+  }, [isLoadingInitial]);
 
   const canvasMemories = useMemo(() => {
     const unique = new Map<string, MemorySummary>();
@@ -546,6 +575,7 @@ export default function HomePage() {
       </p>
 
       <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
+        <span aria-hidden="true" className="size-11 shrink-0" />
         <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
           <button
             aria-pressed={!activeKind}
@@ -574,6 +604,16 @@ export default function HomePage() {
             <span className="segmented-count">{counts.video}</span>
           </button>
         </div>
+        <Button
+          aria-label={brand.copy.homeRefresh}
+          className="icon-btn"
+          disabled={isLoadingInitial}
+          onClick={refreshRandomOrder}
+          title={brand.copy.homeRefresh}
+          variant="secondary"
+        >
+          <RefreshCw aria-hidden="true" className={`size-5 ${isLoadingInitial ? "animate-spin" : ""}`} />
+        </Button>
       </div>
 
       {isLoadingInitial ? (
