@@ -71,6 +71,11 @@ def test_nginx_excludes_private_media_from_cache() -> None:
     assert "limit_req_zone $binary_remote_addr zone=limedia_derivative" in nginx
     assert nginx.index("\nhttp {") < nginx.index("upstream limedia_backend {")
     assert "\nupstream limedia_backend {" not in nginx
+    # Upstream DNS is deferred to the Docker embedded resolver so nginx can start
+    # before `backend` is resolvable, and it re-resolves in the background.
+    assert "resolver 127.0.0.11 valid=30s ipv6=off;" in nginx
+    assert "zone limedia_backend 64k;" in nginx
+    assert "server backend:8000 resolve;" in nginx
     assert "X-Content-Type-Options nosniff" in security_headers
     assert "Content-Security-Policy" in security_headers
     assert "include /etc/nginx/security-headers.conf;" in nginx
