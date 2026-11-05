@@ -62,10 +62,6 @@ export default function MediaViewer({
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const dragOrigin = useRef<{ x: number; y: number } | null>(null);
   const pinchOrigin = useRef<{ distance: number; zoom: number } | null>(null);
-  const playbackTask = useRef(0);
-  const isStartingPlayback = useRef(false);
-  const downloadRetried = useRef(false);
-  const isRefreshingDownload = useRef(false);
 
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -430,17 +426,9 @@ export default function MediaViewer({
     }
   };
 
-  const startPlayback = async () => {
-    if (isStartingPlayback.current) {
-      return;
-    }
-
-    const taskId = playbackTask.current + 1;
-    playbackTask.current = taskId;
-    isStartingPlayback.current = true;
+  const startPlayback = () => {
     dispatchMediaState({ scope: "playback", type: "load" });
     setPlaybackSource({ kind: "server", src: resolveMediaUrl(memory.file_url) });
-    isStartingPlayback.current = false;
   };
 
   const handleVideoSourceError = (source: PlaybackSource, error?: MediaError) => {
@@ -452,12 +440,7 @@ export default function MediaViewer({
     });
   };
 
-  const startDownload = async () => {
-    if (isRefreshingDownload.current) {
-      return;
-    }
-
-    isRefreshingDownload.current = true;
+  const startDownload = () => {
     dispatchMediaState({ scope: "download", type: "load" });
     try {
       const anchor = document.createElement("a");
@@ -467,26 +450,15 @@ export default function MediaViewer({
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      downloadRetried.current = false;
       dispatchMediaState({ scope: "download", type: "ready" });
     } catch {
       dispatchMediaState({ scope: "download", type: "fail" });
-    } finally {
-      isRefreshingDownload.current = false;
     }
   };
 
   useEffect(() => {
-    playbackTask.current += 1;
-    isStartingPlayback.current = false;
-    isRefreshingDownload.current = false;
-    downloadRetried.current = false;
     setPlaybackSource(null);
     dispatchMediaState({ type: "reset" });
-
-    return () => {
-      playbackTask.current += 1;
-    };
   }, [memory.id]);
 
   return createPortal(

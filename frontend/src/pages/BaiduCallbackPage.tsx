@@ -10,19 +10,23 @@ import Notice from "@/components/ui/Notice";
 type CallbackState = "loading" | "success" | "failed";
 
 export default function BaiduCallbackPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [state, setState] = useState<CallbackState>("loading");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // 仅在挂载时读取一次回调参数；处理前先清参，授权码不滞留地址栏与历史。
     const code = searchParams.get("code");
     const oauthState = searchParams.get("state");
     const oauthError = searchParams.get("error");
     let active = true;
 
+    setSearchParams({}, { replace: true });
+
     if (oauthError || !code || !oauthState) {
       setState("failed");
-      setError(oauthError || brand.copy.adminRemoteCallbackFailed);
+      // URL error 参数只映射固定文案，不回显外部来源文本。
+      setError(brand.copy.adminRemoteCallbackFailed);
       return;
     }
 
@@ -47,7 +51,9 @@ export default function BaiduCallbackPage() {
     return () => {
       active = false;
     };
-  }, [searchParams]);
+    // 回调只在进入页面时处理一次；searchParams 清除后无需重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (state === "loading") {
     return <MediaSkeleton count={1} />;
