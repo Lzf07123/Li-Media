@@ -836,7 +836,8 @@ test("video preparation shows one playback overlay", async ({ page }) => {
       return;
     }
     if (url.pathname === `/api/v1/memories/${memoryId}/file`) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // 准备窗口 800ms：确保"准备中"状态在断言期间稳定，不受调度抖动影响。
+      await new Promise((resolve) => setTimeout(resolve, 800));
       await route.fulfill({ body: Buffer.from("video"), contentType: "video/mp4" });
       return;
     }
