@@ -1,17 +1,26 @@
 import { useEffect, useRef } from "react";
 import { Camera, Menu, Moon, Sun, X } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation, useSearchParams } from "react-router-dom";
 
 import { brand } from "@/lib/brand";
 import { useTheme } from "@/lib/useTheme";
 import IconButton from "@/components/ui/IconButton";
 
-const navClass = ({ isActive }: { isActive: boolean }) =>
-  `site-menu-item ${isActive ? '[aria-current="page"]' : ""}`;
-
 export default function SiteHeader() {
   const { theme, toggleTheme } = useTheme();
   const menuRef = useRef<HTMLDetailsElement>(null);
+  const { pathname } = useLocation();
+  const [searchParams] = useSearchParams();
+
+  // NavLink 只按 pathname 匹配，照片/视频与首页共用 "/" 会同时命中；
+  // 回忆库导航的激活态改由 kind 查询参数判定，aria-current 在此显式声明。
+  const kind = searchParams.get("kind");
+  const activeLibraryHref = pathname === "/"
+    ? kind === "photo" || kind === "video"
+      ? `/?kind=${kind}`
+      : "/"
+    : null;
+  const isNavActive = (href: string) => href === activeLibraryHref;
 
   useEffect(() => {
     const menu = menuRef.current;
@@ -48,20 +57,21 @@ export default function SiteHeader() {
         </Link>
 
         <nav aria-label={brand.copy.navLabel} className="site-nav ml-auto hidden items-center gap-1 sm:flex">
-          {brand.nav.map((item) => (
-            <NavLink
-              className={({ isActive }) =>
-                `flex min-h-11 items-center rounded-md px-3 text-sm transition ${
-                  isActive ? "font-semibold text-foreground" : "text-muted hover:text-foreground"
-                }`
-              }
-              end={item.href === "/"}
-              key={item.href}
-              to={item.href}
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          {brand.nav.map((item) => {
+            const active = isNavActive(item.href);
+            return (
+              <Link
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-11 items-center rounded-md px-3 text-sm transition ${
+                  active ? "font-semibold text-foreground" : "text-muted hover:text-foreground"
+                }`}
+                key={item.href}
+                to={item.href}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="ml-auto flex items-center gap-1 sm:ml-0">
@@ -81,20 +91,22 @@ export default function SiteHeader() {
               </summary>
               <nav aria-label={brand.copy.moreMenu} className="site-menu-panel">
                 {brand.nav.slice(1).map((item) => (
-                  <NavLink
-                    className={({ isActive }) =>
-                      `site-menu-item ${isActive ? "font-semibold" : ""}`
-                    }
-                    end
+                  <Link
+                    aria-current={isNavActive(item.href) ? "page" : undefined}
+                    className="site-menu-item"
                     key={item.href}
                     onClick={() => menuRef.current?.removeAttribute("open")}
                     to={item.href}
                   >
                     {item.label}
-                  </NavLink>
+                  </Link>
                 ))}
                 <span aria-hidden="true" className="site-menu-sep" />
-                <NavLink className={navClass} onClick={() => menuRef.current?.removeAttribute("open")} to="/admin">
+                <NavLink
+                  className="site-menu-item"
+                  onClick={() => menuRef.current?.removeAttribute("open")}
+                  to="/admin"
+                >
                   {brand.copy.adminEntry}
                 </NavLink>
               </nav>
