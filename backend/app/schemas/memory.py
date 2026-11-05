@@ -16,6 +16,7 @@ from app.models.memory import (
 
 from app.services.display_health import (
     get_media_display_state,
+    get_primary_public_file,
     get_public_visibility_state,
 )
 
@@ -150,6 +151,7 @@ class MemoryUpdate(BaseModel):
 
 def to_memory_read(memory: Memory) -> MemoryRead:
     payload = MemoryRead.model_validate(memory)
+    # 管理端诊断口径：始终展示第一个文件，失败副本对后台可见可重试。
     payload.primary_file = (
         MemoryFileRead.model_validate(memory.files[0]) if memory.files else None
     )
@@ -160,8 +162,10 @@ def to_memory_read(memory: Memory) -> MemoryRead:
 
 def to_memory_summary(memory: Memory) -> MemorySummaryRead:
     payload = MemorySummaryRead.model_validate(memory)
+    # 公开口径与 SQL any-文件谓词一致：选取首个通过公开条件的文件。
+    primary_file = get_primary_public_file(memory)
     payload.primary_file = (
-        MemoryCardFileRead.model_validate(memory.files[0]) if memory.files else None
+        MemoryCardFileRead.model_validate(primary_file) if primary_file else None
     )
     payload.media_display_state = get_media_display_state(memory)
     payload.public_display_state = get_public_visibility_state(memory)

@@ -83,46 +83,64 @@ def public_files_condition() -> object:
     )
 
 
+def _file_display_ok(memory: Memory, memory_file: MemoryFile) -> bool:
+    """Per-file mirror of displayable_files_condition() for in-memory rows."""
+
+    if memory_file.source != "baidupan":
+        return False
+    if memory_file.remote_state != RemoteFileState.READY:
+        return False
+
+    if memory.kind == MemoryKind.PHOTO:
+        return (
+            memory_file.thumbnail_state != RemoteThumbnailState.FAILED
+            or memory.thumbnail_path is not None
+        )
+    if memory.kind == MemoryKind.VIDEO:
+        return memory_file.stream_state != RemoteStreamState.FAILED
+    return False
+
+
+def _file_browser_ok(memory: Memory, memory_file: MemoryFile) -> bool:
+    """Per-file mirror of browser_playable_files_condition()."""
+
+    if memory.kind != MemoryKind.VIDEO:
+        return True
+    return memory_file.browser_compatibility == BrowserCompatibilityState.SUPPORTED
+
+
+def _iter_public_files(memory: Memory):
+    """Yield files that pass both display and browser gates, in stable id order.
+
+    md5 dedup can attach several files to one memory; the SQL predicates above
+    use any-file semantics, so the Python-side classification and the file
+    that actually gets served must use the same semantics.
+    """
+
+    for memory_file in sorted(memory.files, key=lambda item: item.id):
+        if _file_display_ok(memory, memory_file) and _file_browser_ok(
+            memory, memory_file
+        ):
+            yield memory_file
+
+
+def get_primary_public_file(memory: Memory) -> MemoryFile | None:
+    """First file that satisfies the public surface; the served representative."""
+
+    return next(iter(_iter_public_files(memory)), None)
+
+
 def get_media_display_state(memory: Memory) -> MediaDisplayState:
     """Classify one memory for public rendering and admin diagnostics."""
 
-    primary_file = memory.files[0] if memory.files else None
-    if (
-        primary_file is None
-        or primary_file.source != "baidupan"
-        or primary_file.remote_state != RemoteFileState.READY
-    ):
+    if memory.kind not in {MemoryKind.PHOTO, MemoryKind.VIDEO}:
         return "excluded"
-
-    if memory.kind == MemoryKind.PHOTO:
-        has_cached_derivative = memory.thumbnail_path is not None
-        if (
-            primary_file.thumbnail_state == RemoteThumbnailState.FAILED
-            and not has_cached_derivative
-        ):
-            return "excluded"
+    if any(_file_display_ok(memory, item) for item in memory.files):
         return "displayable"
-
-    if memory.kind == MemoryKind.VIDEO:
-        if primary_file.stream_state == RemoteStreamState.FAILED:
-            return "excluded"
-        return "displayable"
-
     return "excluded"
 
 
 def get_public_visibility_state(memory: Memory) -> str:
     """Classify the final public surface; excluded is intentionally opaque."""
 
-    if get_media_display_state(memory) != "displayable":
-        return "excluded"
-    if memory.kind != MemoryKind.VIDEO:
-        return "displayable"
-    primary_file = memory.files[0] if memory.files else None
-    if (
-        primary_file is None
-        or primary_file.browser_compatibility
-        != BrowserCompatibilityState.SUPPORTED
-    ):
-        return "excluded"
-    return "displayable"
+    return "displayable" if any(_iter_public_files(memory)) else "excluded"

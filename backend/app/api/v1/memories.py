@@ -38,6 +38,7 @@ from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.display_health import (
     classify_thumbnail_failure_state,
+    get_primary_public_file,
     get_public_visibility_state,
     public_files_condition,
 )
@@ -76,15 +77,6 @@ def _public_memory_statement():
                 )
             ),
         )
-    )
-
-
-def _primary_memory_file(db: Session, memory_id: uuid.UUID) -> MemoryFile | None:
-    return db.scalar(
-        select(MemoryFile)
-        .where(MemoryFile.memory_id == memory_id)
-        .order_by(MemoryFile.id)
-        .limit(1)
     )
 
 
@@ -327,7 +319,7 @@ def get_memory_direct_url(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    memory_file = _primary_memory_file(db, memory_id)
+    memory_file = get_primary_public_file(memory)
 
     if memory_file is None or not memory_file.remote_id:
         raise HTTPException(
@@ -401,7 +393,7 @@ def stream_memory(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    memory_file = _primary_memory_file(db, memory_id)
+    memory_file = get_primary_public_file(memory)
 
     if memory_file is None:
         raise HTTPException(
@@ -519,7 +511,7 @@ def get_memory_thumbnail(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         )
 
-    memory_file = _primary_memory_file(db, memory_id)
+    memory_file = get_primary_public_file(memory)
 
     if (
         not memory.thumbnail_path
