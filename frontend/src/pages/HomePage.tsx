@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Images, RefreshCw } from "lucide-react";
+import { Images, RefreshCw, X } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
@@ -17,6 +17,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import MediaSkeleton from "@/components/ui/MediaSkeleton";
 import Notice from "@/components/ui/Notice";
 import BlurText from "@/components/ui/BlurText";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 const PAGE_SIZE = 18;
 const RECOMMENDATION_COUNT = 8;
@@ -93,6 +94,8 @@ export default function HomePage() {
   const { pathname } = useLocation();
   const kind = searchParams.get("kind") ?? undefined;
   const viewerId = normalizeViewerId(searchParams.get("viewer"));
+  const keyword = (searchParams.get("keyword") ?? "").trim();
+  const [searchInput, setSearchInput] = useState(keyword);
   const [recommendations, setRecommendations] = useState<MemorySummary[]>([]);
   const [memories, setMemories] = useState<MemorySummary[]>([]);
   const [directMemory, setDirectMemory] = useState<MemorySummary | null>(null);
@@ -166,6 +169,7 @@ export default function HomePage() {
     try {
       const data = await getMemories({
         kind: activeKind,
+        keyword: keyword || undefined,
         page,
         page_size: PAGE_SIZE,
         seed: randomSeed,
@@ -223,11 +227,35 @@ export default function HomePage() {
         }
       }
     }
-  }, [activeKind, randomSeed]);
+  }, [activeKind, keyword, randomSeed]);
 
   useEffect(() => {
     void loadPage(1, "replace");
   }, [loadPage]);
+
+  // 搜索输入防抖同步到 URL keyword 参数；URL 外部变化（如切换类型清除
+  // 关键词）时回填输入框，保持单一事实来源。
+  useEffect(() => {
+    setSearchInput(keyword);
+  }, [keyword]);
+
+  useEffect(() => {
+    const normalized = searchInput.trim();
+    if (normalized === keyword) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const next = new URLSearchParams(searchParams);
+      if (normalized) {
+        next.set("keyword", normalized);
+      } else {
+        next.delete("keyword");
+      }
+      updateParams(next);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [keyword, searchInput, searchParams, updateParams]);
 
   useEffect(() => {
     let active = true;
@@ -288,6 +316,12 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (keyword) {
+      // 搜索时直接展示结果，不混入推荐内容。
+      setRecommendations([]);
+      return;
+    }
+
     let active = true;
 
     getMemoryRecommendations(RECOMMENDATION_COUNT, activeKind)
@@ -307,7 +341,7 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, [activeKind, randomSeed]);
+  }, [activeKind, keyword, randomSeed]);
 
   const refreshRandomOrder = useCallback(() => {
     if (isLoadingInitial) {
@@ -493,6 +527,15 @@ export default function HomePage() {
     updateParams(next);
   };
 
+  const clearSearch = () => {
+    setSearchInput("");
+    if (keyword) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("keyword");
+      updateParams(next);
+    }
+  };
+
   const openViewer = useCallback(
     (memoryId: string) => {
       const next = new URLSearchParams(searchParams);
@@ -535,6 +578,15 @@ export default function HomePage() {
         (neighbor): neighbor is MemorySummary => Boolean(neighbor),
       ),
     [previousMemory, nextMemory],
+  );
+
+  useDocumentTitle(
+    activeMemory
+      ? brand.pageTitleViewer.replace(
+          "{title}",
+          activeMemory.title || brand.copy.detailPreviewAlt,
+        )
+      : brand.pageTitleHome,
   );
 
   return (
@@ -596,7 +648,36 @@ export default function HomePage() {
         )}
       </p>
 
-      <div className="filter-toolbar mx-auto mt-6 w-full max-w-6xl">
+      <form
+        className="mx-auto mt-6 flex w-full max-w-md items-center gap-2"
+        onSubmit={(event) => event.preventDefault()}
+        role="search"
+      >
+        <label className="sr-only" htmlFor="library-search">
+          {brand.copy.searchLabel}
+        </label>
+        <input
+          className="input min-h-11 w-full"
+          id="library-search"
+          onChange={(event) => setSearchInput(event.target.value)}
+          placeholder={brand.copy.searchPlaceholder}
+          type="search"
+          value={searchInput}
+        />
+        {keyword ? (
+          <Button
+            aria-label={brand.copy.clearSearch}
+            className="icon-btn shrink-0"
+            onClick={clearSearch}
+            title={brand.copy.clearSearch}
+            variant="secondary"
+          >
+            <X aria-hidden="true" className="size-5" />
+          </Button>
+        ) : null}
+      </form>
+
+      <div className="filter-toolbar mx-auto mt-3 w-full max-w-6xl">
         <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
           <button
             aria-pressed={!activeKind}
@@ -637,6 +718,16 @@ export default function HomePage() {
         </Button>
       </div>
 
+      {keyword ? (
+        <p
+          aria-live="polite"
+          className="mt-3 text-center text-sm text-muted"
+          data-testid="search-summary"
+        >
+          {brand.copy.resultSummary.replace("{total}", String(total))}
+        </p>
+      ) : null}
+
       {isLoadingInitial ? (
         <>
           <span className="sr-only">{brand.copy.loadingLibrary}</span>
@@ -656,7 +747,7 @@ export default function HomePage() {
       ) : canvasMemories.length === 0 ? (
         <div className="mt-8">
           <EmptyState art={Images}>
-            {brand.copy.emptyLibrary}
+            {keyword ? brand.copy.emptySearch : brand.copy.emptyLibrary}
           </EmptyState>
         </div>
       ) : (
