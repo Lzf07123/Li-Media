@@ -21,6 +21,9 @@ type MemoryCardProps = {
 
 const AUTO_RETRY_LIMIT = 3;
 const AUTO_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+// 滚出视口超过该距离后挂起排队中的缩略图任务，释放队列槽位给当前
+// 可见的卡片；滞后于 240px 预载带，避免在边界上反复取消/重启。
+const SUSPEND_MARGIN_PX = 900;
 
 function MemoryCard({
   memory,
@@ -39,6 +42,7 @@ function MemoryCard({
   const [showShimmer, setShowShimmer] = useState(false);
   const [isIntersecting, setIsIntersecting] = useState(priority);
   const [isInView, setIsInView] = useState(priority);
+  const [loadSuspended, setLoadSuspended] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -89,6 +93,10 @@ function MemoryCard({
       setIsInView(
         rect.bottom > -240 && rect.top < window.innerHeight + 240,
       );
+      setLoadSuspended(
+        rect.bottom < -SUSPEND_MARGIN_PX
+          || rect.top > window.innerHeight + SUSPEND_MARGIN_PX,
+      );
     };
     const scheduleVisibility = () => {
       if (animationFrame) {
@@ -118,6 +126,13 @@ function MemoryCard({
     if (!thumbnailUrl || !isIntersecting) {
       setQueuedThumbnailUrl(null);
       dispatchMediaState({ type: "reset" });
+      return;
+    }
+
+    // 卡片滚出滞回带后 park 在 queued 状态：cleanup 先 abort 队列任务
+    // 释放槽位，滚回时依赖 loadSuspended 变化重新入队。
+    if (loadSuspended) {
+      dispatchMediaState({ scope: "preview", type: "queued" });
       return;
     }
 
@@ -166,7 +181,7 @@ function MemoryCard({
       controller.abort();
       window.clearTimeout(autoRetryTimer);
     };
-  }, [isIntersecting, priority, retryAttempt, thumbnailRetryUrl, thumbnailUrl]);
+  }, [isIntersecting, loadSuspended, priority, retryAttempt, thumbnailRetryUrl, thumbnailUrl]);
 
   useEffect(() => {
     if (mediaState.preview !== "loading") {

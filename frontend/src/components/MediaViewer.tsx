@@ -25,7 +25,7 @@ import {
   resolveThumbnailUrl,
   type MemorySummary,
 } from "@/lib/api";
-import { loadQueuedImage } from "@/lib/image-load-queue";
+import { imageLoadQueue, loadQueuedImage } from "@/lib/image-load-queue";
 import { brand } from "@/lib/brand";
 import {
   createMediaLifecycleMap,
@@ -39,6 +39,8 @@ type MediaViewerProps = {
   onClose: () => void;
   onNext?: () => void;
   onPrev?: () => void;
+  // 相邻回忆：空闲时预取其查看器尺寸图片，翻页即可显示。
+  prefetchTargets?: MemorySummary[];
 };
 
 type PlaybackSource = {
@@ -49,7 +51,13 @@ type PlaybackSource = {
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 
-export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaViewerProps) {
+export default function MediaViewer({
+  memory,
+  onClose,
+  onNext,
+  onPrev,
+  prefetchTargets,
+}: MediaViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const dragOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -147,10 +155,14 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
     const previousPaddingRight = document.body.style.paddingRight;
     document.body.style.overflow = "hidden";
     viewerRef.current?.focus();
+    // Park canvas thumbnail loads so the viewer's high-priority images can
+    // claim both queue slots immediately; parked tasks resume on close.
+    imageLoadQueue.suspendAll();
 
     return () => {
       document.body.style.overflow = previousOverflow;
       document.body.style.paddingRight = previousPaddingRight;
+      imageLoadQueue.resume();
     };
   }, []);
 
@@ -200,7 +212,8 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
 
     const controller = new AbortController();
     loadQueuedImage(smallSrc, {
-      priority: "normal",
+      // 查看器关键路径（小图先行）：高优先级，避免被普通任务占住槽位。
+      priority: "high",
       retries: 4,
       signal: controller.signal,
     })
@@ -248,6 +261,46 @@ export default function MediaViewer({ memory, onClose, onNext, onPrev }: MediaVi
 
     return () => controller.abort();
   }, [isVideo, largeSrc, smallSrc]);
+
+  useEffect(() => {
+    if (!prefetchTargets || prefetchTargets.length === 0) {
+      return;
+    }
+
+    const controllers: AbortController[] = [];
+    const startPrefetch = () => {
+      prefetchTargets.forEach((neighbor) => {
+        // 只预取图片（含视频海报），不触碰按需直链契约。
+        const src = resolveThumbnailUrl(neighbor.thumbnail_url, posterSize);
+        if (!src) {
+          return;
+        }
+        const controller = new AbortController();
+        controllers.push(controller);
+        loadQueuedImage(src, {
+          priority: "high",
+          retries: 2,
+          signal: controller.signal,
+        }).catch(() => {
+          // 预取失败静默降级；真正导航时按正常链路加载。
+        });
+      });
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(startPrefetch);
+      return () => {
+        window.cancelIdleCallback(idleId);
+        controllers.forEach((controller) => controller.abort());
+      };
+    }
+
+    const timer = window.setTimeout(startPrefetch, 1);
+    return () => {
+      window.clearTimeout(timer);
+      controllers.forEach((controller) => controller.abort());
+    };
+  }, [prefetchTargets, posterSize]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

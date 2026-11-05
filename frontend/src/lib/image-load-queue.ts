@@ -18,6 +18,8 @@ type QueueTask = {
   sequence: number;
   signal?: AbortSignal;
   cleanup: () => void;
+  // 挂起期间入队的任务（查看器自己的加载）不受挂起影响。
+  exemptFromSuspension: boolean;
 };
 
 const MAX_ACTIVE_IMAGE_LOADS = 2;
@@ -26,6 +28,8 @@ class ImageLoadQueue {
   private activeCount = 0;
   private sequence = 0;
   private tasks: QueueTask[] = [];
+  private activeTasks = new Set<QueueTask>();
+  private suspended = false;
 
   load(src: string, options: ImageLoadOptions = {}): Promise<HTMLImageElement> {
     const { priority = "normal", retries = 0, signal } = options;
@@ -48,6 +52,7 @@ class ImageLoadQueue {
 
       const finish = () => {
         this.activeCount -= 1;
+        this.activeTasks.delete(task);
       };
 
       const abort = () => {
@@ -58,7 +63,7 @@ class ImageLoadQueue {
         window.clearTimeout(task.retryTimer);
         cleanup();
         if (isActive) {
-          this.activeCount -= 1;
+          finish();
           image.removeAttribute("src");
           this.startNext();
         } else {
@@ -115,6 +120,7 @@ class ImageLoadQueue {
         sequence: this.sequence++,
         signal,
         cleanup,
+        exemptFromSuspension: this.suspended,
         start: () => {
           isActive = true;
           image.onload = complete;
@@ -129,20 +135,58 @@ class ImageLoadQueue {
     });
   }
 
-  private startNext() {
-    while (this.activeCount < MAX_ACTIVE_IMAGE_LOADS && this.tasks.length > 0) {
-      const availableTasks = this.tasks.filter((task) => !task.signal?.aborted);
-      if (availableTasks.length === 0) {
-        this.tasks = this.tasks.filter((task) => !task.signal?.aborted);
+  /**
+   * Park every queued and running load so later high-priority work (the media
+   * viewer) can claim both slots immediately. Parked tasks keep their promises
+   * pending and restart in original order once loads resume; tasks enqueued
+   * while suspended (the viewer's own) are exempt and start right away.
+   */
+  suspendAll() {
+    if (this.suspended) {
+      return;
+    }
+    this.suspended = true;
+    for (const task of [...this.activeTasks]) {
+      if (task.signal?.aborted) {
         continue;
       }
+      task.image.onload = null;
+      task.image.onerror = null;
+      task.image.removeAttribute("src");
+      this.activeCount -= 1;
+      this.activeTasks.delete(task);
+      this.tasks.push(task);
+    }
+    this.startNext();
+  }
 
-      const task = availableTasks.reduce((selected, candidate) =>
+  resume() {
+    if (!this.suspended) {
+      return;
+    }
+    this.suspended = false;
+    this.startNext();
+  }
+
+  private startNext() {
+    while (this.activeCount < MAX_ACTIVE_IMAGE_LOADS && this.tasks.length > 0) {
+      const candidates = this.tasks.filter(
+        (task) =>
+          !task.signal?.aborted &&
+          !(this.suspended && !task.exemptFromSuspension),
+      );
+      if (candidates.length === 0) {
+        this.tasks = this.tasks.filter((task) => !task.signal?.aborted);
+        break;
+      }
+
+      const task = candidates.reduce((selected, candidate) =>
         this.rank(candidate) < this.rank(selected) ? candidate : selected,
       );
       this.remove(task);
 
       this.activeCount += 1;
+      this.activeTasks.add(task);
       task.start();
     }
   }
