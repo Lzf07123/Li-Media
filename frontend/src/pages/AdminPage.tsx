@@ -143,6 +143,18 @@ export default function AdminPage() {
     setAdminPage(1);
   };
 
+  const refreshSystemStatus = useCallback(async () => {
+    setIsRefreshingStatus(true);
+    try {
+      setSystemStatus(await getSystemStatus());
+      setError(null);
+    } catch {
+      setError(brand.copy.adminStatusRefreshFailed);
+    } finally {
+      setIsRefreshingStatus(false);
+    }
+  }, []);
+
   const loadMemories = useCallback(async () => {
     setIsLoading(true);
     setCountsState("loading");
@@ -166,30 +178,23 @@ export default function AdminPage() {
       );
       setIsAdmin(true);
       setCountsState("ready");
-      const scan = await getLatestRemoteScan();
-      setScanTask(scan);
-      const config = await getRemoteConfig();
-      setRemoteConfig(config);
-      try {
-        setPreheatJob(await getLatestThumbnailPreheat());
-      } catch {
-        setPreheatJob(null);
-      }
-      try {
-        setSystemStatus(await getSystemStatus());
-      } catch {
-        setSystemStatus(null);
-      }
-      try {
-        setBatchJob(await getLatestBatchStatusJob());
-      } catch {
-        setBatchJob(null);
-      }
-      try {
-        setProbeJob(await getLatestBrowserCompatibilityProbe());
-      } catch {
-        setProbeJob(null);
-      }
+      // 辅助状态请求并行执行；单个失败只降级对应面板，不再拖长整条刷新链。
+      const [scan, config, preheat, status, batch, probe] = await Promise.allSettled([
+        getLatestRemoteScan(),
+        getRemoteConfig(),
+        getLatestThumbnailPreheat(),
+        getSystemStatus(),
+        getLatestBatchStatusJob(),
+        getLatestBrowserCompatibilityProbe(),
+      ]);
+      const valueOf = <T,>(result: PromiseSettledResult<T>): T | null =>
+        result.status === "fulfilled" ? result.value : null;
+      setScanTask(valueOf(scan));
+      setRemoteConfig(valueOf(config));
+      setPreheatJob(valueOf(preheat));
+      setSystemStatus(valueOf(status));
+      setBatchJob(valueOf(batch));
+      setProbeJob(valueOf(probe));
       setError(null);
     } catch (loadError) {
       setIsAdmin(false);
@@ -216,71 +221,90 @@ export default function AdminPage() {
     void loadMemories();
   }, [loadMemories]);
 
+  // 四类后台作业共用一个 1s 轮询：作业全部空闲时停止，运行中合并为
+  // 一轮并行请求，在途回合未完成时跳过下一个 tick。
+  const anyJobActive =
+    scanTask?.status === "running"
+    || preheatJob?.status === "queued"
+    || preheatJob?.status === "running"
+    || batchJob?.status === "queued"
+    || batchJob?.status === "running"
+    || probeJob?.status === "queued"
+    || probeJob?.status === "running";
+
   useEffect(() => {
-    if (scanTask?.status !== "running") {
+    if (!anyJobActive) {
       return;
     }
 
+    let inFlight = false;
     const timer = window.setInterval(async () => {
-      const nextTask = await getLatestRemoteScan();
-      setScanTask(nextTask);
+      if (inFlight) {
+        return;
+      }
+      inFlight = true;
+      try {
+        const [scan, preheat, batch, probe] = await Promise.allSettled([
+          getLatestRemoteScan(),
+          getLatestThumbnailPreheat(),
+          getLatestBatchStatusJob(),
+          getLatestBrowserCompatibilityProbe(),
+        ]);
+        const valueOf = <T,>(result: PromiseSettledResult<T>): T | null =>
+          result.status === "fulfilled" ? result.value : null;
+        const nextScan = valueOf(scan);
+        const nextPreheat = valueOf(preheat);
+        const nextBatch = valueOf(batch);
+        const nextProbe = valueOf(probe);
+        // 单个状态请求失败时保留上一次的结果，不把面板闪成空态。
+        if (scan.status === "fulfilled") {
+          setScanTask(nextScan);
+        }
+        if (preheat.status === "fulfilled") {
+          setPreheatJob(nextPreheat);
+        }
+        if (batch.status === "fulfilled") {
+          setBatchJob(nextBatch);
+        }
+        if (probe.status === "fulfilled") {
+          setProbeJob(nextProbe);
+        }
 
-      if (nextTask?.status !== "running") {
-        await loadMemories();
+        const isWaiting = (status: string | undefined) =>
+          status === "queued" || status === "running";
+        const scanDone = scan.status === "fulfilled"
+          && scanTask?.status === "running"
+          && nextScan?.status !== "running";
+        const preheatDone = preheat.status === "fulfilled"
+          && isWaiting(preheatJob?.status)
+          && !isWaiting(nextPreheat?.status);
+        const batchDone = batch.status === "fulfilled"
+          && isWaiting(batchJob?.status)
+          && !isWaiting(nextBatch?.status);
+        const probeDone = probe.status === "fulfilled"
+          && isWaiting(probeJob?.status)
+          && !isWaiting(nextProbe?.status);
+
+        if (scanDone || batchDone || probeDone) {
+          void loadMemories();
+        } else if (preheatDone) {
+          void refreshSystemStatus();
+        }
+      } finally {
+        inFlight = false;
       }
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [scanTask?.status, loadMemories]);
-
-  useEffect(() => {
-    if (preheatJob?.status !== "queued" && preheatJob?.status !== "running") {
-      return;
-    }
-
-    const timer = window.setInterval(async () => {
-      const nextJob = await getLatestThumbnailPreheat();
-      setPreheatJob(nextJob);
-
-      if (nextJob?.status === "completed") {
-        void refreshSystemStatus();
-      }
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [preheatJob?.status]);
-
-  useEffect(() => {
-    if (batchJob?.status !== "queued" && batchJob?.status !== "running") {
-      return;
-    }
-
-    const timer = window.setInterval(async () => {
-      const nextJob = await getLatestBatchStatusJob();
-      setBatchJob(nextJob);
-      if (nextJob?.status !== "queued" && nextJob?.status !== "running") {
-        await loadMemories();
-      }
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [batchJob?.status, loadMemories]);
-
-  useEffect(() => {
-    if (probeJob?.status !== "queued" && probeJob?.status !== "running") {
-      return;
-    }
-
-    const timer = window.setInterval(async () => {
-      const nextJob = await getLatestBrowserCompatibilityProbe();
-      setProbeJob(nextJob);
-      if (nextJob?.status !== "queued" && nextJob?.status !== "running") {
-        await loadMemories();
-      }
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [probeJob?.status, loadMemories]);
+  }, [
+    anyJobActive,
+    scanTask?.status,
+    preheatJob?.status,
+    batchJob?.status,
+    probeJob?.status,
+    loadMemories,
+    refreshSystemStatus,
+  ]);
 
   useEffect(() => {
     const authorizationResult = searchParams.get("baidu_auth");
@@ -629,18 +653,6 @@ export default function AdminPage() {
     } catch {
       setError(brand.copy.adminRemoteAuthorizeFailed);
       setIsAuthorizing(false);
-    }
-  };
-
-  const refreshSystemStatus = async () => {
-    setIsRefreshingStatus(true);
-    try {
-      setSystemStatus(await getSystemStatus());
-      setError(null);
-    } catch {
-      setError(brand.copy.adminStatusRefreshFailed);
-    } finally {
-      setIsRefreshingStatus(false);
     }
   };
 
