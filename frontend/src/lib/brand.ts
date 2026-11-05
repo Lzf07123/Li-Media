@@ -33,6 +33,8 @@ export const brand = {
     loadingLibrary: "正在加载回忆",
     loadFailed: "暂时无法加载回忆库",
     loadFailedAction: "重新加载",
+    appErrorMessage: "页面渲染出现问题，请刷新重试。",
+    appErrorReload: "刷新页面",
     loadMoreFailed: "更多回忆加载失败",
     retryLoadMore: "重试加载",
     emptyLibrary: "还没有公开的回忆内容。",

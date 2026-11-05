@@ -497,7 +497,7 @@ export async function requestLocalMediaCleanup(
   });
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -505,6 +505,22 @@ class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+
+function composeRequestSignal(
+  signal: AbortSignal | null | undefined,
+): AbortSignal {
+  // 统一请求超时：后端或网关挂起时调用方可以进入错误恢复，而不是永久等待。
+  const timeoutSignal = AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
+  if (!signal) {
+    return timeoutSignal;
+  }
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([signal, timeoutSignal]);
+  }
+  return signal;
 }
 
 async function readApiErrorMessage(response: Response): Promise<string> {
@@ -522,13 +538,23 @@ async function readApiErrorMessage(response: Response): Promise<string> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      Accept: "application/json",
-    },
-    credentials: "include",
-    ...init,
-  });
+  const { signal, ...rest } = init ?? {};
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        Accept: "application/json",
+      },
+      credentials: "include",
+      ...rest,
+      signal: composeRequestSignal(signal),
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+    throw new ApiError("请求超时或网络不可用", 0);
+  }
 
   if (!response.ok) {
     throw new ApiError(await readApiErrorMessage(response), response.status);
@@ -597,18 +623,21 @@ export async function getMemoryRecommendations(
 }
 
 export function getMemoryById(memoryId: string): Promise<MemorySummary> {
-  return request<MemorySummary>(`/memories/${memoryId}`);
+  return request<MemorySummary>(`/memories/${encodeURIComponent(memoryId)}`);
 }
 
 export async function getMediaDirectLink(
   memoryId: string,
   purpose: "play" | "download" = "play",
 ): Promise<MediaDirectLink> {
-  return request<MediaDirectLink>(`/memories/${memoryId}/direct-url?purpose=${purpose}`, {
-    headers: {
-      "Cache-Control": "no-store",
+  return request<MediaDirectLink>(
+    `/memories/${encodeURIComponent(memoryId)}/direct-url?purpose=${purpose}`,
+    {
+      headers: {
+        "Cache-Control": "no-store",
+      },
     },
-  });
+  );
 }
 
 export async function getAdminMemories(
@@ -773,9 +802,12 @@ export async function getLatestRemoteScan(): Promise<RemoteScanTask | null> {
 }
 
 export async function retryRemoteEntry(memoryFileId: string): Promise<Memory> {
-  return request<Memory>(`/admin/remote-entries/${memoryFileId}/retry`, {
-    method: "POST",
-  });
+  return request<Memory>(
+    `/admin/remote-entries/${encodeURIComponent(memoryFileId)}/retry`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export async function getRemoteConfig(): Promise<RemoteConfig> {
@@ -852,17 +884,9 @@ export async function updateMemory(
 }
 
 export async function deleteMemory(memoryId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/admin/memories/${memoryId}`, {
+  await request<void>(`/admin/memories/${encodeURIComponent(memoryId)}`, {
     method: "DELETE",
-    headers: {
-      Accept: "application/json",
-    },
-    credentials: "include",
   });
-
-  if (!response.ok) {
-    throw new ApiError(await readApiErrorMessage(response), response.status);
-  }
 }
 
 export async function batchUpdateMemories(

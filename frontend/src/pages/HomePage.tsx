@@ -24,6 +24,12 @@ const SCROLL_STORAGE_KEY = "limedia:home-scroll";
 const PREHEAT_POLL_INTERVAL_MS = 20000;
 const PREHEAT_RETRY_DELAYS_MS = [500, 1000, 2000] as const;
 let scrollBeforeViewer = 0;
+const MEMORY_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function normalizeViewerId(raw: string | null): string | undefined {
+  // viewer 来自 URL 输入：不合法直接视为无查看器，避免进入请求路径。
+  return raw && MEMORY_ID_PATTERN.test(raw) ? raw : undefined;
+}
 
 const MediaViewer = lazy(() => import("@/components/MediaViewer"));
 
@@ -86,7 +92,7 @@ export default function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { pathname } = useLocation();
   const kind = searchParams.get("kind") ?? undefined;
-  const viewerId = searchParams.get("viewer");
+  const viewerId = normalizeViewerId(searchParams.get("viewer"));
   const [recommendations, setRecommendations] = useState<MemorySummary[]>([]);
   const [memories, setMemories] = useState<MemorySummary[]>([]);
   const [directMemory, setDirectMemory] = useState<MemorySummary | null>(null);

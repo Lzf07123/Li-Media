@@ -11,7 +11,7 @@ import AmbientBackground from "@/components/ui/AmbientBackground";
 
 function MemoryRedirect() {
   const { memoryId } = useParams();
-  return <Navigate replace to={`/?viewer=${memoryId}`} />;
+  return <Navigate replace to={`/?viewer=${encodeURIComponent(memoryId ?? "")}`} />;
 }
 
 const AdminPage = lazy(() => import("@/pages/AdminPage"));
