@@ -49,17 +49,19 @@ import {
   type ThumbnailPreheatJob,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import Notice from "@/components/ui/Notice";
-import { ToastViewport, type Toast } from "@/components/ui/Toast";
+import { ToastViewport, TOAST_DURATION_MS, type Toast } from "@/components/ui/Toast";
 import { Input, TextArea } from "@/components/ui/Input";
 import Pagination from "@/components/ui/Pagination";
 import ProgressBar from "@/components/ui/ProgressBar";
 import StatusDot from "@/components/ui/StatusDot";
 
 export default function AdminPage() {
+  useDocumentTitle(brand.pageTitleAdmin);
   const [tokenInput, setTokenInput] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -138,6 +140,10 @@ export default function AdminPage() {
     toastSeq.current += 1;
     const toastId = toastSeq.current;
     setToasts((current) => [...current, { id: toastId, message, tone }]);
+    // 每条 toast 独立计时自动消失，与进度条动画时长保持一致。
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== toastId));
+    }, TOAST_DURATION_MS);
   };
 
   const dismissToast = (id: number) => {
@@ -340,18 +346,6 @@ export default function AdminPage() {
     );
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
-
-  useEffect(() => {
-    if (toasts.length === 0) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setToasts((current) => current.slice(1));
-    }, 3600);
-
-    return () => window.clearTimeout(timer);
-  }, [toasts]);
 
   const submitToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
