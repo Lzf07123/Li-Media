@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 import { brand } from "@/lib/brand";
@@ -30,6 +30,7 @@ export default function Modal({
   title,
   tone = "info",
 }: ModalProps) {
+  const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export default function Modal({
   return (
     <div className="modal-backdrop modal-backdrop-in" onClick={onClose}>
       <div
+        aria-labelledby={titleId}
         aria-modal="true"
         className={`modal-panel modal-panel-in ${toneClass[tone]} p-5 sm:p-6 ${panelClassName}`}
         onClick={(event) => event.stopPropagation()}
@@ -96,7 +98,7 @@ export default function Modal({
         tabIndex={-1}
       >
         <div className="flex items-start gap-3">
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 className="text-lg font-semibold" id={titleId}>{title}</h2>
           <IconButton aria-label={brand.copy.adminCancel} className="ml-auto" onClick={onClose}>
             <X aria-hidden="true" />
           </IconButton>
