@@ -14,6 +14,7 @@ import ThumbnailPreheatCard from "@/components/ThumbnailPreheatCard";
 import { brand } from "@/lib/brand";
 import {
   deleteMemory,
+  ApiError,
   getAdminMemories,
   getRemoteConfig,
   getSystemStatus,
@@ -200,7 +201,7 @@ export default function AdminPage() {
       setIsAdmin(false);
       setCountsState("error");
       setError(
-        loadError instanceof Error && loadError.message.includes("401")
+        loadError instanceof ApiError && loadError.status === 401
           ? null
           : brand.copy.adminLoginFailed,
       );
