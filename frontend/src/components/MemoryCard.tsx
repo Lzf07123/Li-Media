@@ -1,5 +1,5 @@
 import { Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { memo, useEffect, useReducer, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
 import {
@@ -22,7 +22,7 @@ type MemoryCardProps = {
 const AUTO_RETRY_LIMIT = 3;
 const AUTO_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
-export default function MemoryCard({
+function MemoryCard({
   memory,
   onOpen,
   onPrefetch,
@@ -289,3 +289,7 @@ export default function MemoryCard({
     </div>
   );
 }
+
+// HomePage re-renders on every load-more and preheat poll tick; memo keeps
+// unchanged cards out of reconciliation while scrolling long canvases.
+export default memo(MemoryCard);

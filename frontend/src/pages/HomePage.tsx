@@ -131,10 +131,16 @@ export default function HomePage() {
   const randomSeed = seedState.seed;
   const hasNextPage = memories.length > 0 && memories.length < total;
 
-  const updateParams = (next: URLSearchParams) => {
-    const query = next.toString();
-    setSearchParams(query ? `?${query}` : "");
-  };
+  // setSearchParams is stable across renders; memoizing keeps openViewer
+  // referentially stable so memoized MemoryCards skip reconciliation while
+  // the URL (and therefore searchParams) is unchanged.
+  const updateParams = useCallback(
+    (next: URLSearchParams) => {
+      const query = next.toString();
+      setSearchParams(query ? `?${query}` : "");
+    },
+    [setSearchParams],
+  );
 
   const loadPage = useCallback(async (
     page: number,
@@ -481,12 +487,15 @@ export default function HomePage() {
     updateParams(next);
   };
 
-  const openViewer = (memoryId: string) => {
-    const next = new URLSearchParams(searchParams);
-    scrollBeforeViewer = window.scrollY;
-    next.set("viewer", memoryId);
-    updateParams(next);
-  };
+  const openViewer = useCallback(
+    (memoryId: string) => {
+      const next = new URLSearchParams(searchParams);
+      scrollBeforeViewer = window.scrollY;
+      next.set("viewer", memoryId);
+      updateParams(next);
+    },
+    [searchParams, updateParams],
+  );
 
   const closeViewer = () => {
     const next = new URLSearchParams(searchParams);
