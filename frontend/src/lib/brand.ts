@@ -3,6 +3,10 @@ export const brand = {
   shortName: "Media",
   slogan: "把照片和视频整理成可以回看的记忆",
   description: "基于百度网盘存储的公开回忆库。",
+  pageTitleHome: "Li&Media - 回忆库",
+  pageTitleViewer: "{title} · Li&Media",
+  pageTitleAdmin: "Li&Media - 回忆管理",
+  pageTitleNotFound: "Li&Media - 页面不存在",
   themeStorageKey: "limedia-theme",
   copy: {
     libraryTitle: "回忆库",
@@ -105,6 +109,7 @@ export const brand = {
     notFoundText: "请检查地址，或回到回忆库首页。",
     backHome: "返回首页",
     backTop: "返回顶部",
+    close: "关闭",
     moreMenu: "更多",
     navLabel: "主导航",
     paginationLabel: "分页",

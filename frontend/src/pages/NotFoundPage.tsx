@@ -3,8 +3,11 @@ import { FileQuestion } from "lucide-react";
 
 import { brand } from "@/lib/brand";
 import EmptyState from "@/components/ui/EmptyState";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 export default function NotFoundPage() {
+  useDocumentTitle(brand.pageTitleNotFound);
+
   return (
     <div className="mt-8">
       <EmptyState art={FileQuestion}>

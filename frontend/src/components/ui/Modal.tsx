@@ -99,7 +99,7 @@ export default function Modal({
       >
         <div className="flex items-start gap-3">
           <h2 className="text-lg font-semibold" id={titleId}>{title}</h2>
-          <IconButton aria-label={brand.copy.adminCancel} className="ml-auto" onClick={onClose}>
+          <IconButton aria-label={brand.copy.close} className="ml-auto" onClick={onClose}>
             <X aria-hidden="true" />
           </IconButton>
         </div>
