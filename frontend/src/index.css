@@ -655,9 +655,6 @@
     animation-timing-function: linear;
     animation-fill-mode: forwards;
   }
-  .toast:hover .toast-progress {
-    animation-play-state: paused;
-  }
   .toast-success {
     @apply border-l-4 border-l-success;
   }
@@ -1445,7 +1442,7 @@
     @apply border-t border-border/60 bg-surface/85 backdrop-blur;
   }
   .site-footer-inner {
-    @apply mx-auto flex min-h-11 max-w-7xl flex-nowrap items-center justify-center gap-x-2 px-4 py-0 text-xs text-muted lg:px-8;
+    @apply mx-auto flex min-h-11 max-w-7xl flex-wrap items-center justify-center gap-x-2 px-4 py-0 text-xs text-muted lg:px-8;
   }
   .site-footer a {
     @apply inline-flex min-h-11 items-center px-2 py-0 text-muted transition-colors duration-200 hover:text-foreground;
@@ -2817,7 +2814,23 @@ html {
   border-radius: 999px;
   background: var(--limedia-surface);
   color: var(--limedia-fg);
+  box-shadow: var(--limedia-shadow-md);
   cursor: pointer;
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
+    transform var(--limedia-motion-base) var(--limedia-ease-spring);
+}
+.video-viewer-play:hover {
+  background: var(--limedia-surface-2);
+  box-shadow: var(--limedia-shadow-lg);
+}
+.video-viewer-play:active {
+  transform: scale(0.95);
+}
+.video-viewer-play:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .photo-viewer-loading,
@@ -2838,6 +2851,35 @@ html {
   z-index: 2;
   display: flex;
   gap: 10px;
+}
+
+/* 缩放指示：放大时短暂显示当前倍率（aria-hidden，视觉反馈） */
+.viewer-zoom-pill {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  z-index: 2;
+  padding: 4px 12px;
+  border: 1px solid var(--limedia-glass-border-soft);
+  border-radius: 999px;
+  background:
+    var(--limedia-glass-shine),
+    var(--limedia-glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--limedia-glass-blur));
+  backdrop-filter: blur(var(--limedia-glass-blur));
+  color: var(--limedia-fg);
+  font-size: 0.8rem;
+  font-weight: 600;
+  transform: translateX(-50%) translateY(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--limedia-motion-fast) var(--limedia-ease-out),
+    transform var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.viewer-zoom-pill.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .photo-viewer-button {
@@ -2891,6 +2933,21 @@ html {
     overscroll-behavior-x: contain;
     scrollbar-width: none;
     padding-bottom: 4px;
+    /* 两侧渐隐提示内容可横向滑动 */
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent 0,
+      #000 16px,
+      #000 calc(100% - 16px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0,
+      #000 16px,
+      #000 calc(100% - 16px),
+      transparent 100%
+    );
   }
 
   .filter-toolbar::-webkit-scrollbar {
