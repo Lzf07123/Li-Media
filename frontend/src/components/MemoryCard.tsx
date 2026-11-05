@@ -208,6 +208,9 @@ function MemoryCard({
   }, [mediaState.preview]);
 
   const showError = thumbnailFailed || mediaState.preview === "failed";
+  // 卡片不展示标题文字，可访问名称是唯一的身份信息：有标题用标题，
+  // 无标题回退通用“回忆预览”，避免整屏读出同一句。
+  const accessibleName = memory.title || brand.copy.detailPreviewAlt;
 
   const retryThumbnail = () => {
     if (!thumbnailUrl) {
@@ -230,7 +233,7 @@ function MemoryCard({
       ref={cardRef}
     >
       <button
-        aria-label={brand.copy.detailPreviewAlt}
+        aria-label={accessibleName}
         className="block w-full cursor-pointer text-left"
         onClick={() => onOpen(memory.id)}
         type="button"
@@ -248,7 +251,7 @@ function MemoryCard({
             </span>
           ) : null}
           <img
-            alt={brand.copy.detailPreviewAlt}
+            alt={accessibleName}
             className={`post-cover media-reveal media-crossfade ${
               mediaState.preview === "ready" && isInView ? "is-visible" : "is-hidden"
             }`}
@@ -267,7 +270,6 @@ function MemoryCard({
               }
               dispatchMediaState({ scope: "preview", type: "ready" });
             }}
-            sizes="(max-width: 767px) 46vw, (max-width: 1023px) 30vw, (max-width: 1279px) 23vw, (max-width: 1599px) 18vw, 12vw"
             src={thumbnailRetryUrl ?? queuedThumbnailUrl ?? undefined}
             ref={imageRef}
             width={memory.width ?? undefined}

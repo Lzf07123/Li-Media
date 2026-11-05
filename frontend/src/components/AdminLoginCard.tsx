@@ -36,6 +36,8 @@ export default function AdminLoginCard({
 
       <form className="mt-6 flex flex-col gap-3" onSubmit={onSubmit}>
         <Input
+          autoComplete="current-password"
+          autoFocus
           id="admin-token"
           label={brand.copy.adminTokenLabel}
           onChange={(event) => onTokenChange(event.target.value)}
