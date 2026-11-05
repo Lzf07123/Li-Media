@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import and_, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from threading import Lock
 
 from app.core.config import get_settings
@@ -62,14 +62,20 @@ _stream_users_lock = Lock()
 
 
 def _public_memory_statement():
-    return select(Memory).where(
-        Memory.status == MemoryStatus.PUBLISHED,
-        Memory.files.any(
-            and_(
-                MemoryFile.source == "baidupan",
-                public_files_condition(),
-            )
-        ),
+    # Eager-load files once per statement: to_memory_summary reads memory.files,
+    # and lazy loading would issue one extra SELECT per card on list pages.
+    return (
+        select(Memory)
+        .options(selectinload(Memory.files))
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            Memory.files.any(
+                and_(
+                    MemoryFile.source == "baidupan",
+                    public_files_condition(),
+                )
+            ),
+        )
     )
 
 
