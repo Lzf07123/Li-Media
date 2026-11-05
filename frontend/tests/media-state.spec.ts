@@ -158,11 +158,17 @@ test("viewer photo preview fails and retries through the shared state", async ({
 
   await page.goto("/");
   await page.locator(".post-card button").click();
-  await expect(page.locator(".viewer-status")).toHaveAttribute("data-scope", "preview");
-  await expect(page.locator(".viewer-status")).toHaveAttribute("data-state", "failed");
+  // The large preview retries on the queue's 500ms/1s/2s/4s backoff before
+  // the shared state surfaces the failure, while the already-loaded small
+  // image keeps the status quiet during that window.
+  const viewerStatus = page.locator(".viewer-status");
+  await expect(viewerStatus).toHaveAttribute("data-state", "failed", {
+    timeout: 15_000,
+  });
+  await expect(viewerStatus).toHaveAttribute("data-scope", "preview");
   largePreviewBlocked = false;
   await page.getByRole("button", { name: "重试" }).click();
-  await expect(page.locator(".viewer-status")).toHaveAttribute("data-state", "ready");
+  await expect(viewerStatus).toHaveAttribute("data-state", "ready");
 });
 
 test("download failures use the same viewer state priority", async ({ page }) => {

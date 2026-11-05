@@ -59,7 +59,7 @@ class ImageLoadQueue {
         cleanup();
         if (isActive) {
           this.activeCount -= 1;
-          image.src = "";
+          image.removeAttribute("src");
           this.startNext();
         } else {
           this.remove(task);
@@ -85,7 +85,12 @@ class ImageLoadQueue {
         finish();
         if (task.attempt < task.retries && !signal?.aborted) {
           task.attempt += 1;
-          image.src = "";
+          // Detach handlers before clearing src: an empty src resolves to the
+          // document URL, and a still-attached onerror would re-enter fail(),
+          // double-count active slots and queue the task twice.
+          image.onload = null;
+          image.onerror = null;
+          image.removeAttribute("src");
           task.retryTimer = window.setTimeout(() => {
             this.tasks.push(task);
             this.startNext();
@@ -95,7 +100,7 @@ class ImageLoadQueue {
 
         isSettled = true;
         task.cleanup();
-        image.src = "";
+        image.removeAttribute("src");
         reject(new Error("Image load failed"));
         this.startNext();
       };

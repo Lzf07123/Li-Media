@@ -2122,6 +2122,13 @@ html {
       var(--limedia-glass-bg-strong);
   }
 }
+/* 画布卡片离开视口后跳过渲染：布局框保留，交叉观察与占位行为不变，
+   屏外卡片不再参与绘制与合成。contain-intrinsic-size 用 auto 前缀让
+   浏览器记住真实尺寸，滚动回看时不会跳动；320px 仅为首次渲染前的占位。 */
+.post-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
 .project-card:hover,
 .post-card:hover {
   transform: translateY(-3px);
