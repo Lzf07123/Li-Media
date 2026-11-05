@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
   ChevronLeft,
@@ -65,6 +66,7 @@ export default function MediaViewer({
 
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [zoomPillVisible, setZoomPillVisible] = useState(false);
   const [photoLargeSrc, setPhotoLargeSrc] = useState<string | null>(null);
   const [queuedSmallSrc, setQueuedSmallSrc] = useState<string | null>(null);
   const [queuedPosterSrc, setQueuedPosterSrc] = useState<string | null>(null);
@@ -124,7 +126,14 @@ export default function MediaViewer({
           : isFailureMediaState(activeMediaState.state)
             ? brand.copy.viewerStatusRetrying
             : brand.copy.viewerStatusReady;
-  const shouldShowStatus = true;
+  // 就绪且无索引失败时隐藏状态徽章，减少常驻视觉噪声。
+  const statusSettled =
+    !hasIndexFailure &&
+    !isFailureMediaState(activeMediaState.state) &&
+    activeMediaState.state !== "loading" &&
+    activeMediaState.state !== "queued" &&
+    activeMediaState.state !== "buffering";
+  const shouldShowStatus = !statusSettled;
 
   const resetTransform = useCallback(() => {
     setZoom(1);
@@ -134,6 +143,28 @@ export default function MediaViewer({
   const clampZoom = useCallback((value: number) => {
     return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
   }, []);
+
+  // 滚轮缩放：viewer 全屏且 body 滚动已锁定，普通滚轮不与页面滚动冲突；
+  // Ctrl/Cmd+滚轮保留给浏览器页面缩放。
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (event.ctrlKey || event.metaKey) {
+      return;
+    }
+    const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    setZoom((current) => clampZoom(current * factor));
+  };
+
+  // 缩放指示：放大时短暂显示当前倍率，回弹到 1x 即隐藏。
+  useEffect(() => {
+    if (zoom <= 1) {
+      setZoomPillVisible(false);
+      return;
+    }
+
+    setZoomPillVisible(true);
+    const timer = window.setTimeout(() => setZoomPillVisible(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [zoom]);
 
   useEffect(() => {
     const posterQuery = window.matchMedia("(max-width: 767px)");
@@ -149,6 +180,10 @@ export default function MediaViewer({
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     const previousPaddingRight = document.body.style.paddingRight;
+    // 关闭时把焦点归还给打开查看器的触发元素，键盘用户不掉回 body。
+    const previousActive = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     document.body.style.overflow = "hidden";
     viewerRef.current?.focus();
     // Park canvas thumbnail loads so the viewer's high-priority images can
@@ -159,6 +194,7 @@ export default function MediaViewer({
       document.body.style.overflow = previousOverflow;
       document.body.style.paddingRight = previousPaddingRight;
       imageLoadQueue.resume();
+      previousActive?.focus();
     };
   }, []);
 
@@ -547,6 +583,7 @@ export default function MediaViewer({
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onWheel={handleWheel}
         >
           {smallSrc && !smallImageFailed ? (
             <img
@@ -586,6 +623,12 @@ export default function MediaViewer({
               {brand.copy.detailImageLoadFailed}
             </p>
           ) : null}
+          <div
+            aria-hidden="true"
+            className={`viewer-zoom-pill ${zoomPillVisible ? "is-visible" : ""}`}
+          >
+            {Math.round(zoom * 100)}%
+          </div>
         </div>
       )}
 
@@ -634,6 +677,7 @@ export default function MediaViewer({
         <button
           aria-label={brand.copy.detailRetry}
           className="photo-viewer-button"
+          disabled={!isVideo && !hasIndexFailure && mediaState.preview === "ready"}
           onClick={() => {
             if (isVideo) {
               void startPlayback();
@@ -662,7 +706,7 @@ export default function MediaViewer({
           )}
         </button>
         <button
-          aria-label={brand.copy.adminCancel}
+          aria-label={brand.copy.close}
           className="photo-viewer-button"
           onClick={onClose}
           type="button"
