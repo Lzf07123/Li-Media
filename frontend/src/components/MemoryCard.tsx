@@ -3,6 +3,7 @@ import { memo, useEffect, useReducer, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
 import {
+  appendQueryParam,
   resolveThumbnailUrl,
   type MemorySummary,
 } from "@/lib/api";
@@ -57,8 +58,8 @@ function MemoryCard({
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [thumbnailSize] = useState(cardThumbnailSize);
   const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, thumbnailSize);
-  const thumbnailRetryUrl = retryAttempt > 0
-    ? `${thumbnailUrl}&retry=${retryAttempt}`
+  const thumbnailRetryUrl = retryAttempt > 0 && thumbnailUrl
+    ? appendQueryParam(thumbnailUrl, "retry", String(retryAttempt))
     : null;
   const knownSize = memory.width && memory.height
     ? { width: memory.width, height: memory.height }

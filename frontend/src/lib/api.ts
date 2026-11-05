@@ -468,6 +468,11 @@ export function resolveThumbnailUrl(
   return `${url}${separator}ratio=1&size=${size}`;
 }
 
+export function appendQueryParam(url: string, key: string, value: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
 export function resolveThumbnailSrcSet(
   path: string | null | undefined,
 ): string | null {
@@ -624,20 +629,6 @@ export async function getMemoryRecommendations(
 
 export function getMemoryById(memoryId: string): Promise<MemorySummary> {
   return request<MemorySummary>(`/memories/${encodeURIComponent(memoryId)}`);
-}
-
-export async function getMediaDirectLink(
-  memoryId: string,
-  purpose: "play" | "download" = "play",
-): Promise<MediaDirectLink> {
-  return request<MediaDirectLink>(
-    `/memories/${encodeURIComponent(memoryId)}/direct-url?purpose=${purpose}`,
-    {
-      headers: {
-        "Cache-Control": "no-store",
-      },
-    },
-  );
 }
 
 export async function getAdminMemories(
