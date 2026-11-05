@@ -33,15 +33,19 @@ export default function VideoPlayer({
     setIsSeeking(false);
   }, [src]);
 
-  useEffect(() => () => {
+  // Capture the element while the effect body runs: React detaches refs
+  // before unmount cleanup executes, so videoRef.current is null by then.
+  useEffect(() => {
     const video = videoRef.current;
     if (!video) {
       return;
     }
 
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
+    return () => {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
   }, []);
 
   return (
