@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import { LogOut } from "lucide-react";
@@ -65,6 +65,11 @@ export default function AdminPage() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
+  const [isStatusUpdating, setIsStatusUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [isRetryingRemote, setIsRetryingRemote] = useState<string | null>(null);
   const [isCleaning, setIsCleaning] = useState(false);
   const [pendingCleanup, setPendingCleanup] = useState<CleanupStats | null>(null);
@@ -126,8 +131,13 @@ export default function AdminPage() {
   const [batchCapturedAt, setBatchCapturedAt] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const toastSeq = useRef(0);
+
   const pushToast = (message: string, tone: Toast["tone"]) => {
-    setToasts((current) => [...current, { id: Date.now(), message, tone }]);
+    // 自增序号：同一毫秒内多条 toast 不再共享 id。
+    toastSeq.current += 1;
+    const toastId = toastSeq.current;
+    setToasts((current) => [...current, { id: toastId, message, tone }]);
   };
 
   const dismissToast = (id: number) => {
@@ -156,7 +166,11 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadMemoriesTokenRef = useRef(0);
+
   const loadMemories = useCallback(async () => {
+    // 竞态令牌：慢的旧筛选响应不得覆盖新结果。
+    const requestToken = ++loadMemoriesTokenRef.current;
     setIsLoading(true);
     setCountsState("loading");
     try {
@@ -198,6 +212,9 @@ export default function AdminPage() {
       setProbeJob(valueOf(probe));
       setError(null);
     } catch (loadError) {
+      if (requestToken !== loadMemoriesTokenRef.current) {
+        return;
+      }
       setIsAdmin(false);
       setCountsState("error");
       setError(
@@ -206,7 +223,9 @@ export default function AdminPage() {
           : brand.copy.adminLoginFailed,
       );
     } finally {
-      setIsLoading(false);
+      if (requestToken === loadMemoriesTokenRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [
     adminCompatibility,
@@ -336,6 +355,10 @@ export default function AdminPage() {
 
   const submitToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isLoggingIn) {
+      return;
+    }
+    setIsLoggingIn(true);
     try {
       await loginAdmin(tokenInput);
       setTokenInput("");
@@ -343,6 +366,8 @@ export default function AdminPage() {
     } catch {
       setIsAdmin(false);
       setError(brand.copy.adminLoginFailed);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -353,15 +378,25 @@ export default function AdminPage() {
   };
 
   const changeStatus = async (memory: Memory, status: Memory["status"]) => {
+    if (isStatusUpdating) {
+      return;
+    }
+    setIsStatusUpdating(true);
     try {
       await updateMemory(memory.id, { status });
       await loadMemories();
     } catch {
       setError(brand.copy.adminStatusUpdateFailed);
+    } finally {
+      setIsStatusUpdating(false);
     }
   };
 
   const removeMemory = async (memory: Memory) => {
+    if (isDeleting) {
+      return;
+    }
+    setIsDeleting(true);
     try {
       await deleteMemory(memory.id);
       setPendingDelete(null);
@@ -369,6 +404,8 @@ export default function AdminPage() {
       await loadMemories();
     } catch {
       setError(brand.copy.adminDeleteFailed);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -389,6 +426,10 @@ export default function AdminPage() {
   };
 
   const applyBatchUpdate = async (payload: Parameters<typeof batchUpdateMemories>[0]) => {
+    if (isBatchUpdating) {
+      return;
+    }
+    setIsBatchUpdating(true);
     try {
       const result = await batchUpdateMemories(payload);
       setError(null);
@@ -406,6 +447,8 @@ export default function AdminPage() {
     } catch {
       setError(brand.copy.adminStatusUpdateFailed);
       return false;
+    } finally {
+      setIsBatchUpdating(false);
     }
   };
 
@@ -541,6 +584,10 @@ export default function AdminPage() {
   };
 
   const exportSelectedReport = async () => {
+    if (isExporting) {
+      return;
+    }
+    setIsExporting(true);
     try {
       const report = await exportMemories(selectedIds);
       const blob = new Blob([JSON.stringify(report, null, 2)], {
@@ -555,6 +602,8 @@ export default function AdminPage() {
       setError(null);
     } catch {
       setError(brand.copy.adminExportFailed);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -707,6 +756,7 @@ export default function AdminPage() {
   if (!isAdmin) {
     return (
       <AdminLoginCard
+        submitting={isLoggingIn}
         error={error}
         onTokenChange={setTokenInput}
         onSubmit={submitToken}
@@ -1195,20 +1245,20 @@ export default function AdminPage() {
               {brand.copy.adminBatchEdit}
             </Button>
             <Button
-              disabled={isSyncing}
+              disabled={isBatchUpdating}
               onClick={() => void applyBatchUpdate({ ids: selectedIds, status: "published" })}
             >
               {brand.copy.adminBatchPublish}
             </Button>
             <Button
-              disabled={isSyncing}
+              disabled={isBatchUpdating}
               onClick={() => void applyBatchUpdate({ ids: selectedIds, status: "hidden" })}
               variant="secondary"
             >
               {brand.copy.adminBatchHide}
             </Button>
             <Button
-              disabled={isSyncing}
+              disabled={isExporting}
               onClick={() => void exportSelectedReport()}
               variant="secondary"
             >
@@ -1370,11 +1420,11 @@ export default function AdminPage() {
                   <td>
                     <div className="flex flex-wrap gap-2">
                       {memory.status !== "published" ? (
-                        <Button onClick={() => void changeStatus(memory, "published")}>
+                        <Button disabled={isStatusUpdating} onClick={() => void changeStatus(memory, "published")}>
                           {brand.copy.adminPublish}
                         </Button>
                       ) : (
-                        <Button onClick={() => void changeStatus(memory, "hidden")} variant="secondary">
+                        <Button disabled={isStatusUpdating} onClick={() => void changeStatus(memory, "hidden")} variant="secondary">
                           {brand.copy.adminHide}
                         </Button>
                       )}
@@ -1477,7 +1527,7 @@ export default function AdminPage() {
           <Button onClick={() => setPendingDelete(null)} variant="secondary">
             {brand.copy.adminCancel}
           </Button>
-          <Button onClick={() => pendingDelete && void removeMemory(pendingDelete)} variant="danger">
+          <Button disabled={isDeleting} onClick={() => pendingDelete && void removeMemory(pendingDelete)} variant="danger">
             {brand.copy.adminConfirmDelete}
           </Button>
         </div>
@@ -1519,7 +1569,7 @@ export default function AdminPage() {
           <Button onClick={() => setIsBatchEditing(false)} variant="secondary">
             {brand.copy.adminCancel}
           </Button>
-          <Button disabled={isSyncing} onClick={() => void submitBatchEdit()}>
+          <Button disabled={isBatchUpdating} onClick={() => void submitBatchEdit()}>
             {brand.copy.adminBatchSave}
           </Button>
         </div>

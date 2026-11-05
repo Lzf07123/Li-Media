@@ -9,6 +9,7 @@ import Notice from "@/components/ui/Notice";
 
 type AdminLoginCardProps = {
   error?: string | null;
+  submitting?: boolean;
   token: string;
   onTokenChange: (token: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -16,6 +17,7 @@ type AdminLoginCardProps = {
 
 export default function AdminLoginCard({
   error,
+  submitting = false,
   token,
   onTokenChange,
   onSubmit,
@@ -41,7 +43,7 @@ export default function AdminLoginCard({
           type="password"
           value={token}
         />
-        <Button type="submit">{brand.copy.adminLogin}</Button>
+        <Button disabled={submitting} type="submit">{brand.copy.adminLogin}</Button>
       </form>
 
       {error ? (
