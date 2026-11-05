@@ -523,6 +523,13 @@ export default function HomePage() {
     && activeMemoryIndex < viewerMemories.length - 1
     ? viewerMemories[activeMemoryIndex + 1]
     : null;
+  const viewerNeighbors = useMemo(
+    () =>
+      [previousMemory, nextMemory].filter(
+        (neighbor): neighbor is MemorySummary => Boolean(neighbor),
+      ),
+    [previousMemory, nextMemory],
+  );
 
   return (
     <section aria-labelledby="library-title" className="page-enter">
@@ -717,6 +724,7 @@ export default function HomePage() {
             onClose={closeViewer}
             onNext={nextMemory ? () => openViewer(nextMemory.id) : undefined}
             onPrev={previousMemory ? () => openViewer(previousMemory.id) : undefined}
+            prefetchTargets={viewerNeighbors}
           />
         </Suspense>
       ) : null}
