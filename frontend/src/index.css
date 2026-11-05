@@ -164,6 +164,9 @@
   --limedia-shadow-lg: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
     0px 2.4px 7.2px rgba(24, 58, 51, 0.05),
     0px 8px 32px rgba(24, 58, 51, 0.1);
+  /* 查看器大图悬浮深度：双层长影，只在单元素上使用 */
+  --limedia-shadow-photo: 0 12px 28px rgba(24, 58, 51, 0.14),
+    0 32px 80px rgba(24, 58, 51, 0.18);
 
   /* 缓动曲线与时长 */
   --limedia-ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -215,6 +218,9 @@
   --limedia-accent-sand-soft: rgba(217, 196, 158, 0.16);
 
   --limedia-ring: #7fd4c6;
+
+  --limedia-shadow-photo: 0 12px 28px rgba(0, 0, 0, 0.4),
+    0 32px 88px rgba(0, 0, 0, 0.5);
 
   --limedia-btn-primary-bg: rgba(127, 212, 198, 0.13);
   --limedia-btn-primary-bg-hover: rgba(127, 212, 198, 0.21);
@@ -2076,6 +2082,8 @@ html {
   height: auto;
   object-fit: contain;
   background: transparent;
+  /* 静态微增强：让缩略图网格更鲜活；不参与动画，无运行时成本 */
+  filter: saturate(1.03);
   transition: transform var(--limedia-motion-slow) var(--limedia-ease-out);
 }
 .waterfall-badge {
@@ -2452,7 +2460,12 @@ html {
 .media-frame {
   position: relative;
   overflow: hidden;
-  background: var(--limedia-surface-2);
+  /* 占位与降级背景：用表面色系做纵向微渐变，让加载态也有层次 */
+  background: linear-gradient(
+    180deg,
+    var(--limedia-surface),
+    var(--limedia-surface-2)
+  );
 }
 
 .media-reveal {
@@ -2691,6 +2704,8 @@ html {
   max-height: min(88dvh, 1000px);
   object-fit: contain;
   opacity: 0;
+  box-shadow: var(--limedia-shadow-photo);
+  border-radius: 12px;
   transition:
     opacity var(--limedia-motion-base) var(--limedia-ease-out),
     transform 180ms var(--limedia-ease-out);
