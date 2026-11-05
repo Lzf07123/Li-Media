@@ -28,7 +28,9 @@ yarn-debug.log*
 pnpm-debug.log*
 
 backend/data/
+backend/media/
 data/
+/test-results/
 *.log
 *.tmp
 
