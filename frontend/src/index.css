@@ -2097,6 +2097,9 @@ html {
   backdrop-filter: blur(var(--limedia-glass-blur));
 }
 
+/* 卡片表面使用预烘焙的强着色背景：每卡常驻 backdrop-filter 压在持续
+   动画的极光背景上会导致逐帧重采样（GPU/电量成本随卡数线性增长），
+   改用原先仅供应不支持浏览器的高不透明度背景，观感保持一致来源。 */
 .project-card,
 .post-card {
   position: relative;
@@ -2104,23 +2107,13 @@ html {
   border-radius: 20px;
   background:
     var(--limedia-glass-shine),
-    var(--limedia-glass-bg);
-  -webkit-backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
-  backdrop-filter: blur(var(--limedia-glass-blur)) saturate(var(--limedia-glass-saturate));
+    var(--limedia-glass-bg-strong);
   box-shadow: var(--limedia-shadow-sm),
     inset 0 1px 0 var(--limedia-glass-highlight);
   transition:
     transform var(--limedia-motion-base) var(--limedia-ease-out),
     box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
     border-color var(--limedia-motion-fast) var(--limedia-ease-out);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .project-card,
-  .post-card {
-    background:
-      var(--limedia-glass-shine),
-      var(--limedia-glass-bg-strong);
-  }
 }
 /* 画布卡片离开视口后跳过渲染：布局框保留，交叉观察与占位行为不变，
    屏外卡片不再参与绘制与合成。contain-intrinsic-size 用 auto 前缀让
@@ -2468,7 +2461,6 @@ html {
   transition:
     opacity var(--limedia-motion-base) var(--limedia-ease-out),
     transform var(--limedia-motion-base) var(--limedia-ease-out);
-  will-change: opacity, transform;
 }
 
 .media-reveal.is-visible {
@@ -2476,9 +2468,10 @@ html {
   transform: translateY(0);
 }
 
+/* 不保留常驻 will-change：每卡两个合成层会让 GPU 内存随画布长度线性
+   增长；opacity 过渡在动画期间由浏览器自动提升，静止时不占层。 */
 .media-crossfade {
   transition: opacity var(--limedia-motion-slow) var(--limedia-ease-out);
-  will-change: opacity;
 }
 
 .media-crossfade.is-hidden {
