@@ -1,7 +1,7 @@
 import mimetypes
 from random import Random
 import uuid
-from typing import Literal
+from typing import Any, Literal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -34,6 +34,7 @@ from app.services.memory_thumbnails import (
     read_image_dimensions,
     resolve_media_path,
 )
+from app.services.text_search import escape_like
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.display_health import (
@@ -48,6 +49,7 @@ from app.services.derivative_tasks import (
 )
 from app.services.thumbnail_preheat import (
     collect_public_preheat_status,
+    home_derivative_ready_condition,
     thumbnail_preheat_registry,
 )
 from app.services.task_limits import (
@@ -62,20 +64,23 @@ _stream_users: dict[str, int] = {}
 _stream_users_lock = Lock()
 
 
-def _public_memory_statement():
+def _public_memory_statement(*, require_home_derivative: bool = False):
     # Eager-load files once per statement: to_memory_summary reads memory.files,
     # and lazy loading would issue one extra SELECT per card on list pages.
+    file_conditions: list[Any] = [
+        MemoryFile.source == "baidupan",
+        public_files_condition(),
+    ]
+    if require_home_derivative:
+        # 画布可见性只承诺「240px 派生图已就绪」的内容；未预热内容不渲染
+        # 占位兜底，直接不出现。详情/直链/流仍走无过滤口径，直链查看器可达。
+        file_conditions.append(home_derivative_ready_condition())
     return (
         select(Memory)
         .options(selectinload(Memory.files))
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
-            Memory.files.any(
-                and_(
-                    MemoryFile.source == "baidupan",
-                    public_files_condition(),
-                )
-            ),
+            Memory.files.any(and_(*file_conditions)),
         )
     )
 
@@ -145,7 +150,9 @@ def recommend_memories(
     limit: int = Query(default=8, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> list[MemorySummaryRead]:
-    statement = _public_memory_statement().order_by(func.random())
+    statement = _public_memory_statement(require_home_derivative=True).order_by(
+        func.random()
+    )
 
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
@@ -185,16 +192,17 @@ def list_memories(
         if has_session_or_credentials or sort == "random"
         else "public, max-age=15, stale-while-revalidate=30"
     )
-    statement = _public_memory_statement()
+    statement = _public_memory_statement(require_home_derivative=True)
 
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
 
     if keyword:
+        pattern = f"%{escape_like(keyword)}%"
         statement = statement.where(
-            (Memory.title.ilike(f"%{keyword}%"))
-            | (Memory.description.ilike(f"%{keyword}%"))
-            | (Memory.location.ilike(f"%{keyword}%"))
+            (Memory.title.ilike(pattern, escape="\\"))
+            | (Memory.description.ilike(pattern, escape="\\"))
+            | (Memory.location.ilike(pattern, escape="\\"))
         )
 
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
@@ -244,8 +252,14 @@ def list_memories(
 
 
 @router.get("/public-counts", response_model=PublicMediaCounts)
-def get_public_media_counts(db: Session = Depends(get_db)) -> PublicMediaCounts:
+def get_public_media_counts(
+    response: Response,
+    db: Session = Depends(get_db),
+) -> PublicMediaCounts:
     """One authoritative count for every publicly browsable photo and video."""
+
+    # 与公开列表同源的聚合口径：短缓存即可，不参与带凭证的会话语义。
+    response.headers["Cache-Control"] = "public, max-age=15"
 
     statement = _public_memory_statement()
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
@@ -353,13 +367,8 @@ def get_memory_direct_url(
 
     task_metrics.record_completed(TaskType.DIRECT_PROBE)
 
-    record_admin_operation(
-        db,
-        action="direct_url_requested",
-        target_type="memory",
-        target_id=memory.id,
-        detail=f"purpose={purpose};remote_resource=untouched",
-    )
+    # 直链签发是高频公开行为，不再写入管理审计表（历史原因遗留）：
+    # 审计表只记录管理动作，避免公开流量造成无限增长。
     # Direct URLs are short-lived and must not be persisted by browsers.
     response.headers["Cache-Control"] = "no-store"
     return MemoryDirectLinkResponse(

@@ -444,6 +444,20 @@ export type MediaDirectLink = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
+function isSafeMediaUrl(url: string): boolean {
+  // 同源相对路径直接放行；绝对 URL 只允许 http(s)，
+  // 防止服务端被入侵或配置错误时把 javascript:/data: 注入下载锚点。
+  if (url.startsWith("/")) {
+    return true;
+  }
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export function resolveMediaUrl(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) {
     return path;
@@ -458,6 +472,10 @@ export function resolveMediaUrl(path: string): string {
   } catch {
     return path;
   }
+}
+
+export function resolveTrustedMediaUrl(path: string): string | null {
+  return isSafeMediaUrl(path) ? resolveMediaUrl(path) : null;
 }
 
 export function resolveThumbnailUrl(

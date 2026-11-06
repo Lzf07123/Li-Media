@@ -693,7 +693,7 @@
   }
   .toast-enter {
     animation: toast-in 320ms var(--limedia-ease-spring) both;
-    animation-delay: calc(var(--limedia-toast-index, 0) * 40ms);
+    animation-delay: calc(var(--toast-index, 0) * 40ms);
   }
   .toast-leave {
     animation: toast-out 220ms var(--limedia-ease-in) both;

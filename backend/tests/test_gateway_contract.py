@@ -22,6 +22,15 @@ def test_compose_keeps_only_nginx_on_host_network() -> None:
     assert "ports:" not in db_section
     assert "ports:" not in redis_section
     assert "nginx_cache:/app/data/nginx_cache" in backend_section
+    # 网关缓存目录必须与 backend 的清理/统计路径同卷同路径
+    assert "nginx_cache:/app/data/nginx_cache" in nginx_section
+    # 四个生产服务全部自愈；dev profile 的 backend-test 除外
+    assert compose.count("restart: unless-stopped") == 4
+    # 限流键与审计 IP 依赖代理头还原真实客户端 IP
+    assert "--proxy-headers" in backend_section
+    assert "--forwarded-allow-ips" in backend_section
+    # 显式命名网络，与宿主上其他 compose 项目隔离
+    assert "networks:\n      - limedia" in compose
 
 
 @pytest.mark.skipif(
@@ -57,13 +66,17 @@ def test_nginx_excludes_private_media_from_cache() -> None:
     )
 
     assert "root /usr/share/nginx/html;" in nginx
-    assert "proxy_cache_path /var/cache/nginx/limedia" in nginx
+    # 缓存目录与 backend 的 NGINX_CACHE_ROOT 同卷同路径
+    assert "proxy_cache_path /app/data/nginx_cache" in nginx
     assert "proxy_cache_key" in nginx
     assert "$http_accept" in nginx
-    assert "proxy_cache_bypass $limedia_has_authorization $limedia_has_cookie" in nginx
-    assert "proxy_no_cache $limedia_has_authorization $limedia_has_cookie" in nginx
-    assert 'map "$limedia_has_authorization$limedia_has_cookie" $limedia_list_cache_control' in nginx
-    assert '"00" "public, max-age=15, stale-while-revalidate=30";' in nginx
+    assert "proxy_cache_bypass $limedia_has_authorization $limedia_has_cookie $limedia_random_sort" in nginx
+    assert "proxy_no_cache $limedia_has_authorization $limedia_has_cookie $limedia_random_sort" in nginx
+    assert 'map "$limedia_has_authorization$limedia_has_cookie$limedia_random_sort" $limedia_list_cache_control' in nginx
+    assert '"000" "public, max-age=15, stale-while-revalidate=30";' in nginx
+    # 随机洗牌响应不进网关缓存
+    assert 'map $arg_sort $limedia_random_sort' in nginx
+    assert 'default "no-store";' in nginx
     assert "proxy_hide_header Cache-Control;" in nginx
     assert "add_header Cache-Control $limedia_list_cache_control always;" in nginx
     assert "proxy_cache off" in nginx
@@ -72,6 +85,16 @@ def test_nginx_excludes_private_media_from_cache() -> None:
     assert "open_file_cache max=1000 inactive=30s" in nginx
     assert 'add_header Cache-Control "no-store" always;' in nginx
     assert "limit_req_zone $binary_remote_addr zone=limedia_derivative" in nginx
+    assert "limit_req_zone $binary_remote_addr zone=limedia_public_read" in nginx
+    # 网关自身 429 必须带 Retry-After（应用层 429 透传，自带该头）
+    assert "error_page 429 = @limedia_rate_limited" in nginx
+    assert 'add_header Retry-After "1" always;' in nginx
+    # HSTS 按 TLS 终结代理传入的协议判断，纯 http 不发（发了也会被忽略）
+    assert "map $http_x_forwarded_proto $limedia_hsts" in nginx
+    # 无专用分区的公开读端点不得落入无限制兜底分支
+    assert "location = /api/v1/memories/preheat-status" in nginx
+    assert "location = /api/v1/memories/recommend" in nginx
+    assert "location = /api/v1/memories/public-counts" in nginx
     assert nginx.index("\nhttp {") < nginx.index("upstream limedia_backend {")
     assert "\nupstream limedia_backend {" not in nginx
     # Upstream DNS is deferred to the Docker embedded resolver so nginx can start

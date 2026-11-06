@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import and_, distinct, exists, func, or_, select
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import Settings, get_settings
 from app.models.memory import (
@@ -376,6 +377,36 @@ def count_public_derivative_candidates(db: Session) -> int:
     return int(db.scalar(statement) or 0)
 
 
+def home_derivative_ready_condition(
+    *,
+    max_size: int = HOME_PREHEAT_SIZE,
+    derivative_version: str | None = None,
+) -> ColumnElement[bool]:
+    """SQL 判定：某条 memory 的首页尺寸派生图已持久化就绪。
+
+    公开可见性与预热统计共用的唯一口径：存在 ``MemoryDerivativeCache``
+    READY 行，或 legacy ``thumbnail_path`` 以 ``/{version}/{max_size}.webp``
+    结尾（按需路由只对首页尺寸回填，后缀条件因此天然防 480/1280 污染）。
+    在 ``Memory.files.any(...)`` 内使用时按 ``MemoryFile.id`` 关联。
+    """
+
+    version = derivative_version or get_settings().media_derivative_version
+    return or_(
+        exists(
+            select(MemoryDerivativeCache.id).where(
+                MemoryDerivativeCache.memory_file_id == MemoryFile.id,
+                MemoryDerivativeCache.max_size == max_size,
+                MemoryDerivativeCache.derivative_version == version,
+                MemoryDerivativeCache.status == DerivativeCacheStatus.READY,
+            )
+        ),
+        and_(
+            Memory.thumbnail_path.is_not(None),
+            Memory.thumbnail_path.endswith(f"/{version}/{max_size}.webp"),
+        ),
+    )
+
+
 def count_public_derivative_cache_hits(
     db: Session,
     *,
@@ -384,20 +415,10 @@ def count_public_derivative_cache_hits(
 ) -> int:
     """Count public files with a persisted derivative, independent of job history."""
 
-    version = derivative_version or get_settings().media_derivative_version
     statement = (
         select(func.count(distinct(Memory.id)))
         .select_from(MemoryFile)
         .join(Memory, MemoryFile.memory_id == Memory.id)
-        .outerjoin(
-            MemoryDerivativeCache,
-            and_(
-                MemoryDerivativeCache.memory_file_id == MemoryFile.id,
-                MemoryDerivativeCache.max_size == max_size,
-                MemoryDerivativeCache.derivative_version == version,
-                MemoryDerivativeCache.status == DerivativeCacheStatus.READY,
-            ),
-        )
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
             MemoryFile.source == "baidupan",
@@ -405,12 +426,9 @@ def count_public_derivative_cache_hits(
             public_files_condition(),
         )
         .where(
-            or_(
-                MemoryDerivativeCache.id.is_not(None),
-                and_(
-                    Memory.thumbnail_path.is_not(None),
-                    Memory.thumbnail_path.endswith(f"/{version}/{max_size}.webp"),
-                ),
+            home_derivative_ready_condition(
+                max_size=max_size,
+                derivative_version=derivative_version,
             )
         )
     )

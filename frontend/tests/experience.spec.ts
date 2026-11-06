@@ -182,6 +182,118 @@ test("home preheat state is explicit and cards use responsive priority", async (
   ).toHaveCount(0);
 });
 
+test("preheat completion refreshes the canvas when the user is near the top", async ({
+  page,
+}) => {
+  let listRequests = 0;
+  let preheatPolls = 0;
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      listRequests += 1;
+      await route.fulfill({ json: memoryList });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/preheat-status") {
+      preheatPolls += 1;
+      await route.fulfill({
+        json:
+          preheatPolls === 1
+            ? { status: "running", processed: 1, total: 2 }
+            : { status: "ready", processed: 2, total: 2 },
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/thumbnail")) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+    await route.fulfill({ json: memory });
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+  await expect(page.getByTestId("preheat-status")).toContainText(
+    "正在优化预览",
+  );
+  expect(listRequests).toBe(1);
+
+  // 非终态时切回前台会立即重查预热状态，模拟「预热中 → 完成」过渡
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect.poll(() => listRequests, { timeout: 5_000 }).toBe(2);
+  await expect(page.getByTestId("preheat-status")).toHaveCount(0);
+});
+
+test("preheat completion does not disturb a scrolled reader", async ({
+  page,
+}) => {
+  let listRequests = 0;
+  let preheatPolls = 0;
+  const tallList = {
+    ...memoryList,
+    items: Array.from({ length: 30 }, (_, index) => ({
+      ...memory,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      title: `湖边清晨 ${index + 1}`,
+      thumbnail_url: `/api/v1/memories/batch-${index}/thumbnail`,
+    })),
+  };
+  await page.route("**/api/v1/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/memories") {
+      listRequests += 1;
+      await route.fulfill({ json: tallList });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/recommend") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (url.pathname === "/api/v1/memories/preheat-status") {
+      preheatPolls += 1;
+      await route.fulfill({
+        json:
+          preheatPolls === 1
+            ? { status: "running", processed: 1, total: 2 }
+            : { status: "ready", processed: 2, total: 2 },
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/thumbnail")) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+    await route.fulfill({ json: memory });
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card").first()).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 1200));
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(500);
+
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  // 终态已到达（横幅退场），但滚动深处的用户不被自动刷新打断
+  await expect.poll(() => preheatPolls).toBe(2);
+  await expect(page.getByTestId("preheat-status")).toHaveCount(0);
+  expect(listRequests).toBe(1);
+});
+
 test("home preheat notice converges and stays clear at 375px", async ({ page }) => {
   await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories/preheat-status", async (route) => {
@@ -999,6 +1111,8 @@ test("photo viewer selects card and viewer sizes by viewport", async ({ page }) 
   await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect.poll(() => thumbnailSizes).toContain("1280");
+  // 查看器小图先行与画布同源 240：桌面全链路不再出现 480 请求
+  expect(thumbnailSizes).not.toContain("480");
 });
 
 test("mobile viewer uses 480px poster instead of desktop large image", async ({ page }) => {
@@ -1013,6 +1127,8 @@ test("mobile viewer uses 480px poster instead of desktop large image", async ({ 
   await page.goto("/");
   await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
+  // 小图先行 240 + 移动大图 480，桌面 1280 不出现
+  await expect.poll(() => thumbnailSizes).toContain("240");
   await expect.poll(() => thumbnailSizes).toContain("480");
   expect(thumbnailSizes).not.toContain("1280");
 });

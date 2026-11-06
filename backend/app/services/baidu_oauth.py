@@ -187,9 +187,11 @@ def _request_token(
         response.raise_for_status()
         result = response.json()
     except httpx.HTTPStatusError as exc:
-        raise BaiduOAuthError("百度网盘授权服务返回错误") from exc
+        # 请求 URL 的 query 含 client_secret：断开异常链，避免凭证经
+        # traceback 进入服务端日志（对外文案始终是固定提示）。
+        raise BaiduOAuthError("百度网盘授权服务返回错误") from None
     except (httpx.RequestError, ValueError) as exc:
-        raise BaiduOAuthError("百度网盘授权服务暂时不可用") from exc
+        raise BaiduOAuthError("百度网盘授权服务暂时不可用") from None
 
     if result.get("error"):
         raise BaiduOAuthError("百度网盘授权被拒绝，请检查应用配置和权限")
@@ -223,7 +225,9 @@ def _redirect_uri(settings: Settings) -> str:
 
 
 def _state_secret(settings: Settings) -> bytes:
-    secret = settings.baidu_oauth_client_secret or settings.admin_token
+    # 不回退到 admin_token：授权 state 的签名密钥必须独立且足够强，
+    # 复用管理令牌会把两个安全域耦合在一起。
+    secret = settings.baidu_oauth_client_secret
     if not secret:
         raise BaiduOAuthError("百度网盘授权签名密钥未配置")
     return secret.encode()

@@ -33,7 +33,7 @@ export function ToastViewport({
         <div
           className={`toast toast-enter ${toneClass[toast.tone]}`}
           key={toast.id}
-          style={{ "--limedia-toast-index": index } as CSSProperties}
+          style={{ "--toast-index": index } as CSSProperties}
         >
           <div className="min-w-0">
             <p className="toast-title">{toast.message}</p>

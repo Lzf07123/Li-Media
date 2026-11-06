@@ -93,13 +93,15 @@ test.describe("1x screens", () => {
 test.describe("2x screens", () => {
   test.use({ deviceScaleFactor: 2 });
 
-  test("card thumbnails follow the device pixel ratio with 480px", async ({ page }) => {
+  // 画布可见性以 240px 预热就绪为门槛，卡片固定取 240px：预热即所得，
+  // 高分屏不再触发 480px 按需生成；查看器内才取 1280/480 高清档。
+  test("card thumbnails stay on the 240px derivative", async ({ page }) => {
     const sizes = await mockLibrary(page);
     await page.goto("/");
     await expect(page.locator(".masonry .post-card")).toHaveCount(1);
     await expect
-      .poll(() => sizes.has("480"), { timeout: 5000 })
+      .poll(() => sizes.has("240"), { timeout: 5000 })
       .toBe(true);
-    expect(sizes.has("240")).toBe(false);
+    expect(sizes.has("480")).toBe(false);
   });
 });

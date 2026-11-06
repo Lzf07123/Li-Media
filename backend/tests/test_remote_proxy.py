@@ -10,6 +10,7 @@ from PIL import Image
 
 from app.core.config import Settings, get_settings
 from app.db.session import Base, get_db
+from tests.derivative_seed import seed_home_derivative
 from app.main import app
 from app.models.memory import (
     BrowserCompatibilityState,
@@ -295,6 +296,17 @@ def test_remote_thumbnail_persists_natural_dimensions(
         session_factory,
         kind=MemoryKind.PHOTO,
     )
+
+    # 画布可见门槛：按需路由对 480 生成的 thumbnail_path 后缀不会放行
+    #（污染防护），用 240 缓存行表达「已预热」，再验证自然尺寸回填。
+    with session_factory.begin() as session:
+        memory_file = (
+            session.scalars(
+                select(MemoryFile).where(MemoryFile.memory_id == memory_id)
+            )
+            .one()
+        )
+        seed_home_derivative(session, memory_file)
 
     try:
         with TestClient(app) as client:

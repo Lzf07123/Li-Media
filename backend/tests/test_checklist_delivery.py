@@ -22,6 +22,7 @@ from app.models.memory import (
 )
 from app.services.browser_compatibility import evaluate_memory_file
 from app.services.admin_batch_status import run_batch_status_job
+from tests.derivative_seed import seed_home_derivative
 from tests.test_admin_security import configure_admin_app
 
 
@@ -77,7 +78,7 @@ def override_database(session_factory: sessionmaker):
 
 def test_public_media_counts_and_compatibility_predicate(tmp_path: Path) -> None:
     session_factory = create_database(tmp_path)
-    add_memory(
+    photo_one = add_memory(
         session_factory,
         title="photo one",
         kind=MemoryKind.PHOTO,
@@ -105,6 +106,11 @@ def test_public_media_counts_and_compatibility_predicate(tmp_path: Path) -> None
         kind=MemoryKind.VIDEO,
         compatibility=BrowserCompatibilityState.UNKNOWN,
     )
+
+    # 画布可见门槛：240px 派生图就绪（photo one 与 supported video）
+    with session_factory.begin() as session:
+        for _, memory_file in (photo_one, supported):
+            seed_home_derivative(session, session.get(MemoryFile, memory_file.id))
 
     app.dependency_overrides[get_db] = override_database(session_factory)
     app.dependency_overrides[get_session_factory] = lambda: session_factory

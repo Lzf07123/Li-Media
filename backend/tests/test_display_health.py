@@ -18,6 +18,7 @@ from app.models.memory import (
     RemoteStreamState,
     RemoteThumbnailState,
 )
+from tests.derivative_seed import seed_home_derivative
 from tests.test_admin_security import configure_admin_app
 
 
@@ -46,20 +47,22 @@ def add_memory(
         )
         session.add(memory)
         session.flush()
-        session.add(
-            MemoryFile(
-                memory_id=memory_id,
-                source="baidupan",
-                remote_id=str(memory_id),
-                remote_path=f"/cloud/{memory_id}",
-                filename=f"{memory_id}.jpg",
-                mime_type="image/jpeg",
-                remote_state=remote_state,
-                thumbnail_state=thumbnail_state,
-                stream_state=stream_state,
-                browser_compatibility=BrowserCompatibilityState.SUPPORTED,
-            )
+        memory_file = MemoryFile(
+            memory_id=memory_id,
+            source="baidupan",
+            remote_id=str(memory_id),
+            remote_path=f"/cloud/{memory_id}",
+            filename=f"{memory_id}.jpg",
+            mime_type="image/jpeg",
+            remote_state=remote_state,
+            thumbnail_state=thumbnail_state,
+            stream_state=stream_state,
+            browser_compatibility=BrowserCompatibilityState.SUPPORTED,
         )
+        session.add(memory_file)
+        session.flush()
+        # 预热就绪统一满足；可见性差异只由 public_files_condition 决定
+        seed_home_derivative(session, memory_file)
     return memory_id
 
 

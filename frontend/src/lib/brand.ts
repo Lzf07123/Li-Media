@@ -40,6 +40,7 @@ export const brand = {
     loadMoreFailed: "更多回忆加载失败",
     retryLoadMore: "重试加载",
     emptyLibrary: "还没有公开的回忆内容。",
+    emptyLibraryPreparing: "回忆预览正在准备，稍后再来看看。",
     emptySearch: "没有匹配的回忆。",
     resultSummary: "共 {total} 条回忆",
     activeKeyword: "当前搜索：",

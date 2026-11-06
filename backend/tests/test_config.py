@@ -79,3 +79,60 @@ def test_runtime_resource_limits_accept_safe_boundaries_and_reject_invalid_value
     for value in invalid_values:
         with pytest.raises(ValidationError):
             Settings(**value)
+
+
+def test_weak_admin_token_is_rejected_at_startup() -> None:
+    # 管理令牌是唯一凭证入口：示例值必须 fail-fast
+    with pytest.raises(ValidationError):
+        Settings(admin_token="change-me")
+
+
+def test_admin_cookie_secure_is_auto_derived_from_public_base_url() -> None:
+    # _env_file=None：隔离本机 .env，只测推导逻辑本身
+    # 未显式配置：https 自动启用 Secure，本地 http 保持关闭
+    assert Settings(_env_file=None).admin_cookie_secure_effective is False
+    assert Settings(
+        _env_file=None,
+        public_base_url="https://media.example.com",
+    ).admin_cookie_secure_effective is True
+    # 显式配置永远优先
+    assert Settings(
+        _env_file=None,
+        public_base_url="https://media.example.com",
+        admin_cookie_secure=False,
+    ).admin_cookie_secure_effective is False
+    assert Settings(_env_file=None, admin_cookie_secure=True).admin_cookie_secure_effective is True
+
+
+def test_credential_warnings_cover_weak_postgres_and_insecure_cookie() -> None:
+    weak_db = Settings(
+        _env_file=None, postgres_host="db", postgres_password="change-me"
+    )
+    assert any("POSTGRES_PASSWORD" in item for item in weak_db.credential_warnings())
+
+    strong = Settings(
+        _env_file=None,
+        postgres_host="db",
+        postgres_password="a-strong-random-password",
+        admin_token="a-strong-random-token",
+    )
+    assert strong.credential_warnings() == []
+
+
+def test_new_runtime_settings_reject_out_of_range_values() -> None:
+    invalid_values = (
+        {"task_thread_pool_size": 0},
+        {"task_thread_pool_size": 129},
+        {"database_pool_size": 0},
+        {"database_pool_max_overflow": -1},
+        {"database_pool_timeout_seconds": 0},
+        {"admin_session_ttl_minutes": 0},
+        {"admin_login_max_attempts": 0},
+        {"thumbnail_max_size": 100},
+        {"thumbnail_quality": 0},
+        {"thumbnail_quality": 101},
+        {"baidu_retry_attempts": 0},
+    )
+    for value in invalid_values:
+        with pytest.raises(ValidationError):
+            Settings(**value)

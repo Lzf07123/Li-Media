@@ -22,8 +22,8 @@ import { createPortal } from "react-dom";
 import VideoPlayer from "@/components/VideoPlayer";
 
 import {
-  resolveMediaUrl,
   resolveThumbnailUrl,
+  resolveTrustedMediaUrl,
   type MemorySummary,
 } from "@/lib/api";
 import { imageLoadQueue, loadQueuedImage } from "@/lib/image-load-queue";
@@ -83,7 +83,9 @@ export default function MediaViewer({
     return window.matchMedia("(max-width: 767px)").matches ? "480" : "1280";
   });
 
-  const smallSrc = resolveThumbnailUrl(memory.thumbnail_url, "480");
+  // 小图先行与画布同源（240px 预热即所得，秒开不等待）；
+  // 大图桌面 1280 / 移动 480，加载完成后替换小图。
+  const smallSrc = resolveThumbnailUrl(memory.thumbnail_url, "240");
   const largeSrc = resolveThumbnailUrl(memory.thumbnail_url, posterSize);
   const isVideo = memory.kind === "video";
   const aspectRatio = memory.width && memory.height
@@ -463,7 +465,12 @@ export default function MediaViewer({
 
   const startPlayback = () => {
     dispatchMediaState({ scope: "playback", type: "load" });
-    setPlaybackSource({ kind: "server", src: resolveMediaUrl(memory.file_url) });
+    const src = resolveTrustedMediaUrl(memory.file_url);
+    if (!src) {
+      dispatchMediaState({ scope: "playback", type: "fail" });
+      return;
+    }
+    setPlaybackSource({ kind: "server", src });
   };
 
   const handleVideoSourceError = (source: PlaybackSource, error?: MediaError) => {
@@ -477,9 +484,14 @@ export default function MediaViewer({
 
   const startDownload = () => {
     dispatchMediaState({ scope: "download", type: "load" });
+    const href = resolveTrustedMediaUrl(memory.file_url);
+    if (!href) {
+      dispatchMediaState({ scope: "download", type: "fail" });
+      return;
+    }
     try {
       const anchor = document.createElement("a");
-      anchor.href = resolveMediaUrl(memory.file_url);
+      anchor.href = href;
       anchor.rel = "noopener noreferrer";
       anchor.download = memory.primary_file?.filename || `limedia-${memory.id}`;
       document.body.appendChild(anchor);

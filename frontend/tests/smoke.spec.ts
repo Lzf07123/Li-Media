@@ -393,10 +393,13 @@ test("admin table is visible in dark mode", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("remote photo without preview uses placeholder", async ({ page }) => {
-  const remoteMemory = {
+test("unpreheated memory stays off canvas but opens via direct viewer link", async ({
+  page,
+}) => {
+  // 服务端契约：列表/推荐只返回 240px 派生图就绪的内容，未预热内容
+  // 不渲染占位兜底、直接不在画布出现；详情直链（查看器入口）仍可达。
+  const preheatingMemory = {
     ...memory,
-    thumbnail_url: null,
     primary_file: {
       ...memory.primary_file,
       source: "baidupan",
@@ -409,11 +412,11 @@ test("remote photo without preview uses placeholder", async ({ page }) => {
     if (url.pathname === "/api/v1/memories") {
       await route.fulfill({
         json: {
-          items: [remoteMemory],
-          total: 1,
+          items: [],
+          total: 0,
           page: 1,
           page_size: 24,
-          counts: { photo: 1, video: 0 },
+          counts: { photo: 0, video: 0 },
           public_counts: { photo: 1, video: 0 },
         },
       });
@@ -423,12 +426,23 @@ test("remote photo without preview uses placeholder", async ({ page }) => {
       await route.fulfill({ json: [] });
       return;
     }
-    await route.fulfill({ json: remoteMemory });
+    if (url.pathname.endsWith("/thumbnail")) {
+      await route.fulfill({
+        body: Buffer.from(pngBase64, "base64"),
+        contentType: "image/webp",
+      });
+      return;
+    }
+    await route.fulfill({ json: preheatingMemory });
   });
-  await page.goto("/");
 
-  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await expect(page.locator("img[alt=\"湖边清晨\"]")).toHaveCount(0);
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(0);
+  // 计数行是「可展示口径」：画布 0 张；全量公开口径里的 1 条不计入
+  await expect(page.getByTestId("public-count")).toContainText("已收录媒体 0");
+
+  await page.goto(`/?viewer=${memoryId}`);
+  await expect(page.locator(".photo-viewer")).toBeVisible();
 });
 
 test("failed thumbnail retries automatically from the card", async ({ page }) => {
