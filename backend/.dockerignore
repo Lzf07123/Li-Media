@@ -1,5 +1,12 @@
+# 构建上下文禁止进入镜像的本地运行时数据与凭证（COPY . . 的兜底防线）。
+# tests/ 必须保留在上下文内：容器内 pytest 入口（backend-test）依赖它。
+data/
+media/
 .pytest_cache/
 **/__pycache__/
 *.py[cod]
+*.db
+*.sqlite3
+baidu_token.json
 .env
 .venv/

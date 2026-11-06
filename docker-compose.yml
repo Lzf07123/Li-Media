@@ -20,7 +20,9 @@ services:
       NGINX_CACHE_ROOT: /app/data/nginx_cache
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
       BACKEND_MEMORY_LIMIT_BYTES: ${BACKEND_MEMORY_LIMIT_BYTES:-268435456}
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # --proxy-headers：限流键与审计 IP 使用 nginx 传入的客户端真实 IP
+    # （X-Forwarded-For），否则所有访客共享同一个代理源 IP。
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"
     mem_limit: 256m
     cpus: 1.0
     pids_limit: 64
@@ -29,6 +31,8 @@ services:
       options:
         max-size: 5m
         max-file: "3"
+    networks:
+      - limedia
     volumes:
       - backend_data:/app/data
       - nginx_cache:/app/data/nginx_cache
@@ -50,6 +54,7 @@ services:
 
   db:
     image: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-media}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
@@ -74,6 +79,8 @@ services:
       options:
         max-size: 5m
         max-file: "3"
+    networks:
+      - limedia
     healthcheck:
       test:
         - CMD-SHELL
@@ -85,6 +92,7 @@ services:
 
   redis:
     image: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}redis:7-alpine
+    restart: unless-stopped
     command:
       - redis-server
       - --appendonly
@@ -103,6 +111,8 @@ services:
       options:
         max-size: 5m
         max-file: "3"
+    networks:
+      - limedia
     healthcheck:
       test:
         - CMD
@@ -119,6 +129,8 @@ services:
         IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://npmreg.mirrors.ustc.edu.cn/}
         NPM_FALLBACK_REGISTRY: ${NPM_FALLBACK_REGISTRY:-https://registry.npmmirror.com/}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:80"
     depends_on:
@@ -132,6 +144,12 @@ services:
       options:
         max-size: 5m
         max-file: "3"
+    networks:
+      - limedia
+    volumes:
+      # 网关缓存与 backend 的 NGINX_CACHE_ROOT 同卷同路径：
+      # 后台「缓存占用」统计与清理才有真实对象。
+      - nginx_cache:/app/data/nginx_cache
     healthcheck:
       test:
         - CMD
@@ -166,9 +184,16 @@ services:
       options:
         max-size: 5m
         max-file: "3"
+    networks:
+      - limedia
 
 volumes:
   backend_data:
   postgres_data:
   redis_data:
   nginx_cache:
+
+# 显式命名网络：与宿主上其他 compose 项目的默认网络隔离。
+networks:
+  limedia:
+    driver: bridge
