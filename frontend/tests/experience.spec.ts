@@ -1111,6 +1111,8 @@ test("photo viewer selects card and viewer sizes by viewport", async ({ page }) 
   await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect.poll(() => thumbnailSizes).toContain("1280");
+  // 查看器小图先行与画布同源 240：桌面全链路不再出现 480 请求
+  expect(thumbnailSizes).not.toContain("480");
 });
 
 test("mobile viewer uses 480px poster instead of desktop large image", async ({ page }) => {
@@ -1125,6 +1127,8 @@ test("mobile viewer uses 480px poster instead of desktop large image", async ({ 
   await page.goto("/");
   await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
+  // 小图先行 240 + 移动大图 480，桌面 1280 不出现
+  await expect.poll(() => thumbnailSizes).toContain("240");
   await expect.poll(() => thumbnailSizes).toContain("480");
   expect(thumbnailSizes).not.toContain("1280");
 });
