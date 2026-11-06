@@ -496,6 +496,7 @@ def trigger_baidu_sync(
         session_factory,
         task.id,
         lambda: BaiduPanClient(settings),
+        auto_preheat=settings.preheat_auto_after_scan,
     )
     record_admin_operation(
         db,
