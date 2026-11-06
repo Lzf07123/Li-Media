@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, distinct, exists, func, or_, select
@@ -24,8 +24,6 @@ from app.models.memory import (
     MemoryFile,
     MemoryKind,
     MemoryStatus,
-    RemoteFileState,
-    RemoteStreamState,
     RemoteThumbnailState,
 )
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
@@ -44,7 +42,6 @@ from app.services.memory_thumbnails import (
 from app.services.display_health import (
     PERMANENT_THUMBNAIL_FAILURE_KINDS,
     classify_thumbnail_failure_state,
-    browser_playable_files_condition,
     public_files_condition,
 )
 from app.services.task_limits import TaskCancelled, TaskRejected, task_metrics
@@ -273,7 +270,12 @@ def _candidate_statement(
     sizes: tuple[int, ...] | list[int] | None = None,
     derivative_version: str | None = None,
 ):
-    """Shared candidate filters for enumeration and start-preview counting."""
+    """Shared candidate filters for enumeration and start-preview counting.
+
+    口径与公开展示面一致（public_files_condition）：预热只为公开访客会
+    看到的资源做远端下载，displayable 与浏览器兼容不达标的视频不预热。
+    永久失败类型仍被显式排除（其失败不可自愈，重选无意义）。
+    """
 
     selected_sizes = tuple(dict.fromkeys(sizes or (HOME_PREHEAT_SIZE,)))
     version = derivative_version or get_settings().media_derivative_version
@@ -300,12 +302,7 @@ def _candidate_statement(
             Memory.status == MemoryStatus.PUBLISHED,
             MemoryFile.source == "baidupan",
             MemoryFile.remote_id.is_not(None),
-            MemoryFile.remote_state == RemoteFileState.READY,
-            browser_playable_files_condition(),
-            or_(
-                Memory.kind == MemoryKind.PHOTO,
-                MemoryFile.stream_state != RemoteStreamState.FAILED,
-            ),
+            public_files_condition(),
             MemoryFile.thumbnail_failure_kind.is_(None)
             | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS),
             or_(*missing_conditions),
@@ -664,6 +661,16 @@ def _process_pair_sizes(
     derivative_duration_ms = 0
     downloaded_remote_source: Path | None = None
 
+    # 本地源文件先解析一次：对账行回填真实 source_bytes，避免 0 失真。
+    source_path: Path | None = resolve_media_path(
+        media_root, memory_file.source_path or ""
+    )
+    if source_path is not None and not source_path.is_file():
+        source_path = None
+    local_source_bytes = (
+        source_path.stat().st_size if source_path is not None else 0
+    )
+
     # Reconcile files already produced by an earlier run before touching Baidu.
     # Older workers could persist the file but be killed before recording state.
     for max_size in sizes:
@@ -682,7 +689,7 @@ def _process_pair_sizes(
             max_size=max_size,
             status=DerivativeCacheStatus.READY,
             output_path=target_path,
-            source_bytes=0,
+            source_bytes=local_source_bytes,
             duration_ms=0,
         )
         outcomes[max_size] = "cached"
@@ -696,12 +703,6 @@ def _process_pair_sizes(
         memory_file.thumbnail_failure_kind = None
         db.commit()
         return PreheatCandidateResult(outcomes=outcomes)
-
-    source_path: Path | None = resolve_media_path(
-        media_root, memory_file.source_path or ""
-    )
-    if source_path is not None and not source_path.is_file():
-        source_path = None
 
     if source_path is None:
         remote_failure_sink: dict[str, str] = {}
@@ -1007,7 +1008,19 @@ def run_thumbnail_preheat(
                 sizes=job.sizes,
             )
         registry.mark_running(job_id, total=len(pairs))
+        # 枚举可能耗时（大库 × 多尺寸 NOT-EXISTS），期间用户可能已取消：
+        # 进入处理循环前补一次取消检查，避免空跑。
+        if job.cancel_event.is_set():
+            registry.mark_cancelled(job_id, f"processed=0;total={len(pairs)}")
+            return
 
+        # 说明：不做 count 先行回填 total，也不做分页流式枚举——count 查询
+        # 与枚举同价，无显示收益；候选集合会随处理实时收缩，OFFSET 分页会
+        # 成批跳项，keyset 分页在 nulls_last 排序上复杂度不成比例。候选仅
+        # 物化 (memory_id, file_id) 元组，内存开销可忽略。
+        # 队列深度单层记账：executor 在途上限与全局 PREHEAT 槽位容量同源
+        # （concurrency + queue_limit 读同一组配置），worker 只在取全局槽位
+        # 时排队；limiter 同时充当指标观测面（系统状态“预热调度”）。
         shared_client: BaiduPanClient | None = None
         if settings is not None:
             try:
@@ -1016,6 +1029,9 @@ def run_thumbnail_preheat(
                 registry.mark_failed(job_id, str(exc)[:255])
                 return
 
+        # 单共享 BaiduPanClient 是有意为之：0.2s 请求间隔只在“发起请求”时
+        # 生效，open_stream 的流式下载本身并发；每线程独立客户端会让百度侧
+        # 请求速率随并发翻倍，增加限流风险。
         candidate_iterator = iter(pairs)
         futures: dict[Future[PreheatCandidateResult], tuple[UUID, UUID]] = {}
         max_pending = job.concurrency + job.queue_limit
@@ -1109,3 +1125,42 @@ def run_thumbnail_preheat(
         task_metrics.record_gc(gc.collect())
     except Exception as exc:
         registry.mark_failed(job_id, str(exc) or type(exc).__name__)
+
+
+def start_auto_preheat_after_scan(
+    *,
+    session_factory: sessionmaker[Session],
+    settings: Settings,
+    registry: ThumbnailPreheatRegistry = thumbnail_preheat_registry,
+) -> ThumbnailPreheatJob | None:
+    """扫描完成后自动预热首页 240 缩略图，消除公开访客首次加载的慢窗口。
+
+    单飞注册表保证与手动预热互斥：已有任务在跑时静默跳过本次自动触发。
+    """
+
+    if not settings.preheat_auto_after_scan:
+        return None
+
+    job, started = registry.start(
+        sizes=(HOME_PREHEAT_SIZE,),
+        kind=None,
+        limit=0,
+        concurrency=settings.preheat_concurrency_limit,
+        queue_limit=settings.preheat_queue_limit,
+    )
+    if not started:
+        return None
+
+    thread = Thread(
+        target=run_thumbnail_preheat,
+        kwargs={
+            "job_id": job.id,
+            "session_factory": session_factory,
+            "settings": settings,
+            "registry": registry,
+        },
+        name="limedia-preheat-auto",
+        daemon=True,
+    )
+    thread.start()
+    return job
