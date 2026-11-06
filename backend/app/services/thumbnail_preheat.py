@@ -74,6 +74,7 @@ class ThumbnailPreheatJob:
     generated: int = 0
     cached: int = 0
     failed: int = 0
+    skipped: int = 0
     source_bytes_downloaded: int = 0
     derivative_duration_ms: int = 0
     size_results: dict[str, dict[str, int]] = field(default_factory=dict)
@@ -88,7 +89,7 @@ class ThumbnailPreheatJob:
     def __post_init__(self) -> None:
         self.sizes = tuple(dict.fromkeys(self.sizes)) or (HOME_PREHEAT_SIZE,)
         self.size_results = {
-            str(size): {"generated": 0, "cached": 0, "failed": 0}
+            str(size): {"generated": 0, "cached": 0, "failed": 0, "skipped": 0}
             for size in self.sizes
         }
 
@@ -181,14 +182,25 @@ class ThumbnailPreheatRegistry:
             for size, outcome in outcomes.items():
                 key = str(size)
                 if key not in job.size_results:
-                    job.size_results[key] = {"generated": 0, "cached": 0, "failed": 0}
-                job.size_results[key][outcome if outcome in {"generated", "cached", "failed"} else "failed"] += 1
+                    job.size_results[key] = {
+                        "generated": 0,
+                        "cached": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                    }
+                job.size_results[key][
+                    outcome
+                    if outcome in {"generated", "cached", "failed", "skipped"}
+                    else "failed"
+                ] += 1
                 if outcome == "generated":
                     job.generated += 1
                 elif outcome == "cached":
                     job.cached += 1
                 elif outcome == "failed":
                     job.failed += 1
+                elif outcome == "skipped":
+                    job.skipped += 1
 
     def mark_completed(self, job_id: UUID, message: str | None = None) -> None:
         self._update(
@@ -244,44 +256,26 @@ def _public_file_statement():
 def _as_candidate_result(result: object, sizes: tuple[int, ...]) -> PreheatCandidateResult:
     if isinstance(result, PreheatCandidateResult):
         return result
-    if isinstance(result, str) and result in {"generated", "cached", "failed", "cancelled"}:
+    if isinstance(result, str) and result in {
+        "generated",
+        "cached",
+        "failed",
+        "cancelled",
+        "skipped",
+    }:
         return PreheatCandidateResult(outcomes={size: result for size in sizes})
     return PreheatCandidateResult(outcomes={size: "failed" for size in sizes}, failure_kind="unknown")
 
 
-def _candidate_pairs(
-    db: Session,
+def _candidate_statement(
     *,
     kind: MemoryKind | None,
-    limit: int,
     sizes: tuple[int, ...] | list[int] | None = None,
     derivative_version: str | None = None,
-) -> list[tuple[UUID, UUID]]:
-    selected_sizes = tuple(dict.fromkeys(sizes or (HOME_PREHEAT_SIZE,)))
-    statement = (
-        select(Memory.id, MemoryFile.id)
-        .join(MemoryFile, Memory.files)
-        .where(
-            Memory.status == MemoryStatus.PUBLISHED,
-            MemoryFile.source == "baidupan",
-            MemoryFile.remote_id.is_not(None),
-        )
-    )
-    statement = statement.where(
-        MemoryFile.remote_state == RemoteFileState.READY,
-        browser_playable_files_condition(),
-        or_(
-            Memory.kind == MemoryKind.PHOTO,
-            MemoryFile.stream_state != RemoteStreamState.FAILED,
-        ),
-    )
-    if kind is not None:
-        statement = statement.where(Memory.kind == kind)
+):
+    """Shared candidate filters for enumeration and start-preview counting."""
 
-    statement = statement.where(
-        MemoryFile.thumbnail_failure_kind.is_(None)
-        | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS)
-    )
+    selected_sizes = tuple(dict.fromkeys(sizes or (HOME_PREHEAT_SIZE,)))
     version = derivative_version or get_settings().media_derivative_version
     missing_conditions = []
     for max_size in selected_sizes:
@@ -298,7 +292,58 @@ def _candidate_pairs(
             Memory.thumbnail_path.endswith(f"/{version}/{max_size}.webp"),
         )
         missing_conditions.append(~(ready_cache | legacy_cache))
-    statement = statement.where(or_(*missing_conditions))
+
+    statement = (
+        select(Memory.id, MemoryFile.id)
+        .join(MemoryFile, Memory.files)
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            MemoryFile.source == "baidupan",
+            MemoryFile.remote_id.is_not(None),
+            MemoryFile.remote_state == RemoteFileState.READY,
+            browser_playable_files_condition(),
+            or_(
+                Memory.kind == MemoryKind.PHOTO,
+                MemoryFile.stream_state != RemoteStreamState.FAILED,
+            ),
+            MemoryFile.thumbnail_failure_kind.is_(None)
+            | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS),
+            or_(*missing_conditions),
+        )
+    )
+    if kind is not None:
+        statement = statement.where(Memory.kind == kind)
+    return statement
+
+
+def count_preheat_candidates(
+    db: Session,
+    *,
+    kind: MemoryKind | None,
+    sizes: tuple[int, ...] | list[int] | None = None,
+) -> int:
+    """Count deduplicated memories a preheat run would touch, for preview UI."""
+
+    statement = _candidate_statement(kind=kind, sizes=sizes)
+    subquery = statement.subquery()
+    return int(
+        db.scalar(select(func.count(distinct(subquery.columns[0])))) or 0
+    )
+
+
+def _candidate_pairs(
+    db: Session,
+    *,
+    kind: MemoryKind | None,
+    limit: int,
+    sizes: tuple[int, ...] | list[int] | None = None,
+    derivative_version: str | None = None,
+) -> list[tuple[UUID, UUID]]:
+    statement = _candidate_statement(
+        kind=kind,
+        sizes=sizes,
+        derivative_version=derivative_version,
+    )
     ordered_statement = (
         statement.order_by(Memory.captured_at.desc().nulls_last())
         .order_by(Memory.updated_at.desc())
@@ -411,14 +456,20 @@ def collect_public_preheat_status(
     *,
     latest_job: ThumbnailPreheatJob | None,
 ) -> dict[str, int | str]:
-    total = count_public_derivative_candidates(db)
-    cache_hits = count_public_derivative_cache_hits(db)
+    try:
+        total = count_public_derivative_candidates(db)
+        cache_hits = count_public_derivative_cache_hits(db)
+    except Exception:
+        # 聚合失败时降级为 unavailable，公开端点保持 200 而非 500。
+        logger.exception("public preheat status aggregation failed")
+        return {"status": "unavailable", "processed": 0, "total": 0}
 
     if _is_home_preheat_job(latest_job) and latest_job.status in {"queued", "running"}:
         return {
             "status": "running",
             "processed": max(0, latest_job.processed),
-            "total": total,
+            # total 与 processed 同源（job 自身枚举数），避免与公开计数口径错位。
+            "total": max(0, latest_job.total),
         }
 
     is_ready = total == 0 or cache_hits >= total
@@ -635,7 +686,9 @@ def _process_pair_sizes(
             duration_ms=0,
         )
         outcomes[max_size] = "cached"
-        if max_size == HOME_PREHEAT_SIZE or memory.thumbnail_path is None:
+        # 首页缩略图只认 240：detail 预热不得回填 thumbnail_path，
+        # 避免公开列表拿到 480/1280 超大图。
+        if max_size == HOME_PREHEAT_SIZE:
             memory.thumbnail_path = target_path.relative_to(media_root).as_posix()
 
     if len(outcomes) == len(sizes):
@@ -757,10 +810,7 @@ def _process_pair_sizes(
                 duration_ms=duration_ms,
             )
             outcomes[max_size] = "generated"
-            if (
-                max_size == HOME_PREHEAT_SIZE
-                or memory.thumbnail_path is None
-            ):
+            if max_size == HOME_PREHEAT_SIZE:
                 memory.thumbnail_path = generated_path
 
         if any(outcome in {"generated", "cached"} for outcome in outcomes.values()):
@@ -869,6 +919,13 @@ def _process_candidate(
         return PreheatCandidateResult(
             outcomes={size: "cancelled" for size in sizes},
             failure_kind=DerivativeFailureKind.CANCELLED.value,
+        )
+    except TaskRejected:
+        # 全局 PREHEAT 队列满：本轮跳过，不写失败状态与 FAILED 缓存行，
+        # 候选条件基于缓存 NOT-EXISTS，下次预热会自然重选。
+        task_metrics.record_rejected(TaskType.PREHEAT)
+        return PreheatCandidateResult(
+            outcomes={size: "skipped" for size in sizes},
         )
     except Exception as exc:
         logger.exception(
