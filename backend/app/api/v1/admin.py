@@ -60,6 +60,7 @@ from app.schemas.responses import (
     AdminSystemStatusResponse,
     RemoteScanTaskRead,
     ThumbnailPreheatJobRead,
+    ThumbnailPreheatPreviewResponse,
     ThumbnailPreheatRequest,
 )
 from app.services.memory_thumbnails import (
@@ -109,6 +110,7 @@ from app.services.task_limits import is_temporary_path_active, task_limiter, tas
 from app.services.system_status import collect_system_status
 from app.services.thumbnail_preheat import (
     ThumbnailPreheatJob,
+    count_preheat_candidates,
     run_thumbnail_preheat,
     thumbnail_preheat_registry,
 )
@@ -586,6 +588,25 @@ def get_latest_thumbnail_preheat(
     _: AdminSession = Depends(require_admin_session),
 ) -> ThumbnailPreheatJob | None:
     return thumbnail_preheat_registry.get_latest()
+
+
+@router.get(
+    "/thumbnails/preheat/preview",
+    response_model=ThumbnailPreheatPreviewResponse,
+)
+def preview_thumbnail_preheat(
+    sizes: list[Literal["240", "480", "768", "1280"]] = Query(
+        default=["240"],
+    ),
+    kind: MemoryKind | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: AdminSession = Depends(require_admin_session),
+) -> ThumbnailPreheatPreviewResponse:
+    """Estimate how many memories a preheat run with this scope would touch."""
+
+    selected_sizes = tuple(dict.fromkeys(int(size) for size in sizes)) or (240,)
+    total = count_preheat_candidates(db, kind=kind, sizes=selected_sizes)
+    return ThumbnailPreheatPreviewResponse(total=total)
 
 
 @router.post(
