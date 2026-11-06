@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -321,6 +321,45 @@ class InFlightRegistry:
                 self._tasks.pop(key, None)
             in_flight.done = True
             in_flight.event.set()
+
+    def run_many(
+        self,
+        keys: Sequence[str],
+        operation: Callable[[], dict[str, Any]],
+        *,
+        task_type: TaskType,
+    ) -> dict[str, Any]:
+        """批量注册 in-flight 键并执行一次操作，操作返回 {key: result}。
+
+        只对本次成为 owner 的键回写结果与事件；已被他人持有的键由其
+        owner 管理（本批仍会生成对应产物，重复工作有界且罕见）。
+        操作整体失败时，所有 owner 键的等待者收到同一异常。
+        """
+
+        owned: dict[str, _InFlight] = {}
+        with self._lock:
+            for key in keys:
+                if key in self._tasks:
+                    continue
+                in_flight = _InFlight(Event())
+                self._tasks[key] = in_flight
+                owned[key] = in_flight
+
+        try:
+            results = operation()
+            for key, in_flight in owned.items():
+                in_flight.result = results.get(key)
+            return results
+        except BaseException as exc:
+            for in_flight in owned.values():
+                in_flight.error = exc
+            raise
+        finally:
+            with self._lock:
+                for key, in_flight in owned.items():
+                    self._tasks.pop(key, None)
+                    in_flight.done = True
+                    in_flight.event.set()
 
     def contains(self, key: str) -> bool:
         with self._lock:

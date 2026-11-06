@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event, Lock, Thread
+from threading import Event, Lock, Thread, local
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, distinct, exists, func, or_, select
@@ -29,6 +29,7 @@ from app.models.memory import (
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.derivative_tasks import (
     run_local_derivative,
+    run_local_derivatives,
 )
 from app.services.remote_thumbnails import (
     classify_remote_error,
@@ -630,6 +631,23 @@ def _download_remote_source(
             unregister_temporary_path(temporary_path.resolve())
 
 
+def _thread_local_client(settings: Settings) -> BaiduPanClient:
+    """按 worker 线程惰性共享一个远端客户端。
+
+    仅在候选真正需要远端下载时创建：纯本地源的预热不触碰百度凭证。
+    线程随 executor 生命周期复用，客户端构造成本被摊薄。
+    """
+
+    client = getattr(_client_local, "client", None)
+    if client is None:
+        client = BaiduPanClient(settings)
+        _client_local.client = client
+    return client
+
+
+_client_local = local()
+
+
 def _process_pair_sizes(
     db: Session,
     *,
@@ -706,7 +724,7 @@ def _process_pair_sizes(
 
     if source_path is None:
         remote_failure_sink: dict[str, str] = {}
-        remote_client = client or BaiduPanClient(settings)
+        remote_client = client or _thread_local_client(settings)
         source_path, source_bytes_downloaded = _download_remote_source(
             client=remote_client,
             remote_id=memory_file.remote_id,
@@ -731,6 +749,7 @@ def _process_pair_sizes(
         register_temporary_path(downloaded_remote_source.resolve())
 
     try:
+        missing_sizes: list[int] = []
         for max_size in sizes:
             if max_size in outcomes:
                 continue
@@ -748,40 +767,64 @@ def _process_pair_sizes(
                     max_size=max_size,
                     status=DerivativeCacheStatus.READY,
                     output_path=target_path,
-                    source_bytes=source_path.stat().st_size,
+                    source_bytes=local_source_bytes,
                     duration_ms=0,
                 )
                 outcomes[max_size] = "cached"
                 continue
+            missing_sizes.append(max_size)
 
+        # 批量派生：缺失尺寸共用一次 DERIVATIVE 槽位，照片单次解码、
+        # WebP/视频单次 ffmpeg 多输出；单尺寸缺失场景仍走原单尺寸路径。
+        generated_paths: dict[int, str | None] = {}
+        duration_ms = 0
+        if missing_sizes:
             if cancel_event is not None and cancel_event.is_set():
-                failure_sink: dict[str, str] = {"kind": DerivativeFailureKind.CANCELLED.value}
-                duration_ms = 0
-                generated_path = None
+                failure_sink = {
+                    "kind": DerivativeFailureKind.CANCELLED.value,
+                }
+                generated_paths = {max_size: None for max_size in missing_sizes}
             else:
                 failure_sink = {}
                 started_at = time.monotonic()
                 try:
-                    generated_path = run_local_derivative(
-                        source_path,
-                        media_root,
-                        memory=memory,
-                        max_size=max_size,
-                        duration_seconds=memory.duration_seconds,
-                        priority=60,
-                        failure_sink=failure_sink,
-                        cancel_event=cancel_event,
-                    )
+                    if len(missing_sizes) == 1:
+                        generated_path = run_local_derivative(
+                            source_path,
+                            media_root,
+                            memory=memory,
+                            max_size=missing_sizes[0],
+                            duration_seconds=memory.duration_seconds,
+                            priority=60,
+                            failure_sink=failure_sink,
+                            cancel_event=cancel_event,
+                        )
+                        generated_paths = {missing_sizes[0]: generated_path}
+                    else:
+                        generated_paths = run_local_derivatives(
+                            source_path,
+                            media_root,
+                            memory=memory,
+                            max_sizes=missing_sizes,
+                            duration_seconds=memory.duration_seconds,
+                            priority=60,
+                            failure_sink=failure_sink,
+                            cancel_event=cancel_event,
+                        )
                 except TaskRejected:
                     task_metrics.record_failed(TaskType.DERIVATIVE)
                     failure_sink.setdefault(
                         "kind",
                         DerivativeFailureKind.QUEUE_REJECTED.value,
                     )
-                    generated_path = None
+                    generated_paths = {
+                        max_size: None for max_size in missing_sizes
+                    }
                 duration_ms = int((time.monotonic() - started_at) * 1000)
-
             derivative_duration_ms += duration_ms
+
+        for max_size in missing_sizes:
+            generated_path = generated_paths.get(max_size)
             if not generated_path:
                 failure_kind = failure_sink.get("kind", "unknown")
                 _set_derivative_cache_state(
@@ -791,7 +834,7 @@ def _process_pair_sizes(
                     max_size=max_size,
                     status=DerivativeCacheStatus.FAILED,
                     failure_kind=failure_kind,
-                    source_bytes=source_path.stat().st_size,
+                    source_bytes=local_source_bytes,
                     duration_ms=duration_ms,
                 )
                 outcomes[max_size] = "failed"
@@ -807,7 +850,7 @@ def _process_pair_sizes(
                 max_size=max_size,
                 status=DerivativeCacheStatus.READY,
                 output_path=generated_output_path,
-                source_bytes=source_path.stat().st_size,
+                source_bytes=local_source_bytes,
                 duration_ms=duration_ms,
             )
             outcomes[max_size] = "generated"
@@ -1021,17 +1064,9 @@ def run_thumbnail_preheat(
         # 队列深度单层记账：executor 在途上限与全局 PREHEAT 槽位容量同源
         # （concurrency + queue_limit 读同一组配置），worker 只在取全局槽位
         # 时排队；limiter 同时充当指标观测面（系统状态“预热调度”）。
-        shared_client: BaiduPanClient | None = None
-        if settings is not None:
-            try:
-                shared_client = BaiduPanClient(settings)
-            except BaiduPanError as exc:
-                registry.mark_failed(job_id, str(exc)[:255])
-                return
-
-        # 单共享 BaiduPanClient 是有意为之：0.2s 请求间隔只在“发起请求”时
-        # 生效，open_stream 的流式下载本身并发；每线程独立客户端会让百度侧
-        # 请求速率随并发翻倍，增加限流风险。
+        # 远端客户端按线程惰性创建：只有真正需要下载的候选才触碰凭证，
+        # 纯本地源的预热无需百度凭证即可运行；open_stream 的流式下载本身
+        # 并发，0.2s 请求间隔只在发起请求时生效，限流压力有界。
         candidate_iterator = iter(pairs)
         futures: dict[Future[PreheatCandidateResult], tuple[UUID, UUID]] = {}
         max_pending = job.concurrency + job.queue_limit
@@ -1058,7 +1093,7 @@ def run_thumbnail_preheat(
                         settings=settings,
                         sizes=job.sizes,
                         cancel_event=job.cancel_event,
-                        client=shared_client,
+                        client=None,
                     )
                     futures[future] = pair
 

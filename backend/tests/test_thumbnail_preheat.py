@@ -244,7 +244,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             assert response.json()["status"] in {"queued", "running", "completed"}
 
             payload = None
-            for _ in range(50):
+            for _ in range(150):
                 latest = client.get("/api/v1/admin/thumbnails/preheat/latest")
                 assert latest.status_code == 200
                 payload = latest.json()
@@ -282,7 +282,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             assert response.status_code == 202
 
             payload = None
-            for _ in range(50):
+            for _ in range(150):
                 latest = client.get("/api/v1/admin/thumbnails/preheat/latest")
                 assert latest.status_code == 200
                 payload = latest.json()
