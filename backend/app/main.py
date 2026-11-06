@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,6 +11,9 @@ from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.services.remote_thumbnails import cleanup_stale_remote_temporary_files
 from app.services.source_zero import collect_source_zero_status
+
+
+logger = logging.getLogger(__name__)
 
 
 def log_source_zero_audit() -> None:
@@ -34,6 +38,8 @@ def log_source_zero_audit() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
+    for warning in settings.credential_warnings():
+        logger.warning("credential check: %s", warning)
     cleanup_stale_remote_temporary_files(Path(settings.media_root))
     log_source_zero_audit()
     to_thread.current_default_thread_limiter().total_tokens = (
@@ -48,6 +54,8 @@ def create_app() -> FastAPI:
         title=settings.project_name,
         version=settings.version,
         docs_url="/api/docs",
+        # redoc 无网关精确封锁，直接关闭，避免内网直连暴露接口清单的另一份渲染。
+        redoc_url=None,
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
     )

@@ -11,10 +11,10 @@ router = APIRouter(tags=["health"])
 
 @router.get("/")
 async def root() -> dict[str, str]:
+    # 不暴露接口文档路径等内部信息；文档仅在内网经 /api/docs 调试使用。
     return {
         "status": "ok",
         "service": "Li&Media API",
-        "api_docs": "/api/docs",
     }
 
 

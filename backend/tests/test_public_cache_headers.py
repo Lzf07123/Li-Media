@@ -71,3 +71,26 @@ def test_public_list_cache_is_private_when_credentials_are_present(tmp_path: Pat
             assert with_authorization.headers["Cache-Control"] == "no-store"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_public_counts_use_short_shared_cache(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    def override_get_db() -> Generator[Session, None, None]:
+        session = session_factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/memories/public-counts")
+            assert response.status_code == 200
+            # 匿名聚合计数可共享短缓存；带 cookie 的请求同样安全（无会话数据）
+            assert response.headers["Cache-Control"] == "public, max-age=15"
+    finally:
+        app.dependency_overrides.clear()

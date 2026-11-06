@@ -34,6 +34,7 @@ from app.services.memory_thumbnails import (
     read_image_dimensions,
     resolve_media_path,
 )
+from app.services.text_search import escape_like
 from app.services.admin_logs import record_admin_operation
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.display_health import (
@@ -197,10 +198,11 @@ def list_memories(
         statement = statement.where(Memory.kind == kind)
 
     if keyword:
+        pattern = f"%{escape_like(keyword)}%"
         statement = statement.where(
-            (Memory.title.ilike(f"%{keyword}%"))
-            | (Memory.description.ilike(f"%{keyword}%"))
-            | (Memory.location.ilike(f"%{keyword}%"))
+            (Memory.title.ilike(pattern, escape="\\"))
+            | (Memory.description.ilike(pattern, escape="\\"))
+            | (Memory.location.ilike(pattern, escape="\\"))
         )
 
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
@@ -250,8 +252,14 @@ def list_memories(
 
 
 @router.get("/public-counts", response_model=PublicMediaCounts)
-def get_public_media_counts(db: Session = Depends(get_db)) -> PublicMediaCounts:
+def get_public_media_counts(
+    response: Response,
+    db: Session = Depends(get_db),
+) -> PublicMediaCounts:
     """One authoritative count for every publicly browsable photo and video."""
+
+    # 与公开列表同源的聚合口径：短缓存即可，不参与带凭证的会话语义。
+    response.headers["Cache-Control"] = "public, max-age=15"
 
     statement = _public_memory_statement()
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
@@ -359,13 +367,8 @@ def get_memory_direct_url(
 
     task_metrics.record_completed(TaskType.DIRECT_PROBE)
 
-    record_admin_operation(
-        db,
-        action="direct_url_requested",
-        target_type="memory",
-        target_id=memory.id,
-        detail=f"purpose={purpose};remote_resource=untouched",
-    )
+    # 直链签发是高频公开行为，不再写入管理审计表（历史原因遗留）：
+    # 审计表只记录管理动作，避免公开流量造成无限增长。
     # Direct URLs are short-lived and must not be persisted by browsers.
     response.headers["Cache-Control"] = "no-store"
     return MemoryDirectLinkResponse(

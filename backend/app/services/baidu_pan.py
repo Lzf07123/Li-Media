@@ -249,12 +249,10 @@ class BaiduPanClient:
             )
             opened = stream_context.__enter__()
         except httpx.HTTPError:
+            # 下载 URL 内嵌 access_token：不携带原始异常，避免凭证进日志。
             stream_context.close()
             self.invalidate_download_url(remote_id)
             raise BaiduPanError("远程文件暂时无法读取") from None
-        except httpx.HTTPError as exc:
-            stream_context.close()
-            raise BaiduPanError("远程文件暂时无法读取") from exc
 
         if opened.status_code >= 400:
             stream_context.close()
@@ -439,7 +437,8 @@ class BaiduPanClient:
             except httpx.HTTPStatusError as exc:
                 last_error = exc
                 if not self._should_retry(exc.response):
-                    raise self._transport_error(exc.response) from exc
+                    # 请求 URL 的 query 含 access_token：断开异常链防日志泄漏。
+                    raise self._transport_error(exc.response) from None
                 self._sleep_backoff(attempt)
                 continue
             except (httpx.RequestError, ValueError) as exc:
@@ -456,7 +455,8 @@ class BaiduPanClient:
         if isinstance(last_error, httpx.HTTPStatusError):
             raise self._transport_error(last_error.response) from last_error
 
-        raise BaiduPanError("百度网盘请求失败") from last_error
+        # last_error 的请求 URL 含 access_token：from None 防止凭证进 traceback。
+        raise BaiduPanError("百度网盘请求失败") from None
 
     def _wait_for_request_interval(self) -> None:
         interval = max(0.0, self._settings.baidu_request_interval_seconds)

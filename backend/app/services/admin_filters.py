@@ -18,6 +18,7 @@ from app.schemas.responses import (
     MemoryCounts,
     MemoryStatusCounts,
 )
+from app.services.text_search import escape_like
 from app.services.display_health import displayable_files_condition
 
 
@@ -44,10 +45,11 @@ def add_admin_filters(
     if status is not None:
         statement = statement.where(Memory.status == status)
     if keyword:
+        pattern = f"%{escape_like(keyword)}%"
         statement = statement.where(
-            (Memory.title.ilike(f"%{keyword}%"))
-            | (Memory.description.ilike(f"%{keyword}%"))
-            | (Memory.location.ilike(f"%{keyword}%"))
+            (Memory.title.ilike(pattern, escape="\\"))
+            | (Memory.description.ilike(pattern, escape="\\"))
+            | (Memory.location.ilike(pattern, escape="\\"))
         )
     if display == "displayable":
         statement = statement.where(displayable_files_condition())

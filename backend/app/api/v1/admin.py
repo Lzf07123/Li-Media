@@ -434,7 +434,7 @@ def login_admin(
         max_age=settings.admin_session_ttl_minutes * 60,
         httponly=True,
         samesite="lax",
-        secure=settings.admin_cookie_secure,
+        secure=settings.admin_cookie_secure_effective,
         path="/",
     )
 

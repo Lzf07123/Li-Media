@@ -18,4 +18,12 @@ def test_root_returns_service_info() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["api_docs"] == "/api/docs"
+    # 公开端点不暴露接口文档路径等内部信息
+    assert "api_docs" not in response.json()
+
+
+def test_redoc_is_disabled() -> None:
+    # redoc 无网关精确封锁，应用层必须关闭
+    assert app.redoc_url is None
+    response = client.get("/redoc")
+    assert response.status_code == 404

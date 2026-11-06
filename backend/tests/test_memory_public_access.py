@@ -425,3 +425,62 @@ def test_public_canvas_only_lists_home_derivative_ready_memories(
             assert pending_detail.json()["title"] == "pending preheat"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_public_keyword_search_escapes_like_wildcards(tmp_path: Path) -> None:
+    """`%`/`_` 按字面量匹配：语义注入与全表扫描放大被关掉。"""
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'memories.db'}")
+    testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    def override_get_db() -> Generator[Session, None, None]:
+        session = testing_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with testing_session.begin() as session:
+            titles = ("100% 纯天然", "photo_2026", "普通照片")
+            for title in titles:
+                memory = Memory(
+                    title=title,
+                    kind=MemoryKind.PHOTO,
+                    status=MemoryStatus.PUBLISHED,
+                )
+                session.add(memory)
+                session.flush()
+                memory_file = MemoryFile(
+                    memory_id=memory.id,
+                    source="baidupan",
+                    remote_path=f"/remote/{memory.id}.jpg",
+                    mime_type="image/jpeg",
+                    status=MemoryFileStatus.MATCHED,
+                    remote_state=RemoteFileState.READY,
+                    thumbnail_state=RemoteThumbnailState.READY,
+                    stream_state=RemoteStreamState.READY,
+                    browser_compatibility=BrowserCompatibilityState.SUPPORTED,
+                )
+                session.add(memory_file)
+                session.flush()
+                seed_home_derivative(session, memory_file)
+
+        with TestClient(app) as client:
+            literal_percent = client.get(
+                "/api/v1/memories", params={"keyword": "100%"}
+            )
+            assert [item["title"] for item in literal_percent.json()["items"]] == [
+                "100% 纯天然"
+            ]
+
+            literal_underscore = client.get(
+                "/api/v1/memories", params={"keyword": "photo_2026"}
+            )
+            assert [item["title"] for item in literal_underscore.json()["items"]] == [
+                "photo_2026"
+            ]
+    finally:
+        app.dependency_overrides.clear()
