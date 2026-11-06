@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Images } from "lucide-react";
 
 import Button from "@/components/ui/Button";
 import ProgressBar from "@/components/ui/ProgressBar";
 import { brand } from "@/lib/brand";
-import type { ThumbnailPreheatJob } from "@/lib/api";
+import { previewThumbnailPreheat, type ThumbnailPreheatJob } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 
 type ThumbnailPreheatCardProps = {
@@ -41,6 +41,9 @@ export default function ThumbnailPreheatCard({
 }: ThumbnailPreheatCardProps) {
   const [sizePreset, setSizePreset] = useState<SizePreset>("home");
   const [kind, setKind] = useState<"" | "photo" | "video">("");
+  const [limitInput, setLimitInput] = useState("0");
+  const [previewTotal, setPreviewTotal] = useState<number | null>(null);
+  const limit = Math.max(0, Math.min(5000, Math.floor(Number(limitInput) || 0)));
   const isJobActive = job?.status === "queued" || job?.status === "running";
   const scopeCopy =
     kind === "photo"
@@ -48,6 +51,57 @@ export default function ThumbnailPreheatCard({
       : kind === "video"
         ? brand.copy.adminPreheatVideo
         : brand.copy.adminPreheatAllKinds;
+
+  // 启动前预估影响面：预热涉及远端整文件下载，管理员应知道规模。
+  // 预估失败静默降级，不阻塞启动。
+  useEffect(() => {
+    let active = true;
+    setPreviewTotal(null);
+    const timer = window.setTimeout(() => {
+      previewThumbnailPreheat({
+        sizes: [...sizePresets[sizePreset]],
+        kind: kind || undefined,
+        limit: 0,
+      })
+        .then((preview) => {
+          if (active) {
+            setPreviewTotal(preview.total);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setPreviewTotal(null);
+          }
+        });
+    }, 300);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [kind, sizePreset]);
+
+  // 运行中按已用时间与进度估算剩余；轮询每秒更新，无需本地计时。
+  const etaMinutes = useMemo(() => {
+    if (!job || job.status !== "running" || !job.started_at) {
+      return null;
+    }
+    if (job.processed <= 0 || job.total <= job.processed) {
+      return null;
+    }
+    const elapsedMs = Date.now() - new Date(job.started_at).getTime();
+    if (elapsedMs <= 0) {
+      return null;
+    }
+    const remainingMs = (elapsedMs / job.processed) * (job.total - job.processed);
+    if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+      return null;
+    }
+    return Math.max(1, Math.round(remainingMs / 60000));
+  }, [job]);
+
+  const estimatedTotal =
+    previewTotal === null ? null : limit > 0 ? Math.min(limit, previewTotal) : previewTotal;
 
   return (
     <div className="card mt-4 p-4">
@@ -71,7 +125,7 @@ export default function ThumbnailPreheatCard({
               variant="danger"
             >
               {isCancelling
-                ? brand.copy.adminPreheatStarting
+                ? brand.copy.adminPreheatCancelling
                 : brand.copy.adminPreheatCancel}
             </Button>
           ) : null}
@@ -81,7 +135,7 @@ export default function ThumbnailPreheatCard({
               void onStart({
                 sizes: [...sizePresets[sizePreset]],
                 kind: kind || undefined,
-                limit: 0,
+                limit,
               })
             }
           >
@@ -92,7 +146,7 @@ export default function ThumbnailPreheatCard({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <label className="flex flex-col gap-2 text-sm" htmlFor="preheat-size">
           {brand.copy.adminPreheatSize}
           <select
@@ -123,10 +177,35 @@ export default function ThumbnailPreheatCard({
             <option value="video">{brand.copy.adminPreheatVideo}</option>
           </select>
         </label>
+
+        <label className="flex flex-col gap-2 text-sm" htmlFor="preheat-limit">
+          {brand.copy.adminPreheatLimitLabel}
+          <input
+            className="input min-h-11"
+            id="preheat-limit"
+            inputMode="numeric"
+            max={5000}
+            min={0}
+            onChange={(event) => setLimitInput(event.target.value)}
+            type="number"
+            value={limitInput}
+          />
+          <span className="text-xs text-muted">
+            {brand.copy.adminPreheatLimitHint}
+          </span>
+        </label>
       </div>
 
       <p className="mt-3 text-xs text-muted">
         {brand.copy.adminPreheatScope}: {scopeCopy}
+        {estimatedTotal !== null ? (
+          <span className="ml-2">
+            {brand.copy.adminPreheatEstimated.replace(
+              "{total}",
+              String(estimatedTotal),
+            )}
+          </span>
+        ) : null}
       </p>
 
       {job ? (
@@ -136,6 +215,9 @@ export default function ThumbnailPreheatCard({
               {brand.copy.adminPreheatStatus}: {statusCopy[job.status]}
             </span>
             <span className="text-xs text-muted">
+              {etaMinutes !== null
+                ? `${brand.copy.adminPreheatEtaRemaining.replace("{minutes}", String(etaMinutes))} · `
+                : ""}
               {job.processed}/{job.total || job.limit}
             </span>
           </div>
@@ -146,7 +228,7 @@ export default function ThumbnailPreheatCard({
               job.total > 0 ? (job.processed / job.total) * 100 : 0
             }
           />
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-8">
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-9">
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminPreheatGenerated}</dt>
               <dd className="text-sm font-medium">{job.generated}</dd>
@@ -158,6 +240,10 @@ export default function ThumbnailPreheatCard({
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminPreheatFailedCount}</dt>
               <dd className="text-sm font-medium">{job.failed}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminPreheatSkipped}</dt>
+              <dd className="text-sm font-medium">{job.skipped}</dd>
             </div>
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminPreheatSize}</dt>
