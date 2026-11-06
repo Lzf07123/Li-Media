@@ -311,6 +311,7 @@ def test_admin_scan_is_scan_only_and_retry_logs_operation(tmp_path: Path, monkey
         baidu_access_token="test-access-token",
         media_root=str(media_root),
         baidu_sync_dir="/apps/Li&Media",
+        preheat_auto_after_scan=False,
     )
     monkeypatch.setattr("app.api.v1.admin.get_settings", lambda: settings)
     monkeypatch.setattr(
@@ -374,6 +375,7 @@ def test_admin_scan_accepts_service_credential_file(tmp_path: Path, monkeypatch)
         baidu_credentials_path=str(credentials_path),
         media_root=str(media_root),
         baidu_sync_dir="/apps/Li&Media",
+        preheat_auto_after_scan=False,
     )
     save_baidu_credentials(
         settings,
