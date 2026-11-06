@@ -16,6 +16,7 @@ import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import MediaSkeleton from "@/components/ui/MediaSkeleton";
 import Notice from "@/components/ui/Notice";
+import ProgressBar from "@/components/ui/ProgressBar";
 import BlurText from "@/components/ui/BlurText";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
@@ -24,6 +25,8 @@ const RECOMMENDATION_COUNT = 8;
 const SCROLL_STORAGE_KEY = "limedia:home-scroll";
 const PREHEAT_POLL_INTERVAL_MS = 20000;
 const PREHEAT_RETRY_DELAYS_MS = [500, 1000, 2000] as const;
+// 终态不再轮询：预热任务未启动时状态不会自行变化，下次进页重新查询。
+const PREHEAT_TERMINAL_STATUSES = new Set(["ready", "degraded", "unavailable"]);
 let scrollBeforeViewer = 0;
 const MEMORY_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -114,6 +117,7 @@ export default function HomePage() {
   const [preheatState, setPreheatState] = useState<
     "loading" | "ready" | "error"
   >("loading");
+  const preheatStatusRef = useRef<PublicPreheatStatus | null>(null);
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -277,10 +281,11 @@ export default function HomePage() {
           if (!active) {
             return;
           }
+          preheatStatusRef.current = summary;
           setPreheatSummary(summary);
           setPreheatState("ready");
           failureAttempts = 0;
-          if (summary.status !== "ready") {
+          if (!PREHEAT_TERMINAL_STATUSES.has(summary.status)) {
             schedulePoll(PREHEAT_POLL_INTERVAL_MS);
           }
         })
@@ -299,7 +304,12 @@ export default function HomePage() {
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      const current = preheatStatusRef.current;
+      // 终态不因切回标签页重新请求；尚未拿到状态或非终态时立即刷新。
+      if (current === null || !PREHEAT_TERMINAL_STATUSES.has(current.status)) {
         failureAttempts = 0;
         schedulePoll(0);
       }
@@ -622,31 +632,50 @@ export default function HomePage() {
         )}
       </p>
 
-      <p
-        aria-live="polite"
-        className="mt-2 text-center text-sm text-muted"
-        data-testid="preheat-status"
-      >
-        {preheatState === "loading" ? (
-          brand.copy.preheatStatusLoading
-        ) : preheatState === "error" ? (
-          brand.copy.preheatStatusUnavailable
-        ) : preheatSummary?.status === "running" ? (
-          <>
+      {/* 预热状态只在有信息量时渲染：加载中与 ready 不占位、不闪现。 */}
+      {preheatState === "error" || preheatSummary?.status === "unavailable" ? (
+        <p
+          aria-live="polite"
+          className="mt-2 text-center text-sm text-muted"
+          data-testid="preheat-status"
+        >
+          {brand.copy.preheatStatusUnavailable}
+        </p>
+      ) : preheatSummary?.status === "running" ? (
+        <div className="mx-auto mt-2 max-w-xs" data-testid="preheat-status">
+          <p aria-live="polite" className="text-center text-sm text-muted">
             {brand.copy.preheatStatusRunning}
             <span className="ml-2">
               {brand.copy.preheatStatusProgress}{" "}
               {preheatSummary.processed}/{preheatSummary.total}
             </span>
-          </>
-        ) : preheatSummary?.status === "not_preheated" ? (
-          brand.copy.preheatStatusNotPreheated
-        ) : preheatSummary?.status === "degraded" ? (
-          brand.copy.preheatStatusDegraded
-        ) : (
-          null
-        )}
-      </p>
+          </p>
+          <ProgressBar
+            label={brand.copy.preheatStatusRunning}
+            value={
+              preheatSummary.total > 0
+                ? (preheatSummary.processed / preheatSummary.total) * 100
+                : 0
+            }
+          />
+        </div>
+      ) : preheatSummary?.status === "not_preheated" ? (
+        <p
+          aria-live="polite"
+          className="mt-2 text-center text-sm text-muted"
+          data-testid="preheat-status"
+        >
+          {brand.copy.preheatStatusNotPreheated}
+        </p>
+      ) : preheatSummary?.status === "degraded" ? (
+        <p
+          aria-live="polite"
+          className="mt-2 text-center text-sm text-muted"
+          data-testid="preheat-status"
+        >
+          {brand.copy.preheatStatusDegraded}
+        </p>
+      ) : null}
 
       <form
         className="mx-auto mt-6 flex w-full max-w-md items-center gap-2"
