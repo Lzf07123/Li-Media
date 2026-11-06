@@ -275,6 +275,29 @@ export default function ThumbnailPreheatCard({
           {job.message ? (
             <p className="mt-3 break-all text-xs text-muted">{job.message}</p>
           ) : null}
+          {job.sizes.length > 0 && Object.keys(job.size_results).length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {job.sizes.map((size) => {
+                const result = job.size_results[String(size)];
+                if (!result) {
+                  return null;
+                }
+                const parts = [
+                  `${brand.copy.adminPreheatGenerated} ${result.generated ?? 0}`,
+                  `${brand.copy.adminPreheatCached} ${result.cached ?? 0}`,
+                  `${brand.copy.adminPreheatFailedCount} ${result.failed ?? 0}`,
+                ];
+                if ((result.skipped ?? 0) > 0) {
+                  parts.push(`${brand.copy.adminPreheatSkipped} ${result.skipped}`);
+                }
+                return (
+                  <span className="badge badge-muted" key={size}>
+                    {size}px · {parts.join(" · ")}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
