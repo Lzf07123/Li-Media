@@ -70,6 +70,9 @@ const columnBreakpoints: ColumnBreakpoint[] = [
   { query: "(min-width: 768px)", count: 3 },
 ] as const;
 
+// 预热到终态时，只有停在页面顶部附近的用户才自动补图刷新。
+const AUTO_REFRESH_MAX_SCROLL_Y = 120;
+
 function useCanvasColumnCount() {
   const [columnCount, setColumnCount] = useState(2);
 
@@ -105,11 +108,6 @@ export default function HomePage() {
   const [viewerMissing, setViewerMissing] = useState(false);
   const [counts, setCounts] = useState({ photo: 0, video: 0 });
   const [total, setTotal] = useState(0);
-  const [publicCounts, setPublicCounts] = useState<{
-    total: number;
-    photo: number;
-    video: number;
-  } | null>(null);
   const [publicCountState, setPublicCountState] = useState<
     "loading" | "ready" | "error"
   >("loading");
@@ -198,16 +196,12 @@ export default function HomePage() {
         ];
       });
       setTotal(data.total);
-      setCounts(data.counts ?? { photo: 0, video: 0 });
-      if (data.public_counts) {
-        setPublicCounts({
-          total: data.public_counts.photo + data.public_counts.video,
-          photo: data.public_counts.photo,
-          video: data.public_counts.video,
-        });
+      // 计数行与类型页签都用「可展示口径」：与画布实际可见内容一致，
+      // 预热推进时同步增长；全量公开口径（public_counts）留给后台审计。
+      if (data.counts) {
+        setCounts(data.counts);
         setPublicCountState("ready");
       } else {
-        setPublicCounts(null);
         setPublicCountState("error");
       }
       setError(null);
@@ -235,6 +229,12 @@ export default function HomePage() {
 
   useEffect(() => {
     void loadPage(1, "replace");
+  }, [loadPage]);
+
+  // 预热轮询 effect 不随筛选/种子重建，用 ref 拿到最新的 loadPage。
+  const loadPageRef = useRef(loadPage);
+  useEffect(() => {
+    loadPageRef.current = loadPage;
   }, [loadPage]);
 
   // 搜索输入防抖同步到 URL keyword 参数；URL 外部变化（如切换类型清除
@@ -281,10 +281,20 @@ export default function HomePage() {
           if (!active) {
             return;
           }
+          const previous = preheatStatusRef.current;
           preheatStatusRef.current = summary;
           setPreheatSummary(summary);
           setPreheatState("ready");
           failureAttempts = 0;
+          const becameTerminal =
+            previous !== null &&
+            !PREHEAT_TERMINAL_STATUSES.has(previous.status) &&
+            PREHEAT_TERMINAL_STATUSES.has(summary.status);
+          if (becameTerminal && window.scrollY <= AUTO_REFRESH_MAX_SCROLL_Y) {
+            // 预热刚到终态：顶部附近的用户即刻补齐新就绪的内容；
+            // 滚动深处不打扰，下一次筛选/换一批自然生效。
+            void loadPageRef.current(1, "replace");
+          }
           if (!PREHEAT_TERMINAL_STATUSES.has(summary.status)) {
             schedulePoll(PREHEAT_POLL_INTERVAL_MS);
           }
@@ -622,11 +632,11 @@ export default function HomePage() {
         ) : (
           <>
             <span className="font-medium text-foreground">
-              {brand.copy.publicCountLabel} {publicCounts?.total ?? 0}
+              {brand.copy.publicCountLabel} {counts.photo + counts.video}
             </span>
             <span className="ml-2">
-              {brand.copy.publicCountDetail} {publicCounts?.photo ?? 0}/
-              {publicCounts?.video ?? 0}
+              {brand.copy.publicCountDetail} {counts.photo}/
+              {counts.video}
             </span>
           </>
         )}
@@ -776,7 +786,12 @@ export default function HomePage() {
       ) : canvasMemories.length === 0 ? (
         <div className="mt-8">
           <EmptyState art={Images}>
-            {keyword ? brand.copy.emptySearch : brand.copy.emptyLibrary}
+            {keyword
+              ? brand.copy.emptySearch
+              : preheatSummary !== null &&
+                  !PREHEAT_TERMINAL_STATUSES.has(preheatSummary.status)
+                ? brand.copy.emptyLibraryPreparing
+                : brand.copy.emptyLibrary}
           </EmptyState>
         </div>
       ) : (

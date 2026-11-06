@@ -26,14 +26,9 @@ const AUTO_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 // 可见的卡片；滞后于 240px 预载带，避免在边界上反复取消/重启。
 const SUSPEND_MARGIN_PX = 900;
 
-// 高分屏直接取 480px 派生图，避免 240px 拉伸发虚；1x 屏保持 240px
-// 以维持传输预算。按设备一次性取值，加载队列链路保持单一 URL。
-function cardThumbnailSize(): "240" | "480" {
-  if (typeof window === "undefined") {
-    return "240";
-  }
-  return window.devicePixelRatio >= 2 ? "480" : "240";
-}
+// 画布可见性以 240px 预热就绪为门槛，卡片固定取 240px 派生图：
+// 预热即所得，公开画布零按需生成；查看器内再取 480/1280 高清档。
+const CARD_THUMBNAIL_SIZE = "240" as const;
 
 function MemoryCard({
   memory,
@@ -56,8 +51,7 @@ function MemoryCard({
   const imageRef = useRef<HTMLImageElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
-  const [thumbnailSize] = useState(cardThumbnailSize);
-  const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, thumbnailSize);
+  const thumbnailUrl = resolveThumbnailUrl(memory.thumbnail_url, CARD_THUMBNAIL_SIZE);
   const thumbnailRetryUrl = retryAttempt > 0 && thumbnailUrl
     ? appendQueryParam(thumbnailUrl, "retry", String(retryAttempt))
     : null;
