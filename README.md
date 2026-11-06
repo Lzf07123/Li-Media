@@ -81,6 +81,41 @@ Playwright 默认使用本机 Chrome；已启动的前端可通过 `PLAYWRIGHT_B
 pre-commit install
 ```
 
+### 容器内开发与测试
+
+后端测试镜像（`backend/Dockerfile` 的 `test` target，在 runtime 之上补装 pytest）通过 dev profile 提供，生产栈不受影响：
+
+```bash
+# 构建测试镜像并跑容器内全量 pytest
+docker compose --profile dev build backend-test
+docker compose --profile dev run --rm backend-test
+
+# 指定用例
+docker compose --profile dev run --rm backend-test pytest tests/test_thumbnail_preheat.py -q
+```
+
+容器内契约测试（compose/nginx 清单）按既有 skipif 跳过，仍以仓库根运行的 `pytest` 与 `scripts/check.py` 为准。
+
+前端 e2e 指向 Docker 栈（nginx 唯一入口，`docker compose up -d --build` 且 healthy 后）：
+
+```bash
+PLAYWRIGHT_BASE_URL=http://localhost:8080 npx playwright test
+```
+
+`frontend/tests/docker-stack.spec.ts` 是不打 mock 的真栈冒烟，只在设置 `PLAYWRIGHT_BASE_URL` 时执行。
+
+预热端到端基准（本地源，无百度凭据可跑；结果与历史对比见 `docs/preheat-baseline.md`）：
+
+```bash
+docker compose run --rm --no-deps \
+  -v "$(pwd)/scripts:/mnt/scripts:ro" \
+  backend python /mnt/scripts/preheat_baseline.py \
+  --photos 24 --videos 6 --sizes 240,480 --concurrency 2
+```
+
+> 国内网络下 USTC 镜像源不稳定时，可用官方源构建：
+> `IMAGE_REGISTRY=docker.io/library/ APT_MIRROR=http://deb.debian.org PIP_INDEX_URL=https://pypi.org/simple docker compose build backend`
+
 ## 目录结构
 
 ```text
