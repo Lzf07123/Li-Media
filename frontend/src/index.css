@@ -168,6 +168,20 @@
   --limedia-shadow-photo: 0 12px 28px rgba(24, 58, 51, 0.14),
     0 32px 80px rgba(24, 58, 51, 0.18);
 
+  /* 沉浸式页眉：顶部透明，滚动后使用 92% 同源底色与轻雾化（模板 V1.7 逐值） */
+  --limedia-header-height: 72px;
+  --limedia-header-height-mobile: 64px;
+  --limedia-header-bg: #f6fbf900;
+  --limedia-header-bg-scrolled: #f6fbf9eb;
+  --limedia-header-border: #d8e7e200;
+  --limedia-header-border-scrolled: #d8e7e273;
+  --limedia-header-blur: 18px;
+  --limedia-header-saturate: 145%;
+  --limedia-header-rule-opacity: 0;
+  --limedia-header-rule-opacity-scrolled: 0.2;
+  --limedia-header-shadow-scrolled:
+    0 12px 28px rgba(24, 58, 51, 0.05);
+
   /* 缓动曲线与时长 */
   --limedia-ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
   --limedia-ease-in: cubic-bezier(0.55, 0.06, 0.68, 0.19);
@@ -259,6 +273,16 @@
   --limedia-warning-soft-fg: #78350f;
   --limedia-destructive-soft-solid: #fdeeee;
   --limedia-destructive-soft-fg: #7f1d1d;
+
+  /* 沉浸式页眉（深色）：与模板 V1.7 逐值一致，雾化饱和度 135% */
+  --limedia-header-bg: #3a3f4500;
+  --limedia-header-bg-scrolled: #3a3f45eb;
+  --limedia-header-border: #59616900;
+  --limedia-header-border-scrolled: #59616980;
+  --limedia-header-blur: 18px;
+  --limedia-header-saturate: 135%;
+  --limedia-header-shadow-scrolled:
+    0 12px 30px rgba(16, 24, 32, 0.08);
 
   color-scheme: dark;
 }
@@ -409,6 +433,62 @@
     background: var(--limedia-flow-gradient);
     background-size: 250% 100%;
     animation: flow-line-shift 5s linear infinite;
+  }
+
+  /* ========== 沉浸式页眉（模板 V1.7 逐值实例化） ==========
+     结构：<header class="site-header"><div class="site-header-inner">…</div>
+     <span class="flow-rule" aria-hidden="true"></span></header>
+     is-scrolled 由 SiteHeader 脚本在 scrollY > 8px 时切换。 */
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-bottom: 1px solid var(--limedia-header-border);
+    background: var(--limedia-header-bg);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    transition:
+      background-color var(--limedia-motion-base) var(--limedia-ease-out),
+      border-color var(--limedia-motion-base) var(--limedia-ease-out),
+      box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
+      -webkit-backdrop-filter var(--limedia-motion-base) var(--limedia-ease-out),
+      backdrop-filter var(--limedia-motion-base) var(--limedia-ease-out);
+  }
+  .site-header.is-scrolled {
+    border-color: var(--limedia-header-border-scrolled);
+    background: var(--limedia-header-bg-scrolled);
+    box-shadow: var(--limedia-header-shadow-scrolled);
+    -webkit-backdrop-filter:
+      blur(var(--limedia-header-blur))
+      saturate(var(--limedia-header-saturate));
+    backdrop-filter:
+      blur(var(--limedia-header-blur))
+      saturate(var(--limedia-header-saturate));
+  }
+  .site-header-inner {
+    height: var(--limedia-header-height);
+  }
+  .site-header .flow-rule {
+    height: 1px;
+    border-radius: 0;
+    opacity: var(--limedia-header-rule-opacity);
+    background-size: 100% 100%;
+    animation: none;
+    transition: opacity var(--limedia-motion-base) var(--limedia-ease-out);
+  }
+  .site-header.is-scrolled .flow-rule {
+    opacity: var(--limedia-header-rule-opacity-scrolled);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .site-header.is-scrolled {
+      background: var(--limedia-bg);
+    }
+  }
+  @media (max-width: 768px) {
+    .site-header-inner {
+      height: var(--limedia-header-height-mobile);
+    }
   }
 
   /* 按钮：统一 8px 圆角；可点击必须有 cursor-pointer；按压 scale(0.97) */
@@ -1419,33 +1499,22 @@
     @apply min-h-9 px-3 py-1.5 text-sm;
   }
 
-  /* ========== Footer 页脚（Pass / Panel 已验证） ==========
+  /* ========== Footer 页脚（模板 V1.5 逐值实例化；Pass / Panel / Blog 已验证） ==========
      结构：<footer class="site-footer"><div class="site-footer-inner">…</div></footer>
-     - 版权/备案/链接全部由 brand.ts 驱动（禁止硬编码文案）：
-       © 年份 + 版权方、ICP/公安备案、FOOTER_LINKS、GitHub、开源协议、反馈问题、联系我们
-     - Panel 变体：运行时 site_settings 为事实来源，未配置回退 brand.ts；
-       备案图标缺失/加载失败时用 .filing-icon-placeholder 字形方块占位
-     - 大小与高度（紧凑单行）：
-       高 44px = text-xs（12px / 行高 16px）+ 上下留白，min-h-11 兜底；
+     - 版权/备案/链接全部由 brand.ts 驱动（禁止硬编码文案）
+     - 单行高 56px = text-xs（12px / 行高 16px）+ py-5（上下 20px），min-h-14 兜底；
        图标/备案占位 14×14px、占位圆角 4px；gap-x-2（8px）/ gap-y-1（4px）；
        内容 max-w-7xl 居中，px-4（16px）→ lg:px-8（32px）；移动端允许换行、无横向滚动
-     - 链接颜色铁律（V1.5.1，2026-08-21 固化）：
-       页脚内链接（版权/备案/归档/许可等）一律 muted 文字色、hover 转 foreground；
-       禁止被全局链接主色（如 a { color: primary }）覆盖。存在全局链接着色的项目
-       必须在页脚以同/更高优先级显式覆盖为 muted。
-       来源：实例化项目实测——全局 a{color:primary} 泄漏导致备案文字呈青色，已修复回写。 */
+     - 链接颜色铁律（V1.5.1）：页脚内链接一律 muted 文字色、hover 转 foreground；
+       禁止被全局链接主色覆盖。 */
   .site-footer {
-    position: fixed;
-    inset-inline: 0;
-    bottom: 0;
-    z-index: 30;
-    @apply border-t border-border/60 bg-surface/85 backdrop-blur;
+    @apply relative mt-auto border-t border-border/60 bg-surface/60 backdrop-blur;
   }
   .site-footer-inner {
-    @apply mx-auto flex min-h-11 max-w-7xl flex-wrap items-center justify-center gap-x-2 px-4 py-0 text-xs text-muted lg:px-8;
+    @apply mx-auto flex min-h-14 max-w-7xl flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 py-5 text-xs text-muted lg:px-8;
   }
   .site-footer a {
-    @apply inline-flex min-h-11 items-center px-2 py-0 text-muted transition-colors duration-200 hover:text-foreground;
+    @apply text-muted transition-colors duration-200 hover:text-foreground;
   }
   .filing-icon-placeholder {
     @apply inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[4px] bg-surface-2 text-[9px] font-semibold leading-none text-muted;
@@ -1958,8 +2027,8 @@ html {
 }
 
 .page-shell {
-  padding-top: 0;
-  padding-bottom: 72px;
+  /* 模板视觉刷新口径：页面底部留白 96px（页脚为文档流 mt-auto 贴底） */
+  padding: 0 0 96px;
 }
 
 .page-shell > *:first-child {

@@ -6,9 +6,13 @@ import { brand } from "@/lib/brand";
 import { useTheme } from "@/lib/useTheme";
 import IconButton from "@/components/ui/IconButton";
 
+// 沉浸式页眉滚动阈值（模板 V1.7）：超过 8px 才切换同源雾化层。
+const SCROLLED_THRESHOLD_PX = 8;
+
 export default function SiteHeader() {
   const { theme, toggleTheme } = useTheme();
   const menuRef = useRef<HTMLDetailsElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
 
@@ -21,6 +25,34 @@ export default function SiteHeader() {
       : "/"
     : null;
   const isNavActive = (href: string) => href === activeLibraryHref;
+
+  // is-scrolled 直接切换 class（幂等），rAF 节流避免平滑滚动期间高频重渲染。
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
+
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      header.classList.toggle("is-scrolled", window.scrollY > SCROLLED_THRESHOLD_PX);
+    };
+    const onScroll = () => {
+      if (!raf) {
+        raf = requestAnimationFrame(update);
+      }
+    };
+
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) {
+        cancelAnimationFrame(raf);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const menu = menuRef.current;
@@ -49,8 +81,8 @@ export default function SiteHeader() {
   }, []);
 
   return (
-    <header className="site-header sticky top-0 z-20 border-b border-border bg-surface/80 backdrop-blur">
-      <div className="mx-auto flex h-12 w-full max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+    <header ref={headerRef} className="site-header">
+      <div className="site-header-inner mx-auto flex w-full max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
         <Link className="brand flex min-h-11 items-center gap-2 rounded-md text-lg font-semibold" to="/">
           <Camera aria-hidden="true" className="brand-halo size-5 text-primary" />
           <span className="brand-name-text">{brand.name}</span>
@@ -121,6 +153,7 @@ export default function SiteHeader() {
           </IconButton>
         </div>
       </div>
+      <span aria-hidden="true" className="flow-rule" />
     </header>
   );
 }

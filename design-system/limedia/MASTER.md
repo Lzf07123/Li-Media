@@ -1,6 +1,6 @@
 # Li&Media Master
 
-> 版本：V1.2 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
+> 版本：V1.3 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
 > 相关：[BRAND.md](BRAND.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
 
 ## 技术栈与路由
@@ -26,7 +26,7 @@
 | 反馈 | `Badge`、`StatusBadge`、`FileStatusBadge`、`Notice`、`Toast`、`Modal`、`ProgressBar`、`EmptyState`、`MediaSkeleton`、`SearchSkeleton`、`StatusDot` |
 | 氛围 | `AmbientBackground`（软极光 + 科技光效层）、`BlurText`、`FlowRule`（CSS 类） |
 | 内容组件 | `MemoryCard`、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
-| 外壳 | `SiteHeader`、`SiteFooter`、`BackToTop`、`Breadcrumb` |
+| 外壳 | `SiteHeader`（沉浸式 V1.7：`.site-header`/`.site-header-inner`/`.is-scrolled`）、`SiteFooter`（模板 V1.5：`mt-auto` 贴底 56px）、`BackToTop`、`Breadcrumb` |
 
 ## 页面与状态
 
@@ -38,9 +38,12 @@
 
 ## 布局与响应式
 
+- 页眉为模板 V1.7 沉浸式：顶部背景/边框/雾化全透明，`scrollY > 8px` 切换 `.is-scrolled`（92% 同源底色 + `blur(18px) saturate(145%)` 浅色 / 135% 深色 + 极淡边界与细阴影）；桌面内容高 72px、≤768px 64px，滚动前后高度不变；不支持 `backdrop-filter` 时回退不透明页面底色；页眉底部流光线透明度 0 → 0.2。
+- 页脚为模板 V1.5 规格：文档流 `mt-auto` 贴底、单行高 56px（`min-h-14` 兜底）、半透明表面 + backdrop-blur；链接 muted→foreground（V1.5.1 铁律）；版权/备案/链接全部由 `brand.ts` 驱动。
+- `page-shell` 底部留白 96px（模板视觉刷新口径）。
 - 公开内容使用 `.masonry`：1600 六列、1280 五列、1024 四列、768 三列、640 两列；画布保留版心两侧留白。
 - 桌面导航在 769px 显示；768px 及以下显示外露首页和二级菜单，菜单项与图标按钮均为 44px 热区。
-- 320px 隐藏品牌文字，仅保留品牌图标；所有主视图不允许横向溢出。
+- 360px 隐藏品牌文字，仅保留品牌图标；所有主视图不允许横向溢出。
 - 响应式覆盖放在 `@layer components` 之外，避免 utilities 覆盖。
 - 全站使用 `AmbientBackground` 软氛围层；表格、正文和媒体内容保持前景层优先，移动端隐藏光束与光点。
 
