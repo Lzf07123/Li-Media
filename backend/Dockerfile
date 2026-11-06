@@ -1,6 +1,6 @@
 ARG IMAGE_REGISTRY=docker.mirrors.ustc.edu.cn/library/
 
-FROM ${IMAGE_REGISTRY}python:3.12-slim
+FROM ${IMAGE_REGISTRY}python:3.12-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -23,3 +23,10 @@ RUN pip install --no-cache-dir .
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# 测试镜像：在 runtime 之上补 pytest（pyproject dev extra），供
+# `docker compose --profile dev run --rm backend-test` 在容器内跑测试。
+# compose/nginx 契约测试依赖仓库根清单，在镜像内按既有 skipif 跳过。
+FROM runtime AS test
+
+RUN pip install --no-cache-dir .[dev]
