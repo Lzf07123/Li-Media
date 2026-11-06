@@ -169,6 +169,7 @@ test("home preheat state is explicit and cards use responsive priority", async (
     "正在优化预览",
   );
   await expect(page.getByTestId("preheat-status")).toContainText("2/5");
+  await expect(page.getByRole("progressbar")).toBeVisible();
 
   const firstImage = page.locator(".masonry .post-card").first().locator("img");
   await expect
@@ -231,7 +232,8 @@ test("home preheat notice converges and stays clear at 375px", async ({ page }) 
     await route.fulfill({ json: { status: "ready", processed: 1, total: 1 } });
   });
   await page.reload();
-  await expect(page.getByTestId("preheat-status")).toHaveText("");
+  // ready 是终态：状态行整体移除，不再保留空元素占位。
+  await expect(page.getByTestId("preheat-status")).toHaveCount(0);
 });
 
 test("home shows an independent preheat unavailable state", async ({ page }) => {
@@ -247,33 +249,46 @@ test("home shows an independent preheat unavailable state", async ({ page }) => 
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
 });
 
-test("preheat polling stops when ready and refreshes once on visibility", async ({ page }) => {
+test("preheat polling stops at terminal states and refreshes on visibility while active", async ({ page }) => {
   let statusRequests = 0;
+  let status: "ready" | "not_preheated" = "ready";
   await mockMemoryRoutes(page);
   await page.route("**/api/v1/memories/preheat-status", async (route) => {
     statusRequests += 1;
     await route.fulfill({
-      json: { status: "ready", processed: 1, total: 1 },
+      json: { status, processed: 1, total: 1 },
     });
   });
+  const fireVisibility = async () => {
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "visible",
+      });
+    });
+    await page.evaluate(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  };
 
   await page.goto("/");
   await expect.poll(() => statusRequests).toBe(1);
   await page.waitForTimeout(1100);
   expect(statusRequests).toBe(1);
 
-  await page.evaluate(() => {
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: () => "visible",
-    });
-  });
-  await page.evaluate(() => {
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
+  await fireVisibility();
+  await page.waitForTimeout(200);
+  // ready 是终态：切回标签页不再重新请求。
+  expect(statusRequests).toBe(1);
+
+  status = "not_preheated";
+  await page.reload();
   await expect.poll(() => statusRequests).toBe(2);
+  await fireVisibility();
+  // 非终态仍需跟随后台预热进度，切回标签页立即刷新一次。
+  await expect.poll(() => statusRequests).toBe(3);
   await page.waitForTimeout(100);
-  expect(statusRequests).toBe(2);
+  expect(statusRequests).toBe(3);
 });
 
 test("preheat status retries failures with finite backoff", async ({ page }) => {
@@ -441,7 +456,7 @@ test("video playback uses server stream and avoids direct links", async ({ page 
 
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await page.getByRole("button", { name: "回忆预览" }).click();
+  await page.getByRole("button", { name: "湖边清晨" }).click();
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect.poll(() => serverRequests).toBe(1);
   expect(directRequests).toBe(0);
@@ -471,9 +486,10 @@ test("kind and scroll restore after closing viewer", async ({ page }) => {
   await page.locator(".masonry .post-card").first().click();
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
 
-  await page.locator(".photo-viewer").getByRole("button", { name: "取消" }).click();
+  await page.locator(".photo-viewer").getByRole("button", { name: "关闭" }).click();
   await expect(page).toHaveURL(/kind=photo/);
-  await expect(page.locator("#library-search")).toHaveCount(0);
+  // 关闭查看器后保持筛选与搜索状态，仅恢复滚动位置。
+  await expect(page.locator("#library-search")).toHaveValue("");
   await expect(page.locator("select[aria-label='排序']")).toHaveCount(0);
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
 });
@@ -845,7 +861,7 @@ test("video preparation shows one playback overlay", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "回忆预览" }).click();
+  await page.getByRole("button", { name: "湖边清晨" }).click();
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect(page.locator(".video-playback-overlay")).toBeVisible();
   expect(await page.locator(".video-playback-message").count()).toBe(1);
@@ -980,7 +996,7 @@ test("photo viewer selects card and viewer sizes by viewport", async ({ page }) 
   await expect.poll(() => thumbnailSizes).toContain("240");
   expect(thumbnailSizes).not.toContain("1280");
 
-  await page.getByRole("button", { name: "回忆预览" }).click();
+  await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect.poll(() => thumbnailSizes).toContain("1280");
 });
@@ -995,7 +1011,7 @@ test("mobile viewer uses 480px poster instead of desktop large image", async ({ 
 
   await page.setViewportSize({ width: 360, height: 700 });
   await page.goto("/");
-  await page.getByRole("button", { name: "回忆预览" }).click();
+  await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect.poll(() => thumbnailSizes).toContain("480");
   expect(thumbnailSizes).not.toContain("1280");
@@ -1040,7 +1056,7 @@ test("video does not request playback until play and can use server fallback", a
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "回忆预览" }).click();
+  await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   expect(directRequests).toBe(0);
   await page.getByRole("button", { name: "播放视频" }).click();
@@ -1063,11 +1079,13 @@ test("download button uses the server media stream", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "回忆预览" }).click();
+  await page.getByRole("button", { name: "湖边清晨" }).click();
   await page.locator(".photo-viewer").getByRole("button", { name: "下载" }).click();
   const clickedHrefs = await page.evaluate(
     () => (window as any).__clickedHrefs as string[],
   );
   expect(clickedHrefs.some((href) => href.includes(`/memories/${memoryId}/file`))).toBe(true);
-  await expect(page.locator(".viewer-status")).toContainText("可用");
+  // 下载成功后一切就绪：状态徽章隐藏，不再常驻“可用”。
+  await expect(page.locator(".viewer-status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator(".viewer-status")).not.toBeVisible();
 });

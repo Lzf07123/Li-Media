@@ -186,6 +186,7 @@ const preheatJob = {
   generated: 2,
   cached: 1,
   failed: 0,
+  skipped: 0,
   message: null,
   created_at: "2026-09-07T08:00:00Z",
   started_at: "2026-09-07T08:00:01Z",
@@ -277,7 +278,7 @@ test("home shows memory and toggles between light and dark", async ({ page }) =>
 
   await expect(page.getByRole("heading", { name: "回忆库" })).toBeVisible();
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible({
+  await expect(page.locator("img[alt=\"湖边清晨\"]")).toBeVisible({
     timeout: 10_000,
   });
   await expect(page.locator("html")).not.toHaveClass(/dark/);
@@ -294,10 +295,12 @@ test("home waterfall card opens viewer", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await page.getByRole("button", { name: "回忆预览" }).click();
+  await page.getByRole("button", { name: "湖边清晨" }).click();
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
   await expect(page.locator(".photo-viewer")).toBeVisible();
-  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
+  await expect(
+    page.locator(".photo-viewer img[alt=\"湖边清晨\"]"),
+  ).toBeVisible();
 });
 
 test("old detail address redirects to viewer", async ({ page }) => {
@@ -310,7 +313,9 @@ test("old detail address redirects to viewer", async ({ page }) => {
   );
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
   await expect(page.locator(".photo-viewer")).toBeVisible();
-  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible();
+  await expect(
+    page.locator(".photo-viewer img[alt=\"湖边清晨\"]"),
+  ).toBeVisible();
 });
 
 test("admin table is visible in dark mode", async ({ page }) => {
@@ -341,6 +346,9 @@ test("admin table is visible in dark mode", async ({ page }) => {
     preheatRequests += 1;
     await route.fulfill({ json: preheatJob });
   });
+  await page.route("**/api/v1/admin/thumbnails/preheat/preview*", async (route) => {
+    await route.fulfill({ json: { total: 3 } });
+  });
   await page.route("**/api/v1/admin/thumbnails/preheat", async (route) => {
     if (route.request().method() === "POST") {
       preheatRequests += 1;
@@ -370,6 +378,7 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await expect(page.getByText("并发", { exact: true })).toBeVisible();
   await expect(page.getByText("预览就绪").first()).toBeVisible();
   await page.locator("#preheat-kind").selectOption({ label: "图片资源" });
+  await expect(page.getByText("预计 3 项")).toBeVisible();
   await page.getByRole("button", { name: "开始预热" }).click();
   await expect
     .poll(() => preheatPayload)
@@ -419,7 +428,7 @@ test("remote photo without preview uses placeholder", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await expect(page.locator("img[alt=\"回忆预览\"]")).toHaveCount(0);
+  await expect(page.locator("img[alt=\"湖边清晨\"]")).toHaveCount(0);
 });
 
 test("failed thumbnail retries automatically from the card", async ({ page }) => {
@@ -451,7 +460,7 @@ test("failed thumbnail retries automatically from the card", async ({ page }) =>
 
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await expect(page.locator("img[alt=\"回忆预览\"]")).toBeVisible({
+  await expect(page.locator("img[alt=\"湖边清晨\"]")).toBeVisible({
     timeout: 10_000,
   });
   await expect.poll(() => attempts).toBeGreaterThan(1);
