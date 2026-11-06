@@ -18,6 +18,7 @@ from app.models.memory import (
     RemoteStreamState,
     RemoteThumbnailState,
 )
+from tests.derivative_seed import seed_home_derivative
 
 
 def _seed_library(session_factory: sessionmaker[Session]) -> None:
@@ -33,21 +34,22 @@ def _seed_library(session_factory: sessionmaker[Session]) -> None:
         session.add_all(memories)
         session.flush()
         for memory in memories:
-            session.add(
-                MemoryFile(
-                    memory_id=memory.id,
-                    source="baidupan",
-                    remote_path=f"photos/{memory.title}.jpg",
-                    source_path=f"photos/{memory.title}.jpg",
-                    filename=f"{memory.title}.jpg",
-                    mime_type="image/jpeg",
-                    size_bytes=128,
-                    status=MemoryFileStatus.MATCHED,
-                    remote_state=RemoteFileState.READY,
-                    thumbnail_state=RemoteThumbnailState.READY,
-                    stream_state=RemoteStreamState.READY,
-                )
+            memory_file = MemoryFile(
+                memory_id=memory.id,
+                source="baidupan",
+                remote_path=f"photos/{memory.title}.jpg",
+                source_path=f"photos/{memory.title}.jpg",
+                filename=f"{memory.title}.jpg",
+                mime_type="image/jpeg",
+                size_bytes=128,
+                status=MemoryFileStatus.MATCHED,
+                remote_state=RemoteFileState.READY,
+                thumbnail_state=RemoteThumbnailState.READY,
+                stream_state=RemoteStreamState.READY,
             )
+            session.add(memory_file)
+            session.flush()
+            seed_home_derivative(session, memory_file)
 
 
 def _public_list_select_count(engine, client: TestClient, params: dict) -> int:

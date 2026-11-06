@@ -1,6 +1,6 @@
 from collections.abc import Generator
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.db.session import Base, get_db
+from tests.derivative_seed import seed_home_derivative
 from app.main import app
 from app.models.admin import AdminOperationLog
 from app.models.memory import (
@@ -102,6 +103,15 @@ def test_remote_only_admin_and_public_lifecycle(tmp_path: Path, monkeypatch) -> 
         source="upload",
         status=MemoryStatus.PUBLISHED,
     )
+    # 画布可见门槛：网盘公开照片补 240 就绪缓存行（本地上传不在公开面，无需播种）
+    with session_factory.begin() as session:
+        memory_file = (
+            session.scalars(
+                select(MemoryFile).where(MemoryFile.memory_id == UUID(remote_id))
+            )
+            .one()
+        )
+        seed_home_derivative(session, memory_file)
 
     def override_get_db() -> Generator[Session, None, None]:
         yield from override_database(session_factory)

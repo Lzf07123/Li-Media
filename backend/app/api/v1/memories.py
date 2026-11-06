@@ -1,7 +1,7 @@
 import mimetypes
 from random import Random
 import uuid
-from typing import Literal
+from typing import Any, Literal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -48,6 +48,7 @@ from app.services.derivative_tasks import (
 )
 from app.services.thumbnail_preheat import (
     collect_public_preheat_status,
+    home_derivative_ready_condition,
     thumbnail_preheat_registry,
 )
 from app.services.task_limits import (
@@ -62,20 +63,23 @@ _stream_users: dict[str, int] = {}
 _stream_users_lock = Lock()
 
 
-def _public_memory_statement():
+def _public_memory_statement(*, require_home_derivative: bool = False):
     # Eager-load files once per statement: to_memory_summary reads memory.files,
     # and lazy loading would issue one extra SELECT per card on list pages.
+    file_conditions: list[Any] = [
+        MemoryFile.source == "baidupan",
+        public_files_condition(),
+    ]
+    if require_home_derivative:
+        # 画布可见性只承诺「240px 派生图已就绪」的内容；未预热内容不渲染
+        # 占位兜底，直接不出现。详情/直链/流仍走无过滤口径，直链查看器可达。
+        file_conditions.append(home_derivative_ready_condition())
     return (
         select(Memory)
         .options(selectinload(Memory.files))
         .where(
             Memory.status == MemoryStatus.PUBLISHED,
-            Memory.files.any(
-                and_(
-                    MemoryFile.source == "baidupan",
-                    public_files_condition(),
-                )
-            ),
+            Memory.files.any(and_(*file_conditions)),
         )
     )
 
@@ -145,7 +149,9 @@ def recommend_memories(
     limit: int = Query(default=8, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> list[MemorySummaryRead]:
-    statement = _public_memory_statement().order_by(func.random())
+    statement = _public_memory_statement(require_home_derivative=True).order_by(
+        func.random()
+    )
 
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
@@ -185,7 +191,7 @@ def list_memories(
         if has_session_or_credentials or sort == "random"
         else "public, max-age=15, stale-while-revalidate=30"
     )
-    statement = _public_memory_statement()
+    statement = _public_memory_statement(require_home_derivative=True)
 
     if kind is not None:
         statement = statement.where(Memory.kind == kind)

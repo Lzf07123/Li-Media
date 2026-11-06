@@ -21,6 +21,7 @@ from app.models.memory import (
     RemoteStreamState,
     RemoteThumbnailState,
 )
+from tests.derivative_seed import seed_home_derivative
 
 FILE_A = uuid.UUID("00000000-0000-4000-8000-00000000000a")
 FILE_B = uuid.UUID("00000000-0000-4000-8000-00000000000b")
@@ -92,7 +93,10 @@ def test_photo_memory_serves_first_healthy_duplicate(tmp_path: Path) -> None:
                     thumbnail_state=RemoteThumbnailState.FAILED,
                 )
             )
-            session.add(make_file(memory.id, FILE_B, "cloud/b.jpg"))
+            file_b = make_file(memory.id, FILE_B, "cloud/b.jpg")
+            session.add(file_b)
+            session.flush()
+            seed_home_derivative(session, file_b)
 
         client = TestClient(app)
         listed = client.get("/api/v1/memories").json()["items"]
@@ -130,7 +134,10 @@ def test_video_memory_serves_first_playable_duplicate(tmp_path: Path) -> None:
                     browser_compatibility=BrowserCompatibilityState.UNSUPPORTED,
                 )
             )
-            session.add(make_file(memory.id, FILE_B, "cloud/b.mp4"))
+            file_b = make_file(memory.id, FILE_B, "cloud/b.mp4")
+            session.add(file_b)
+            session.flush()
+            seed_home_derivative(session, file_b)
 
         client = TestClient(app)
         listed = client.get("/api/v1/memories", params={"kind": "video"}).json()
