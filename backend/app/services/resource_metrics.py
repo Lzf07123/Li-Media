@@ -157,14 +157,12 @@ def collect_resource_metrics(
 ) -> dict[str, object]:
     process = _read_proc_status()
     temporary_dir = media_root / "tmp"
-    temp_paths = list(temporary_dir.rglob("*")) if temporary_dir.exists() else []
-    temp_files = [path for path in temp_paths if path.is_file()]
-    temp_bytes = sum(
-        path.stat().st_size for path in temp_files if path.is_file()
-    )
     filesystem = _read_disk(media_root if media_root.exists() else temporary_dir)
     derived_cache = _read_directory_usage(media_root / "thumbnails")
+    # tmp 目录只走一遍遍历：计数与字节直接复用目录用量结果。
     temporary_cache = _read_directory_usage(temporary_dir)
+    temp_files = int(temporary_cache.get("files", 0))
+    temp_bytes = int(temporary_cache.get("bytes", 0))
     nginx_cache = _read_directory_usage(nginx_cache_root or media_root / "nginx_cache")
 
     return {
@@ -188,7 +186,7 @@ def collect_resource_metrics(
             **_read_memory_events(),
         },
         "temporary": {
-            "files": len(temp_files),
+            "files": temp_files,
             "bytes": temp_bytes,
             **_read_disk(temporary_dir),
         },
