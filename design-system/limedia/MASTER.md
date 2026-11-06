@@ -1,13 +1,13 @@
 # Li&Media Master
 
-> 版本：V1.1 ｜ 日期：2026-09-06 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
+> 版本：V1.2 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
 > 相关：[BRAND.md](BRAND.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
 
 ## 技术栈与路由
 
 - React 19 + TypeScript + Vite 7 + Tailwind CSS 4 + React Router 7 + lucide-react。
 - 路由：`/`（回忆库和 `?viewer=<memoryId>` 查看器）、`/memories/:memoryId`（兼容重定向到查看器）、`/admin`（后台）、`*`（404）。
-- API：`/api/v1/memories`、`/api/v1/memories/recommend`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/memories/:id/stream`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。
+- API：`/api/v1/memories`、`/api/v1/memories/recommend`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/memories/:id/stream`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。公开列表与推荐只返回 **240px 派生图就绪**的内容（未预热不做占位兜底，直接不出现）；详情/直链/流不受此过滤，查看器直链仍可达。
 
 ## 令牌快照
 
@@ -32,7 +32,7 @@
 
 | 页面 | 关键状态 |
 | --- | --- |
-| `HomePage` | 类型导航、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、媒体骨架、加载失败、空库、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
+| `HomePage` | 类型导航、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、媒体骨架、加载失败、空库（预热未到终态时显示「回忆预览正在准备」）、画布仅展示 240px 预热就绪内容（卡片固定请求 240px）、预热到终态且用户在顶部附近时自动补图刷新一次、「已收录媒体」为可展示口径（与画布一致）、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
 | `AdminPage` | 登录态、分区工作台、自适应搜索筛选、当前范围/选中记录操作分离、状态徽章、浏览器兼容、批量进度、发布、下架、删除确认、远程扫描、确认式本地清理 |
 | `NotFoundPage` | 空态图标、返回首页 |
 
