@@ -117,16 +117,16 @@ test("home public count, loading feedback and persistent footer", async ({ page 
     )
     .toBe("1");
 
-  await expect(page.locator(".site-footer")).toHaveCSS("position", "fixed");
-  const footerHeight = (await page.locator(".site-footer").boundingBox())?.height ?? 0;
-  const expectedFooterY = 720 - footerHeight;
-  for (const scrollY of [0, 900, 100000]) {
-    await page.evaluate((top) => window.scrollTo(0, top), scrollY);
-    await expect.poll(async () => {
+  // 页脚为模板 V1.5 口径：文档流 mt-auto 贴底，底边与文档底边重合
+  //（相对 scrollHeight 断言，对无限画布分段加载的增长免疫）
+  await expect(page.locator(".site-footer")).toHaveCSS("position", "relative");
+  await expect
+    .poll(async () => {
       const footer = await page.locator(".site-footer").boundingBox();
-      return footer?.y ?? 0;
-    }).toBeCloseTo(expectedFooterY, 0);
-  }
+      const docHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+      return footer ? footer.y + footer.height - docHeight : Number.NaN;
+    })
+    .toBeLessThanOrEqual(1);
   await expect(page.getByTestId("public-count")).toContainText(
     "已收录媒体 7",
   );

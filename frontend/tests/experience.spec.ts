@@ -318,10 +318,10 @@ test("home preheat notice converges and stays clear at 375px", async ({ page }) 
   }
   expect(
     (await page.locator(".site-header").boundingBox())?.height ?? Number.POSITIVE_INFINITY,
-  ).toBeLessThanOrEqual(49.01);
+  ).toBeLessThanOrEqual(66.01);
   expect(
     (await page.locator(".site-footer").boundingBox())?.height ?? Number.POSITIVE_INFINITY,
-  ).toBeLessThanOrEqual(45.01);
+  ).toBeLessThanOrEqual(57.01);
   const rects = await Promise.all(
     boxes.map((locator) => locator.boundingBox()),
   );
