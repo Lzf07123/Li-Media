@@ -133,7 +133,6 @@ export default function MediaViewer({
     activeMediaState.state !== "loading" &&
     activeMediaState.state !== "queued" &&
     activeMediaState.state !== "buffering";
-  const shouldShowStatus = !statusSettled;
 
   const resetTransform = useCallback(() => {
     setZoom(1);
@@ -632,25 +631,26 @@ export default function MediaViewer({
         </div>
       )}
 
-      {shouldShowStatus ? (
-        <div
-          aria-live={isFailureMediaState(activeMediaState.state) ? "assertive" : "polite"}
-          className="viewer-status"
-          data-scope={activeMediaState.scope}
-          data-state={activeMediaState.state}
-          role="status"
+      {/* 状态元素常驻作为状态载体（测试与调试可读 data-state），
+          全部就绪且无索引失败时整体隐藏，不再常驻“可用”徽章。 */}
+      <div
+        aria-live={isFailureMediaState(activeMediaState.state) ? "assertive" : "polite"}
+        className="viewer-status"
+        data-scope={activeMediaState.scope}
+        data-state={activeMediaState.state}
+        hidden={statusSettled || undefined}
+        role="status"
+      >
+        <span
+          className={`badge ${
+            hasIndexFailure || isFailureMediaState(activeMediaState.state)
+              ? "badge-warning"
+              : "badge-success"
+          }`}
         >
-          <span
-            className={`badge ${
-              hasIndexFailure || isFailureMediaState(activeMediaState.state)
-                ? "badge-warning"
-                : "badge-success"
-            }`}
-          >
-            {statusText}
-          </span>
-        </div>
-      ) : null}
+          {statusText}
+        </span>
+      </div>
 
       {onPrev ? (
         <button

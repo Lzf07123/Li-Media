@@ -144,6 +144,29 @@ services:
       retries: 3
       start_period: 10s
 
+  # 容器内测试入口（不随生产栈启动）：backend/Dockerfile 的 test target
+  # 在 runtime 之上补装 pytest。用法：
+  #   docker compose --profile dev run --rm backend-test            # 全量
+  #   docker compose --profile dev run --rm backend-test pytest tests/test_x.py -q
+  backend-test:
+    build:
+      context: ./backend
+      target: test
+      args:
+        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
+        APT_MIRROR: ${APT_MIRROR:-http://mirrors.ustc.edu.cn}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.ustc.edu.cn/pypi/simple}
+    profiles: ["dev"]
+    command: pytest -q
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
 volumes:
   backend_data:
   postgres_data:

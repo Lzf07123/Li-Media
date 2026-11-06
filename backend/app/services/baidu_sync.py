@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +13,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import get_settings
 from app.models.memory import (
     BrowserCompatibilityState,
     Memory,
@@ -30,6 +32,10 @@ from app.services.baidu_pan import BaiduListPage, BaiduPanError, BaiduRemoteItem
 from app.services.browser_compatibility import apply_persisted_compatibility
 from app.services.memory_files import guess_mime_type, infer_memory_kind_or_none
 from app.services.task_limits import TaskRejected, TaskType, task_limiter, task_metrics
+from app.services.thumbnail_preheat import start_auto_preheat_after_scan
+
+
+logger = logging.getLogger(__name__)
 
 
 class RemoteMediaClient(Protocol):
@@ -487,6 +493,8 @@ def run_remote_scan_task(
     session_factory: sessionmaker[Session],
     task_id: UUID,
     client_factory: Callable[[], RemoteMediaClient],
+    *,
+    auto_preheat: bool | None = None,
 ) -> None:
     with session_factory() as db:
         task = db.get(RemoteScanTask, task_id)
@@ -532,6 +540,24 @@ def run_remote_scan_task(
             ),
         )
         db.commit()
+
+        # 扫描可能引入新索引资源：完成后自动预热首页缩略图。任何失败都
+        # 不影响扫描结果；已有预热任务在跑时由注册表单飞语义静默跳过。
+        should_auto_preheat = (
+            auto_preheat
+            if auto_preheat is not None
+            else get_settings().preheat_auto_after_scan
+        )
+        if should_auto_preheat:
+            try:
+                start_auto_preheat_after_scan(
+                    session_factory=session_factory,
+                    settings=get_settings(),
+                )
+            except Exception:
+                logger.exception(
+                    "auto preheat after scan failed; task=%s", task.id
+                )
 
 
 def _delete_missing_remote_entries(db: Session, task: RemoteScanTask) -> int:

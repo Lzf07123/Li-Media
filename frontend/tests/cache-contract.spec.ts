@@ -91,7 +91,7 @@ test("list cache does not reuse photo and video responses across filters", async
   await filteredRequest;
   await expect(page.locator(".masonry .post-card button")).toHaveAttribute(
     "aria-label",
-    "回忆预览",
+    "湖边视频",
   );
   expect(listRequests).toEqual(["all", "video"]);
 });

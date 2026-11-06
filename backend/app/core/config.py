@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     preheat_concurrency_limit: int = Field(default=2, ge=1, le=8)
     preheat_queue_limit: int = Field(default=64, ge=0, le=1000)
     preheat_wait_timeout_seconds: float = Field(default=2.0, ge=0, le=30)
+    preheat_auto_after_scan: bool = Field(default=True)
     stream_global_concurrency_limit: int = Field(default=16, ge=1, le=64)
     stream_user_concurrency_limit: int = Field(default=3, ge=1, le=16)
     stream_queue_limit: int = Field(default=32, ge=0, le=1000)

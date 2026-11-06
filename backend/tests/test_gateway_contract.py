@@ -33,10 +33,13 @@ def test_compose_sets_hard_resource_limits_and_log_rotation() -> None:
     assert "mem_limit: 256m" in compose
     assert "mem_limit: 384m" in compose
     assert "mem_limit: 128m" in compose
-    assert compose.count("cpus:") == 4
-    assert compose.count("pids_limit:") == 4
-    assert compose.count("max-size: 5m") == 4
-    assert compose.count('max-file: "3"') == 4
+    # 4 个生产服务 + 1 个 dev profile 的容器内测试 runner，全部带硬限。
+    assert compose.count("cpus:") == 5
+    assert compose.count("pids_limit:") == 5
+    assert compose.count("max-size: 5m") == 5
+    assert compose.count('max-file: "3"') == 5
+    assert "mem_limit: 512m" in compose
+    assert 'profiles: ["dev"]' in compose
     assert "ulimits:" not in compose
     assert "RLIMIT_AS" not in compose
     assert "shared_buffers=64MB" in compose

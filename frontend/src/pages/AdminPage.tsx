@@ -314,6 +314,8 @@ export default function AdminPage() {
         if (scanDone || batchDone || probeDone) {
           void loadMemories();
         } else if (preheatDone) {
+          // 预热会改写文件预览状态，完成后同时刷新列表与系统状态。
+          void loadMemories();
           void refreshSystemStatus();
         }
       } finally {
@@ -723,8 +725,10 @@ export default function AdminPage() {
       const job = await cancelThumbnailPreheat(preheatJob.id);
       setPreheatJob(job);
       setError(null);
+      // 取消是异步生效：仅确认请求已受理，实际状态由轮询更新。
+      pushToast(brand.copy.adminPreheatCancelSuccess, "info");
     } catch {
-      setError(brand.copy.adminPreheatFailedToast);
+      pushToast(brand.copy.adminPreheatCancelFailed, "error");
     } finally {
       setIsCancellingPreheat(false);
     }

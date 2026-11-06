@@ -83,10 +83,11 @@ def test_public_preheat_status_covers_registry_states(tmp_path: Path) -> None:
         concurrency=1,
         queue_limit=0,
     )
+    # 排队中尚未枚举，total 与 processed 同源（job 自身计数），保持 0/0。
     assert collect_public_preheat_status(
         session_factory(),
         latest_job=queued_job,
-    ) == {"status": "running", "processed": 0, "total": 1}
+    ) == {"status": "running", "processed": 0, "total": 0}
 
     running_job, _ = registry.start(
         sizes=(480,),
@@ -186,3 +187,24 @@ def test_public_preheat_endpoint_returns_only_safe_summary(
                 assert forbidden not in response.text
     finally:
         app.dependency_overrides.clear()
+
+
+def test_public_preheat_status_degrades_to_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_factory = create_database(tmp_path)
+    add_public_photo(session_factory)
+
+    def raise_aggregation_failure(db: Session) -> int:
+        raise RuntimeError("aggregation down")
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat.count_public_derivative_candidates",
+        raise_aggregation_failure,
+    )
+    # 聚合失败降级为 unavailable，公开端点保持 200 而非 500。
+    assert collect_public_preheat_status(
+        session_factory(),
+        latest_job=None,
+    ) == {"status": "unavailable", "processed": 0, "total": 0}

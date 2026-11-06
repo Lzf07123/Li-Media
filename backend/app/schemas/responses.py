@@ -369,6 +369,10 @@ class ThumbnailPreheatRequest(BaseModel):
     limit: int = Field(default=0, ge=0, le=5000)
 
 
+class ThumbnailPreheatPreviewResponse(BaseModel):
+    total: int
+
+
 class ThumbnailPreheatJobRead(BaseModel):
     id: uuid.UUID
     sizes: list[int]
@@ -382,6 +386,7 @@ class ThumbnailPreheatJobRead(BaseModel):
     generated: int
     cached: int
     failed: int
+    skipped: int = 0
     source_bytes_downloaded: int
     derivative_duration_ms: int
     size_results: dict[str, dict[str, int]]

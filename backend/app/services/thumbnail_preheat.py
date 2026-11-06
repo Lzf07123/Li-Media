@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event, Lock
+from threading import Event, Lock, Thread, local
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, distinct, exists, func, or_, select
@@ -24,13 +24,12 @@ from app.models.memory import (
     MemoryFile,
     MemoryKind,
     MemoryStatus,
-    RemoteFileState,
-    RemoteStreamState,
     RemoteThumbnailState,
 )
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.derivative_tasks import (
     run_local_derivative,
+    run_local_derivatives,
 )
 from app.services.remote_thumbnails import (
     classify_remote_error,
@@ -44,7 +43,6 @@ from app.services.memory_thumbnails import (
 from app.services.display_health import (
     PERMANENT_THUMBNAIL_FAILURE_KINDS,
     classify_thumbnail_failure_state,
-    browser_playable_files_condition,
     public_files_condition,
 )
 from app.services.task_limits import TaskCancelled, TaskRejected, task_metrics
@@ -74,6 +72,7 @@ class ThumbnailPreheatJob:
     generated: int = 0
     cached: int = 0
     failed: int = 0
+    skipped: int = 0
     source_bytes_downloaded: int = 0
     derivative_duration_ms: int = 0
     size_results: dict[str, dict[str, int]] = field(default_factory=dict)
@@ -88,7 +87,7 @@ class ThumbnailPreheatJob:
     def __post_init__(self) -> None:
         self.sizes = tuple(dict.fromkeys(self.sizes)) or (HOME_PREHEAT_SIZE,)
         self.size_results = {
-            str(size): {"generated": 0, "cached": 0, "failed": 0}
+            str(size): {"generated": 0, "cached": 0, "failed": 0, "skipped": 0}
             for size in self.sizes
         }
 
@@ -181,14 +180,25 @@ class ThumbnailPreheatRegistry:
             for size, outcome in outcomes.items():
                 key = str(size)
                 if key not in job.size_results:
-                    job.size_results[key] = {"generated": 0, "cached": 0, "failed": 0}
-                job.size_results[key][outcome if outcome in {"generated", "cached", "failed"} else "failed"] += 1
+                    job.size_results[key] = {
+                        "generated": 0,
+                        "cached": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                    }
+                job.size_results[key][
+                    outcome
+                    if outcome in {"generated", "cached", "failed", "skipped"}
+                    else "failed"
+                ] += 1
                 if outcome == "generated":
                     job.generated += 1
                 elif outcome == "cached":
                     job.cached += 1
                 elif outcome == "failed":
                     job.failed += 1
+                elif outcome == "skipped":
+                    job.skipped += 1
 
     def mark_completed(self, job_id: UUID, message: str | None = None) -> None:
         self._update(
@@ -244,44 +254,31 @@ def _public_file_statement():
 def _as_candidate_result(result: object, sizes: tuple[int, ...]) -> PreheatCandidateResult:
     if isinstance(result, PreheatCandidateResult):
         return result
-    if isinstance(result, str) and result in {"generated", "cached", "failed", "cancelled"}:
+    if isinstance(result, str) and result in {
+        "generated",
+        "cached",
+        "failed",
+        "cancelled",
+        "skipped",
+    }:
         return PreheatCandidateResult(outcomes={size: result for size in sizes})
     return PreheatCandidateResult(outcomes={size: "failed" for size in sizes}, failure_kind="unknown")
 
 
-def _candidate_pairs(
-    db: Session,
+def _candidate_statement(
     *,
     kind: MemoryKind | None,
-    limit: int,
     sizes: tuple[int, ...] | list[int] | None = None,
     derivative_version: str | None = None,
-) -> list[tuple[UUID, UUID]]:
-    selected_sizes = tuple(dict.fromkeys(sizes or (HOME_PREHEAT_SIZE,)))
-    statement = (
-        select(Memory.id, MemoryFile.id)
-        .join(MemoryFile, Memory.files)
-        .where(
-            Memory.status == MemoryStatus.PUBLISHED,
-            MemoryFile.source == "baidupan",
-            MemoryFile.remote_id.is_not(None),
-        )
-    )
-    statement = statement.where(
-        MemoryFile.remote_state == RemoteFileState.READY,
-        browser_playable_files_condition(),
-        or_(
-            Memory.kind == MemoryKind.PHOTO,
-            MemoryFile.stream_state != RemoteStreamState.FAILED,
-        ),
-    )
-    if kind is not None:
-        statement = statement.where(Memory.kind == kind)
+):
+    """Shared candidate filters for enumeration and start-preview counting.
 
-    statement = statement.where(
-        MemoryFile.thumbnail_failure_kind.is_(None)
-        | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS)
-    )
+    口径与公开展示面一致（public_files_condition）：预热只为公开访客会
+    看到的资源做远端下载，displayable 与浏览器兼容不达标的视频不预热。
+    永久失败类型仍被显式排除（其失败不可自愈，重选无意义）。
+    """
+
+    selected_sizes = tuple(dict.fromkeys(sizes or (HOME_PREHEAT_SIZE,)))
     version = derivative_version or get_settings().media_derivative_version
     missing_conditions = []
     for max_size in selected_sizes:
@@ -298,7 +295,53 @@ def _candidate_pairs(
             Memory.thumbnail_path.endswith(f"/{version}/{max_size}.webp"),
         )
         missing_conditions.append(~(ready_cache | legacy_cache))
-    statement = statement.where(or_(*missing_conditions))
+
+    statement = (
+        select(Memory.id, MemoryFile.id)
+        .join(MemoryFile, Memory.files)
+        .where(
+            Memory.status == MemoryStatus.PUBLISHED,
+            MemoryFile.source == "baidupan",
+            MemoryFile.remote_id.is_not(None),
+            public_files_condition(),
+            MemoryFile.thumbnail_failure_kind.is_(None)
+            | MemoryFile.thumbnail_failure_kind.not_in(NON_RETRYABLE_FAILURE_KINDS),
+            or_(*missing_conditions),
+        )
+    )
+    if kind is not None:
+        statement = statement.where(Memory.kind == kind)
+    return statement
+
+
+def count_preheat_candidates(
+    db: Session,
+    *,
+    kind: MemoryKind | None,
+    sizes: tuple[int, ...] | list[int] | None = None,
+) -> int:
+    """Count deduplicated memories a preheat run would touch, for preview UI."""
+
+    statement = _candidate_statement(kind=kind, sizes=sizes)
+    subquery = statement.subquery()
+    return int(
+        db.scalar(select(func.count(distinct(subquery.columns[0])))) or 0
+    )
+
+
+def _candidate_pairs(
+    db: Session,
+    *,
+    kind: MemoryKind | None,
+    limit: int,
+    sizes: tuple[int, ...] | list[int] | None = None,
+    derivative_version: str | None = None,
+) -> list[tuple[UUID, UUID]]:
+    statement = _candidate_statement(
+        kind=kind,
+        sizes=sizes,
+        derivative_version=derivative_version,
+    )
     ordered_statement = (
         statement.order_by(Memory.captured_at.desc().nulls_last())
         .order_by(Memory.updated_at.desc())
@@ -411,14 +454,20 @@ def collect_public_preheat_status(
     *,
     latest_job: ThumbnailPreheatJob | None,
 ) -> dict[str, int | str]:
-    total = count_public_derivative_candidates(db)
-    cache_hits = count_public_derivative_cache_hits(db)
+    try:
+        total = count_public_derivative_candidates(db)
+        cache_hits = count_public_derivative_cache_hits(db)
+    except Exception:
+        # 聚合失败时降级为 unavailable，公开端点保持 200 而非 500。
+        logger.exception("public preheat status aggregation failed")
+        return {"status": "unavailable", "processed": 0, "total": 0}
 
     if _is_home_preheat_job(latest_job) and latest_job.status in {"queued", "running"}:
         return {
             "status": "running",
             "processed": max(0, latest_job.processed),
-            "total": total,
+            # total 与 processed 同源（job 自身枚举数），避免与公开计数口径错位。
+            "total": max(0, latest_job.total),
         }
 
     is_ready = total == 0 or cache_hits >= total
@@ -582,6 +631,23 @@ def _download_remote_source(
             unregister_temporary_path(temporary_path.resolve())
 
 
+def _thread_local_client(settings: Settings) -> BaiduPanClient:
+    """按 worker 线程惰性共享一个远端客户端。
+
+    仅在候选真正需要远端下载时创建：纯本地源的预热不触碰百度凭证。
+    线程随 executor 生命周期复用，客户端构造成本被摊薄。
+    """
+
+    client = getattr(_client_local, "client", None)
+    if client is None:
+        client = BaiduPanClient(settings)
+        _client_local.client = client
+    return client
+
+
+_client_local = local()
+
+
 def _process_pair_sizes(
     db: Session,
     *,
@@ -613,6 +679,16 @@ def _process_pair_sizes(
     derivative_duration_ms = 0
     downloaded_remote_source: Path | None = None
 
+    # 本地源文件先解析一次：对账行回填真实 source_bytes，避免 0 失真。
+    source_path: Path | None = resolve_media_path(
+        media_root, memory_file.source_path or ""
+    )
+    if source_path is not None and not source_path.is_file():
+        source_path = None
+    local_source_bytes = (
+        source_path.stat().st_size if source_path is not None else 0
+    )
+
     # Reconcile files already produced by an earlier run before touching Baidu.
     # Older workers could persist the file but be killed before recording state.
     for max_size in sizes:
@@ -631,11 +707,13 @@ def _process_pair_sizes(
             max_size=max_size,
             status=DerivativeCacheStatus.READY,
             output_path=target_path,
-            source_bytes=0,
+            source_bytes=local_source_bytes,
             duration_ms=0,
         )
         outcomes[max_size] = "cached"
-        if max_size == HOME_PREHEAT_SIZE or memory.thumbnail_path is None:
+        # 首页缩略图只认 240：detail 预热不得回填 thumbnail_path，
+        # 避免公开列表拿到 480/1280 超大图。
+        if max_size == HOME_PREHEAT_SIZE:
             memory.thumbnail_path = target_path.relative_to(media_root).as_posix()
 
     if len(outcomes) == len(sizes):
@@ -644,15 +722,9 @@ def _process_pair_sizes(
         db.commit()
         return PreheatCandidateResult(outcomes=outcomes)
 
-    source_path: Path | None = resolve_media_path(
-        media_root, memory_file.source_path or ""
-    )
-    if source_path is not None and not source_path.is_file():
-        source_path = None
-
     if source_path is None:
         remote_failure_sink: dict[str, str] = {}
-        remote_client = client or BaiduPanClient(settings)
+        remote_client = client or _thread_local_client(settings)
         source_path, source_bytes_downloaded = _download_remote_source(
             client=remote_client,
             remote_id=memory_file.remote_id,
@@ -677,6 +749,7 @@ def _process_pair_sizes(
         register_temporary_path(downloaded_remote_source.resolve())
 
     try:
+        missing_sizes: list[int] = []
         for max_size in sizes:
             if max_size in outcomes:
                 continue
@@ -694,40 +767,64 @@ def _process_pair_sizes(
                     max_size=max_size,
                     status=DerivativeCacheStatus.READY,
                     output_path=target_path,
-                    source_bytes=source_path.stat().st_size,
+                    source_bytes=local_source_bytes,
                     duration_ms=0,
                 )
                 outcomes[max_size] = "cached"
                 continue
+            missing_sizes.append(max_size)
 
+        # 批量派生：缺失尺寸共用一次 DERIVATIVE 槽位，照片单次解码、
+        # WebP/视频单次 ffmpeg 多输出；单尺寸缺失场景仍走原单尺寸路径。
+        generated_paths: dict[int, str | None] = {}
+        duration_ms = 0
+        if missing_sizes:
             if cancel_event is not None and cancel_event.is_set():
-                failure_sink: dict[str, str] = {"kind": DerivativeFailureKind.CANCELLED.value}
-                duration_ms = 0
-                generated_path = None
+                failure_sink = {
+                    "kind": DerivativeFailureKind.CANCELLED.value,
+                }
+                generated_paths = {max_size: None for max_size in missing_sizes}
             else:
                 failure_sink = {}
                 started_at = time.monotonic()
                 try:
-                    generated_path = run_local_derivative(
-                        source_path,
-                        media_root,
-                        memory=memory,
-                        max_size=max_size,
-                        duration_seconds=memory.duration_seconds,
-                        priority=60,
-                        failure_sink=failure_sink,
-                        cancel_event=cancel_event,
-                    )
+                    if len(missing_sizes) == 1:
+                        generated_path = run_local_derivative(
+                            source_path,
+                            media_root,
+                            memory=memory,
+                            max_size=missing_sizes[0],
+                            duration_seconds=memory.duration_seconds,
+                            priority=60,
+                            failure_sink=failure_sink,
+                            cancel_event=cancel_event,
+                        )
+                        generated_paths = {missing_sizes[0]: generated_path}
+                    else:
+                        generated_paths = run_local_derivatives(
+                            source_path,
+                            media_root,
+                            memory=memory,
+                            max_sizes=missing_sizes,
+                            duration_seconds=memory.duration_seconds,
+                            priority=60,
+                            failure_sink=failure_sink,
+                            cancel_event=cancel_event,
+                        )
                 except TaskRejected:
                     task_metrics.record_failed(TaskType.DERIVATIVE)
                     failure_sink.setdefault(
                         "kind",
                         DerivativeFailureKind.QUEUE_REJECTED.value,
                     )
-                    generated_path = None
+                    generated_paths = {
+                        max_size: None for max_size in missing_sizes
+                    }
                 duration_ms = int((time.monotonic() - started_at) * 1000)
-
             derivative_duration_ms += duration_ms
+
+        for max_size in missing_sizes:
+            generated_path = generated_paths.get(max_size)
             if not generated_path:
                 failure_kind = failure_sink.get("kind", "unknown")
                 _set_derivative_cache_state(
@@ -737,7 +834,7 @@ def _process_pair_sizes(
                     max_size=max_size,
                     status=DerivativeCacheStatus.FAILED,
                     failure_kind=failure_kind,
-                    source_bytes=source_path.stat().st_size,
+                    source_bytes=local_source_bytes,
                     duration_ms=duration_ms,
                 )
                 outcomes[max_size] = "failed"
@@ -753,14 +850,11 @@ def _process_pair_sizes(
                 max_size=max_size,
                 status=DerivativeCacheStatus.READY,
                 output_path=generated_output_path,
-                source_bytes=source_path.stat().st_size,
+                source_bytes=local_source_bytes,
                 duration_ms=duration_ms,
             )
             outcomes[max_size] = "generated"
-            if (
-                max_size == HOME_PREHEAT_SIZE
-                or memory.thumbnail_path is None
-            ):
+            if max_size == HOME_PREHEAT_SIZE:
                 memory.thumbnail_path = generated_path
 
         if any(outcome in {"generated", "cached"} for outcome in outcomes.values()):
@@ -870,6 +964,13 @@ def _process_candidate(
             outcomes={size: "cancelled" for size in sizes},
             failure_kind=DerivativeFailureKind.CANCELLED.value,
         )
+    except TaskRejected:
+        # 全局 PREHEAT 队列满：本轮跳过，不写失败状态与 FAILED 缓存行，
+        # 候选条件基于缓存 NOT-EXISTS，下次预热会自然重选。
+        task_metrics.record_rejected(TaskType.PREHEAT)
+        return PreheatCandidateResult(
+            outcomes={size: "skipped" for size in sizes},
+        )
     except Exception as exc:
         logger.exception(
             "thumbnail preheat candidate failed; memory_id=%s file_id=%s",
@@ -950,15 +1051,22 @@ def run_thumbnail_preheat(
                 sizes=job.sizes,
             )
         registry.mark_running(job_id, total=len(pairs))
+        # 枚举可能耗时（大库 × 多尺寸 NOT-EXISTS），期间用户可能已取消：
+        # 进入处理循环前补一次取消检查，避免空跑。
+        if job.cancel_event.is_set():
+            registry.mark_cancelled(job_id, f"processed=0;total={len(pairs)}")
+            return
 
-        shared_client: BaiduPanClient | None = None
-        if settings is not None:
-            try:
-                shared_client = BaiduPanClient(settings)
-            except BaiduPanError as exc:
-                registry.mark_failed(job_id, str(exc)[:255])
-                return
-
+        # 说明：不做 count 先行回填 total，也不做分页流式枚举——count 查询
+        # 与枚举同价，无显示收益；候选集合会随处理实时收缩，OFFSET 分页会
+        # 成批跳项，keyset 分页在 nulls_last 排序上复杂度不成比例。候选仅
+        # 物化 (memory_id, file_id) 元组，内存开销可忽略。
+        # 队列深度单层记账：executor 在途上限与全局 PREHEAT 槽位容量同源
+        # （concurrency + queue_limit 读同一组配置），worker 只在取全局槽位
+        # 时排队；limiter 同时充当指标观测面（系统状态“预热调度”）。
+        # 远端客户端按线程惰性创建：只有真正需要下载的候选才触碰凭证，
+        # 纯本地源的预热无需百度凭证即可运行；open_stream 的流式下载本身
+        # 并发，0.2s 请求间隔只在发起请求时生效，限流压力有界。
         candidate_iterator = iter(pairs)
         futures: dict[Future[PreheatCandidateResult], tuple[UUID, UUID]] = {}
         max_pending = job.concurrency + job.queue_limit
@@ -985,7 +1093,7 @@ def run_thumbnail_preheat(
                         settings=settings,
                         sizes=job.sizes,
                         cancel_event=job.cancel_event,
-                        client=shared_client,
+                        client=None,
                     )
                     futures[future] = pair
 
@@ -1052,3 +1160,42 @@ def run_thumbnail_preheat(
         task_metrics.record_gc(gc.collect())
     except Exception as exc:
         registry.mark_failed(job_id, str(exc) or type(exc).__name__)
+
+
+def start_auto_preheat_after_scan(
+    *,
+    session_factory: sessionmaker[Session],
+    settings: Settings,
+    registry: ThumbnailPreheatRegistry = thumbnail_preheat_registry,
+) -> ThumbnailPreheatJob | None:
+    """扫描完成后自动预热首页 240 缩略图，消除公开访客首次加载的慢窗口。
+
+    单飞注册表保证与手动预热互斥：已有任务在跑时静默跳过本次自动触发。
+    """
+
+    if not settings.preheat_auto_after_scan:
+        return None
+
+    job, started = registry.start(
+        sizes=(HOME_PREHEAT_SIZE,),
+        kind=None,
+        limit=0,
+        concurrency=settings.preheat_concurrency_limit,
+        queue_limit=settings.preheat_queue_limit,
+    )
+    if not started:
+        return None
+
+    thread = Thread(
+        target=run_thumbnail_preheat,
+        kwargs={
+            "job_id": job.id,
+            "session_factory": session_factory,
+            "settings": settings,
+            "registry": registry,
+        },
+        name="limedia-preheat-auto",
+        daemon=True,
+    )
+    thread.start()
+    return job

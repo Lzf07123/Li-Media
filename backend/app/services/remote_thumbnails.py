@@ -1,4 +1,6 @@
+import time
 from pathlib import Path
+from threading import Lock
 from uuid import UUID, uuid4
 
 from app.core.config import get_settings
@@ -135,20 +137,47 @@ def classify_remote_error(exc: Exception) -> str:
     return DerivativeFailureKind.UNKNOWN.value
 
 
+_used_bytes_cache_lock = Lock()
+_used_bytes_cache: dict[str, tuple[float, int]] = {}
+_USED_BYTES_CACHE_TTL_SECONDS = 3.0
+
+
+def _temporary_used_bytes(temporary_dir: Path) -> int:
+    """Sum temp file sizes with a short TTL so concurrent downloads share one scan.
+
+    stat 失败按 0 计：并发下载/清理窗口内文件消失等于空间已释放，
+    不应像旧实现那样直接判无容量。
+    """
+    cache_key = str(temporary_dir)
+    now = time.monotonic()
+    with _used_bytes_cache_lock:
+        cached = _used_bytes_cache.get(cache_key)
+        if cached is not None and now - cached[0] < _USED_BYTES_CACHE_TTL_SECONDS:
+            return cached[1]
+
+        used_bytes = 0
+        for path in temporary_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                used_bytes += path.stat().st_size
+            except OSError:
+                continue
+        _used_bytes_cache[cache_key] = (now, used_bytes)
+        return used_bytes
+
+
 def temporary_directory_has_capacity(temporary_dir: Path) -> bool:
     settings = get_settings()
-    files = [path for path in temporary_dir.rglob("*") if path.is_file()]
-    if len(files) >= settings.remote_thumbnail_max_temp_files:
+    # 文件数量是并发硬上限：保持实时计数，避免 TTL 窗口内超发。
+    file_count = sum(1 for path in temporary_dir.rglob("*") if path.is_file())
+    if file_count >= settings.remote_thumbnail_max_temp_files:
         return False
 
-    used_bytes = 0
-    for path in files:
-        try:
-            used_bytes += path.stat().st_size
-        except OSError:
-            return False
-
-    return used_bytes < settings.remote_thumbnail_disk_quota_bytes
+    return (
+        _temporary_used_bytes(temporary_dir)
+        < settings.remote_thumbnail_disk_quota_bytes
+    )
 
 
 _temporary_directory_has_capacity = temporary_directory_has_capacity

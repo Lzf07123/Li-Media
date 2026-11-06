@@ -31,7 +31,14 @@ from app.services.thumbnail_preheat import _process_candidate
 from app.services.memory_thumbnails import derivative_cache_path
 from app.services.thumbnail_preheat import _process_pair
 from app.services.thumbnail_preheat import _set_derivative_cache_state
+from app.services.thumbnail_preheat import (
+    ThumbnailPreheatRegistry,
+    count_preheat_candidates,
+    run_thumbnail_preheat,
+    start_auto_preheat_after_scan,
+)
 from app.services.baidu_pan import BaiduPanError
+from app.services.task_limits import TaskRejected
 from threading import Event
 from tests.test_admin_security import configure_admin_app
 
@@ -96,7 +103,7 @@ def test_candidate_pairs_follow_home_order_and_skip_non_retryable(
         title="retryable photo",
         kind=MemoryKind.PHOTO,
         captured_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
-        thumbnail_state=RemoteThumbnailState.FAILED,
+        thumbnail_state=RemoteThumbnailState.RETRYABLE,
         failure_kind=DerivativeFailureKind.REMOTE_UNAVAILABLE.value,
     )
     add_memory(
@@ -237,7 +244,7 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             assert response.json()["status"] in {"queued", "running", "completed"}
 
             payload = None
-            for _ in range(50):
+            for _ in range(150):
                 latest = client.get("/api/v1/admin/thumbnails/preheat/latest")
                 assert latest.status_code == 200
                 payload = latest.json()
@@ -257,10 +264,40 @@ def test_admin_can_preheat_missing_thumbnail(tmp_path: Path, monkeypatch) -> Non
             memory_file = session.scalar(select(MemoryFile))
             assert memory is not None
             assert memory_file is not None
-            assert memory.thumbnail_path is not None
-            assert memory.thumbnail_path.endswith("480.webp")
-            assert (media_root / memory.thumbnail_path).is_file()
+            # detail 预热只生成派生图，不再回填首页缩略图位。
+            assert memory.thumbnail_path is None
             assert memory_file.thumbnail_state == RemoteThumbnailState.READY
+
+        # 首页 240 预热负责回填 thumbnail_path。
+        with TestClient(app) as client:
+            assert client.post(
+                "/api/v1/admin/login",
+                json={"token": "test-token"},
+            ).status_code == 204
+
+            response = client.post(
+                "/api/v1/admin/thumbnails/preheat",
+                json={"sizes": ["240"], "kind": "photo", "limit": 0},
+            )
+            assert response.status_code == 202
+
+            payload = None
+            for _ in range(150):
+                latest = client.get("/api/v1/admin/thumbnails/preheat/latest")
+                assert latest.status_code == 200
+                payload = latest.json()
+                if payload and payload["processed"] == 1:
+                    break
+                time.sleep(0.02)
+
+            assert payload["generated"] == 1
+
+        with session_factory() as session:
+            memory = session.get(Memory, memory_id)
+            assert memory is not None
+            assert memory.thumbnail_path is not None
+            assert memory.thumbnail_path.endswith("240.webp")
+            assert (media_root / memory.thumbnail_path).is_file()
     finally:
         app.dependency_overrides.clear()
 
@@ -437,3 +474,278 @@ def test_derivative_cache_state_accepts_relative_media_root(
             Path(settings.media_root)
         ).as_posix()
         assert cache.output_bytes == 4
+
+
+def test_preheat_slot_rejection_is_skipped_without_failure_writes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000041")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="rejected candidate",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+    )
+    settings = Settings(media_root=str(tmp_path / "media"))
+
+    class _RejectingLimiter:
+        def slot(self, task_type, *, priority, cancel_event=None):
+            raise TaskRejected("preheat queue full")
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat.task_limiter",
+        _RejectingLimiter(),
+    )
+
+    with session_factory() as db:
+        memory_file_id = db.scalar(select(MemoryFile.id))
+
+    result = _process_candidate(
+        session_factory,
+        memory_id=memory_id,
+        memory_file_id=memory_file_id,
+        settings=settings,
+        sizes=(240, 480),
+        cancel_event=Event(),
+    )
+
+    assert result.outcomes == {240: "skipped", 480: "skipped"}
+    assert result.failure_kind is None
+
+    with session_factory() as db:
+        memory_file = db.scalar(select(MemoryFile))
+        assert memory_file is not None
+        # 跳过不写失败状态与 FAILED 缓存行，留给下次预热重选。
+        assert memory_file.thumbnail_state == RemoteThumbnailState.MISSING
+        assert memory_file.thumbnail_failure_kind is None
+        assert db.scalar(select(MemoryDerivativeCache)) is None
+
+
+def test_preheat_preview_matches_candidate_pairs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_factory = configure_admin_app(tmp_path, monkeypatch)
+    add_memory(
+        session_factory,
+        memory_id=UUID("00000000-0000-0000-0000-000000000051"),
+        title="preview photo",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+    )
+    add_memory(
+        session_factory,
+        memory_id=UUID("00000000-0000-0000-0000-000000000052"),
+        title="preview photo two",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+    add_memory(
+        session_factory,
+        memory_id=UUID("00000000-0000-0000-0000-000000000053"),
+        title="preview video",
+        kind=MemoryKind.VIDEO,
+        captured_at=datetime(2026, 8, 3, tzinfo=timezone.utc),
+    )
+
+    with session_factory() as db:
+        expected_all = len(
+            _candidate_pairs(db, kind=None, limit=0, sizes=(240,))
+        )
+        expected_photo = len(
+            _candidate_pairs(db, kind=MemoryKind.PHOTO, limit=0, sizes=(240, 480))
+        )
+    assert expected_all == 3
+
+    try:
+        app.dependency_overrides[get_session_factory] = lambda: session_factory
+        with TestClient(app) as client:
+            assert client.post(
+                "/api/v1/admin/login",
+                json={"token": "test-token"},
+            ).status_code == 204
+
+            response = client.get(
+                "/api/v1/admin/thumbnails/preheat/preview",
+                params={"sizes": ["240"]},
+            )
+            assert response.status_code == 200
+            assert response.json() == {"total": expected_all}
+
+            response = client.get(
+                "/api/v1/admin/thumbnails/preheat/preview",
+                params={"sizes": ["240", "480"], "kind": "photo"},
+            )
+            assert response.status_code == 200
+            assert response.json() == {"total": expected_photo}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_candidate_scope_follows_public_surface(tmp_path: Path) -> None:
+    """候选口径与公开展示面共用同一条件，不再各自漂移。"""
+
+    session_factory = create_database(tmp_path)
+    retryable_photo_id = UUID("00000000-0000-0000-0000-000000000071")
+    with session_factory.begin() as session:
+        memory = Memory(
+            id=retryable_photo_id,
+            title="retryable photo",
+            kind=MemoryKind.PHOTO,
+            status=MemoryStatus.PUBLISHED,
+            captured_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        )
+        session.add(memory)
+        session.add(
+            MemoryFile(
+                memory_id=memory.id,
+                source="baidupan",
+                remote_id="remote-retryable",
+                remote_path="/cloud/retryable.jpg",
+                parent_path="/cloud",
+                filename="retryable.jpg",
+                mime_type="image/jpeg",
+                remote_state=RemoteFileState.READY,
+                thumbnail_state=RemoteThumbnailState.RETRYABLE,
+                thumbnail_failure_kind=DerivativeFailureKind.REMOTE_UNAVAILABLE.value,
+                stream_state=RemoteStreamState.READY,
+                browser_compatibility=BrowserCompatibilityState.SUPPORTED,
+            )
+        )
+
+    unsupported_video_id = UUID("00000000-0000-0000-0000-000000000072")
+    with session_factory.begin() as session:
+        memory = Memory(
+            id=unsupported_video_id,
+            title="unsupported video",
+            kind=MemoryKind.VIDEO,
+            status=MemoryStatus.PUBLISHED,
+            captured_at=datetime(2026, 10, 2, tzinfo=timezone.utc),
+        )
+        session.add(memory)
+        session.add(
+            MemoryFile(
+                memory_id=memory.id,
+                source="baidupan",
+                remote_id="remote-unsupported",
+                remote_path="/cloud/video.mov",
+                parent_path="/cloud",
+                filename="video.mov",
+                mime_type="video/quicktime",
+                remote_state=RemoteFileState.READY,
+                thumbnail_state=RemoteThumbnailState.MISSING,
+                stream_state=RemoteStreamState.READY,
+                browser_compatibility=BrowserCompatibilityState.UNSUPPORTED,
+            )
+        )
+
+    with session_factory() as db:
+        pairs = _candidate_pairs(db, kind=None, limit=0, sizes=(240,))
+        preview_total = count_preheat_candidates(db, kind=None, sizes=(240,))
+
+    # 浏览器不兼容的视频不在公开面上，预热不应为其消耗远端下载。
+    assert [pair[0] for pair in pairs] == [retryable_photo_id]
+    assert preview_total == 1
+
+
+def test_auto_preheat_after_scan_starts_home_job(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_factory = create_database(tmp_path)
+    settings = Settings(media_root=str(tmp_path / "media"))
+    registry = ThumbnailPreheatRegistry()
+    executed: list[UUID] = []
+
+    def fake_run(job_id: UUID, **kwargs) -> None:
+        executed.append(job_id)
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat.run_thumbnail_preheat",
+        fake_run,
+    )
+
+    disabled = settings.model_copy(update={"preheat_auto_after_scan": False})
+    assert (
+        start_auto_preheat_after_scan(
+            session_factory=session_factory,
+            settings=disabled,
+            registry=registry,
+        )
+        is None
+    )
+    assert registry.get_latest() is None
+
+    job = start_auto_preheat_after_scan(
+        session_factory=session_factory,
+        settings=settings,
+        registry=registry,
+    )
+    assert job is not None
+    assert job.sizes == (240,)
+
+    # 单飞注册表：已有任务在跑时静默跳过，不再叠加新任务。
+    assert (
+        start_auto_preheat_after_scan(
+            session_factory=session_factory,
+            settings=settings,
+            registry=registry,
+        )
+        is None
+    )
+    assert registry.get(job.id) is registry.get_latest()
+
+    for _ in range(200):
+        if executed:
+            break
+        time.sleep(0.01)
+    assert executed == [job.id]
+
+
+def test_preheat_cancelled_during_enumeration(tmp_path: Path, monkeypatch) -> None:
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-000000000081")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="cancel during enum",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 11, 1, tzinfo=timezone.utc),
+    )
+    settings = Settings(media_root=str(tmp_path / "media"))
+    registry = ThumbnailPreheatRegistry()
+
+    with session_factory() as db:
+        memory_file_id = db.scalar(select(MemoryFile.id))
+
+    def enumerate_then_cancel(db, *, kind, limit, sizes=None, derivative_version=None):
+        # 模拟枚举耗时窗口内用户取消。
+        job.cancel_event.set()
+        return [(memory_id, memory_file_id)]
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat._candidate_pairs",
+        enumerate_then_cancel,
+    )
+
+    job, _ = registry.start(
+        sizes=(240,),
+        kind=None,
+        limit=0,
+        concurrency=1,
+        queue_limit=0,
+    )
+    run_thumbnail_preheat(
+        job.id,
+        session_factory=session_factory,
+        settings=settings,
+        registry=registry,
+    )
+
+    latest = registry.get(job.id)
+    assert latest is not None
+    assert latest.status == "cancelled"
+    assert latest.processed == 0

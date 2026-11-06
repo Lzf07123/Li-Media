@@ -92,7 +92,7 @@ export type MemorySummaryListResponse = {
 };
 
 export type PublicPreheatStatus = {
-  status: "running" | "not_preheated" | "ready" | "degraded";
+  status: "running" | "not_preheated" | "ready" | "degraded" | "unavailable";
   processed: number;
   total: number;
 };
@@ -407,6 +407,7 @@ export type ThumbnailPreheatJob = {
   generated: number;
   cached: number;
   failed: number;
+  skipped: number;
   message: string | null;
   created_at: string;
   started_at: string | null;
@@ -420,6 +421,10 @@ export type ThumbnailPreheatPayload = {
   sizes: ("240" | "480" | "768" | "1280")[];
   kind?: "photo" | "video";
   limit: number;
+};
+
+export type ThumbnailPreheatPreview = {
+  total: number;
 };
 
 const TASK_KEYS = {
@@ -828,6 +833,19 @@ export async function startThumbnailPreheat(
 
 export async function getLatestThumbnailPreheat(): Promise<ThumbnailPreheatJob | null> {
   return request<ThumbnailPreheatJob | null>("/admin/thumbnails/preheat/latest");
+}
+
+export async function previewThumbnailPreheat(
+  payload: ThumbnailPreheatPayload,
+): Promise<ThumbnailPreheatPreview> {
+  const params = new URLSearchParams();
+  payload.sizes.forEach((size) => params.append("sizes", size));
+  if (payload.kind) {
+    params.set("kind", payload.kind);
+  }
+  return request<ThumbnailPreheatPreview>(
+    `/admin/thumbnails/preheat/preview?${params.toString()}`,
+  );
 }
 
 export async function cancelThumbnailPreheat(

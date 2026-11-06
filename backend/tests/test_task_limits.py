@@ -206,11 +206,11 @@ def test_remote_scan_does_not_run_concurrently(monkeypatch, tmp_path: Path) -> N
         )
 
     with task_limiter.slot(TaskType.SCAN):
-        run_remote_scan_task(session_factory, task.id, Client)
+        run_remote_scan_task(session_factory, task.id, Client, auto_preheat=False)
 
     with session_factory() as db:
         assert db.get(RemoteScanTask, task.id).status == RemoteScanStatus.RUNNING
 
-    run_remote_scan_task(session_factory, task.id, Client)
+    run_remote_scan_task(session_factory, task.id, Client, auto_preheat=False)
     with session_factory() as db:
         assert db.get(RemoteScanTask, task.id).status == RemoteScanStatus.COMPLETED
