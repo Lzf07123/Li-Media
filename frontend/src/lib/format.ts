@@ -49,3 +49,15 @@ export function formatDateTime(value: string | null | undefined): string | null 
     minute: "2-digit",
   });
 }
+
+export function formatDate(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return new Date(value).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}

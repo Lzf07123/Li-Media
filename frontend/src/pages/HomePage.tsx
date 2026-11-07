@@ -622,7 +622,7 @@ export default function HomePage() {
 
       <p
         aria-live="polite"
-        className="mt-4 text-center text-sm text-muted"
+        className="tnum mt-3 text-center text-sm text-muted"
         data-testid="public-count"
       >
         {publicCountState === "loading" ? (
@@ -634,10 +634,12 @@ export default function HomePage() {
             <span className="font-medium text-foreground">
               {brand.copy.publicCountLabel} {counts.photo + counts.video}
             </span>
-            <span className="ml-2">
-              {brand.copy.publicCountDetail} {counts.photo}/
-              {counts.video}
-            </span>
+            <span aria-hidden="true" className="mx-2 text-border">·</span>
+            {brand.copy.photoKind}{" "}
+            <span className="font-medium text-foreground">{counts.photo}</span>
+            <span aria-hidden="true" className="mx-2 text-border">·</span>
+            {brand.copy.videoKind}{" "}
+            <span className="font-medium text-foreground">{counts.video}</span>
           </>
         )}
       </p>
@@ -687,74 +689,75 @@ export default function HomePage() {
         </p>
       ) : null}
 
-      <form
-        className="mx-auto mt-6 flex w-full max-w-md items-center gap-2"
-        onSubmit={(event) => event.preventDefault()}
-        role="search"
-      >
-        <label className="sr-only" htmlFor="library-search">
-          {brand.copy.searchLabel}
-        </label>
-        <input
-          className="input min-h-11 w-full"
-          id="library-search"
-          onChange={(event) => setSearchInput(event.target.value)}
-          placeholder={brand.copy.searchPlaceholder}
-          type="search"
-          value={searchInput}
-        />
-        {keyword ? (
+      <div className="library-toolbar filter-toolbar mx-auto mt-6 w-full max-w-2xl">
+        <form
+          className="library-search"
+          onSubmit={(event) => event.preventDefault()}
+          role="search"
+        >
+          <label className="sr-only" htmlFor="library-search">
+            {brand.copy.searchLabel}
+          </label>
+          <input
+            className="input min-h-11 w-full"
+            id="library-search"
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder={brand.copy.searchPlaceholder}
+            type="search"
+            value={searchInput}
+          />
+          {keyword ? (
+            <Button
+              aria-label={brand.copy.clearSearch}
+              className="icon-btn shrink-0"
+              onClick={clearSearch}
+              title={brand.copy.clearSearch}
+              variant="secondary"
+            >
+              <X aria-hidden="true" className="size-5" />
+            </Button>
+          ) : null}
+        </form>
+        <div className="filter-toolbar-row flex items-center gap-2">
+          <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
+            <button
+              aria-pressed={!activeKind}
+              data-active={!activeKind ? "true" : "false"}
+              onClick={() => changeKind(undefined)}
+              type="button"
+            >
+              {brand.copy.allKinds}
+            </button>
+            <button
+              aria-pressed={activeKind === "photo"}
+              data-active={activeKind === "photo" ? "true" : "false"}
+              onClick={() => changeKind("photo")}
+              type="button"
+            >
+              {brand.copy.photoKind}
+              <span className="segmented-count">{counts.photo}</span>
+            </button>
+            <button
+              aria-pressed={activeKind === "video"}
+              data-active={activeKind === "video" ? "true" : "false"}
+              onClick={() => changeKind("video")}
+              type="button"
+            >
+              {brand.copy.videoKind}
+              <span className="segmented-count">{counts.video}</span>
+            </button>
+          </div>
           <Button
-            aria-label={brand.copy.clearSearch}
-            className="icon-btn shrink-0"
-            onClick={clearSearch}
-            title={brand.copy.clearSearch}
+            aria-label={brand.copy.homeRefresh}
+            className="icon-btn"
+            disabled={isLoadingInitial}
+            onClick={refreshRandomOrder}
+            title={brand.copy.homeRefresh}
             variant="secondary"
           >
-            <X aria-hidden="true" className="size-5" />
+            <RefreshCw aria-hidden="true" className={`size-5 ${isLoadingInitial ? "animate-spin" : ""}`} />
           </Button>
-        ) : null}
-      </form>
-
-      <div className="filter-toolbar mx-auto mt-3 w-full max-w-6xl">
-        <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
-          <button
-            aria-pressed={!activeKind}
-            data-active={!activeKind ? "true" : "false"}
-            onClick={() => changeKind(undefined)}
-            type="button"
-          >
-            {brand.copy.allKinds}
-          </button>
-          <button
-            aria-pressed={activeKind === "photo"}
-            data-active={activeKind === "photo" ? "true" : "false"}
-            onClick={() => changeKind("photo")}
-            type="button"
-          >
-            {brand.copy.photoKind}
-            <span className="segmented-count">{counts.photo}</span>
-          </button>
-          <button
-            aria-pressed={activeKind === "video"}
-            data-active={activeKind === "video" ? "true" : "false"}
-            onClick={() => changeKind("video")}
-            type="button"
-          >
-            {brand.copy.videoKind}
-            <span className="segmented-count">{counts.video}</span>
-          </button>
         </div>
-        <Button
-          aria-label={brand.copy.homeRefresh}
-          className="icon-btn"
-          disabled={isLoadingInitial}
-          onClick={refreshRandomOrder}
-          title={brand.copy.homeRefresh}
-          variant="secondary"
-        >
-          <RefreshCw aria-hidden="true" className={`size-5 ${isLoadingInitial ? "animate-spin" : ""}`} />
-        </Button>
       </div>
 
       {keyword ? (

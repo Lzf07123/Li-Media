@@ -2,6 +2,7 @@ import { Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
 import { memo, useEffect, useReducer, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
+import { formatDate } from "@/lib/format";
 import {
   appendQueryParam,
   resolveThumbnailUrl,
@@ -205,6 +206,10 @@ function MemoryCard({
   // 卡片不展示标题文字，可访问名称是唯一的身份信息：有标题用标题，
   // 无标题回退通用“回忆预览”，避免整屏读出同一句。
   const accessibleName = memory.title || brand.copy.detailPreviewAlt;
+  // hover 信息层次行：地点 · 拍摄日期（缺省项自动省略）
+  const captionMeta = [memory.location, formatDate(memory.captured_at)]
+    .filter(Boolean)
+    .join(" · ");
 
   const retryThumbnail = () => {
     if (!thumbnailUrl) {
@@ -294,6 +299,13 @@ function MemoryCard({
         <span className="waterfall-badge">
           <Video aria-hidden="true" className="size-3.5" />
           {brand.copy.videoKind}
+        </span>
+      ) : null}
+      {captionMeta ? (
+        // 文字层装饰化：按钮的 aria-label 已含完整可读名，避免双重朗读
+        <span aria-hidden="true" className="card-caption">
+          <span className="card-caption-title">{memory.title}</span>
+          <span className="card-caption-meta">{captionMeta}</span>
         </span>
       ) : null}
       </button>

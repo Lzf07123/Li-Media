@@ -1522,6 +1522,11 @@
 }
 
 @layer utilities {
+  /* 计数/时间等数字场景：等宽数字防跳动 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* 路由切换：整页淡入上移 */
   @keyframes page-fade-up {
     from {
@@ -1996,6 +2001,31 @@
 
 html {
   scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--limedia-muted) 45%, transparent) transparent;
+}
+
+/* 文本选区：主色轻染，前景保持原色（明暗通用） */
+::selection {
+  background: color-mix(in oklab, var(--limedia-primary) 22%, transparent);
+}
+
+/* 细滚动条（webkit；Firefox 走 scrollbar-width/color） */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  background-color: color-mix(in oklab, var(--limedia-muted) 40%, transparent);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--limedia-muted) 65%, transparent);
 }
 
 :root {
@@ -2098,6 +2128,64 @@ html {
   align-items: center;
   justify-content: center;
     background: var(--limedia-surface-2);
+}
+
+/* ========== 卡片 hover 信息层（项目级质感组件） ==========
+   桌面 hover/focus 时底部渐显标题与地点·日期；触屏（hover:none）
+   不渲染视觉层，保持纯图 + 类型角标；scrim 底部最深保证白字 ≥4.5:1。 */
+.card-caption {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 30px 12px 10px;
+  background: linear-gradient(
+    to top,
+    rgba(15, 30, 26, 0.78),
+    rgba(15, 30, 26, 0.38) 55%,
+    rgba(15, 30, 26, 0)
+  );
+  color: #fff;
+  pointer-events: none;
+  text-align: left;
+}
+.card-caption-title {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-caption-meta {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  opacity: 0.78;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-caption {
+    display: flex;
+    opacity: 0;
+    transform: translateY(6px);
+    transition:
+      opacity var(--limedia-motion-fast) var(--limedia-ease-out),
+      transform var(--limedia-motion-fast) var(--limedia-ease-out);
+  }
+  .post-card:hover .card-caption,
+  .post-card:focus-within .card-caption {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-caption {
+    transition: none;
+  }
 }
 
 .card-shimmer::after {
@@ -2568,13 +2656,27 @@ html {
   color: var(--limedia-fg);
 }
 
-/* 首页筛选：内容居中，视觉高度紧凑但保留足够的点击区域 */
-.filter-toolbar {
+/* 首页工具条：搜索 + 类型筛选 + 换一批 合一的玻璃表面 */
+.library-toolbar {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
   justify-content: center;
+  padding: 8px;
+  border: 1px solid var(--limedia-glass-border-soft);
+  border-radius: 20px;
+  background: var(--limedia-glass-shine),
+    var(--limedia-glass-bg-strong);
+  box-shadow: var(--limedia-shadow-sm),
+    inset 0 1px 0 var(--limedia-glass-highlight);
+}
+.library-search {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 240px;
+  align-items: center;
+  gap: 8px;
 }
 
 .segmented {
@@ -2996,31 +3098,17 @@ html {
 }
 
 @media (max-width: 768px) {
-  .filter-toolbar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-    padding-bottom: 4px;
-    /* 两侧渐隐提示内容可横向滑动 */
-    -webkit-mask-image: linear-gradient(
-      90deg,
-      transparent 0,
-      #000 16px,
-      #000 calc(100% - 16px),
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      90deg,
-      transparent 0,
-      #000 16px,
-      #000 calc(100% - 16px),
-      transparent 100%
-    );
+  /* 合一工具条：移动端搜索行 + 筛选行两行排布，不做横向滚动
+    （搜索输入在横向滚动容器里会被裁切；三项筛选 375px 内可容纳） */
+  .library-toolbar {
+    flex-direction: column;
+    align-items: stretch;
   }
-
-  .filter-toolbar::-webkit-scrollbar {
-    display: none;
+  .library-search {
+    flex: 1 1 auto;
+  }
+  .library-toolbar .filter-toolbar-row {
+    justify-content: center;
   }
 
   .sort-cluster select {
