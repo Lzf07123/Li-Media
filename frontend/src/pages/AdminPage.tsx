@@ -1355,12 +1355,17 @@ export default function AdminPage() {
                 const file = memory.primary_file;
                 // 降噪口径:全部就绪的维度折叠为一枚灰阶「✓」徽章,
                 // 只有异常维度保留彩色徽章,扫一眼只看到需要处理的事。
+                // 流与浏览器兼容只属于视频:照片在这两个维度天然「不适用」,
+                // 计入健康判定或渲染警示徽章都会把所有照片变成噪声行。
                 const cloudReady =
                   file?.status === "matched" && file.remote_state === "ready";
-                const mediaHealthy =
-                  file?.thumbnail_state === "ready"
-                  && file.stream_state === "ready"
-                  && file.browser_compatibility === "supported";
+                const mediaHealthy = file
+                  ? file.thumbnail_state === "ready"
+                    && (memory.kind === "video"
+                      ? file.stream_state === "ready"
+                        && file.browser_compatibility === "supported"
+                      : true)
+                  : false;
                 const thumbnailFailureLabel = file?.thumbnail_failure_kind
                   ? brand.copy.adminThumbnailFailureReasons[
                       file.thumbnail_failure_kind as keyof typeof brand.copy.adminThumbnailFailureReasons
@@ -1421,20 +1426,24 @@ export default function AdminPage() {
                       ) : (
                         <div className="flex flex-col items-start gap-1">
                           <RemoteStateBadge kind="thumbnail" state={file.thumbnail_state} />
-                          <RemoteStateBadge kind="stream" state={file.stream_state} />
-                          {file.browser_compatibility === "supported" ? (
-                            <Badge tone="success">
-                              {brand.copy.adminCompatibilitySupported}
-                            </Badge>
-                          ) : file.browser_compatibility === "unsupported" ? (
-                            <Badge tone="danger">
-                              {brand.copy.adminCompatibilityUnsupported}
-                            </Badge>
-                          ) : (
-                            <Badge tone="warning">
-                              {brand.copy.adminCompatibilityUnknown}
-                            </Badge>
-                          )}
+                          {memory.kind === "video" ? (
+                            <>
+                              <RemoteStateBadge kind="stream" state={file.stream_state} />
+                              {file.browser_compatibility === "supported" ? (
+                                <Badge tone="success">
+                                  {brand.copy.adminCompatibilitySupported}
+                                </Badge>
+                              ) : file.browser_compatibility === "unsupported" ? (
+                                <Badge tone="danger">
+                                  {brand.copy.adminCompatibilityUnsupported}
+                                </Badge>
+                              ) : (
+                                <Badge tone="warning">
+                                  {brand.copy.adminCompatibilityUnknown}
+                                </Badge>
+                              )}
+                            </>
+                          ) : null}
                           {thumbnailFailureLabel ? (
                             <p className="table-cell-clip text-xs text-muted" title={thumbnailFailureLabel}>
                               {thumbnailFailureLabel}
