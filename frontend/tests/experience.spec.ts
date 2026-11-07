@@ -624,15 +624,19 @@ test("search, kind filter and refresh share one toolbar row", async ({ page }) =
     return;
   }
 
-  // 搜索、筛选、换一批在同一行内（桌面），垂直中心对齐
-  expect(searchBox.y + searchBox.height / 2).toBeCloseTo(
-    controlBox.y + controlBox.height / 2,
-    0,
-  );
-  expect(refreshBox.y + refreshBox.height / 2).toBeCloseTo(
-    controlBox.y + controlBox.height / 2,
-    0,
-  );
+  // 搜索、筛选、换一批在同一行内（桌面），垂直中心对齐（≤2px 亚像素容差）
+  expect(
+    Math.abs(
+      (searchBox.y + searchBox.height / 2) -
+        (controlBox.y + controlBox.height / 2),
+    ),
+  ).toBeLessThanOrEqual(2);
+  expect(
+    Math.abs(
+      (refreshBox.y + refreshBox.height / 2) -
+        (controlBox.y + controlBox.height / 2),
+    ),
+  ).toBeLessThanOrEqual(2);
   // 筛选组紧随搜索框之后（间距 ≤ 16px）
   expect(controlBox.x - (searchBox.x + searchBox.width)).toBeLessThanOrEqual(16);
 

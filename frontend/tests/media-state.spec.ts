@@ -167,7 +167,8 @@ test("viewer photo preview fails and retries through the shared state", async ({
   });
   await expect(viewerStatus).toHaveAttribute("data-scope", "preview");
   largePreviewBlocked = false;
-  await page.getByRole("button", { name: "重试" }).click();
+  // 内联重试（错误文案旁）与右上角图标按钮同名，显式选内联按钮
+  await page.locator(".video-playback-overlay").getByRole("button", { name: "重试" }).click();
   await expect(viewerStatus).toHaveAttribute("data-state", "ready");
 });
 
