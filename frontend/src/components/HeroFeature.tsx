@@ -22,10 +22,13 @@ type HeroFeatureProps = {
   onOpen: (memoryId: string) => void;
 };
 
-// 全出血主图放大展示：取 1280 派生图（放大不糊）；接下来条取 480。
-// 与查看器共用 detail 派生端点，生成结果进派生缓存；画布卡片仍固定 240。
+// 全出血主图渐进加载（LQIP）：先显示 240 预热档（服务端预热即所得，
+// ~80ms），1280 高清档就绪后原地升级——大档位在公开预热范围外，按需
+// 派生需数秒，绝不能挡住首屏。「接下来」条显示宽 ≤96px，240 足够清晰
+// 且全部预热即得；与查看器共用 detail 派生端点，生成结果进派生缓存。
 const FEATURED_THUMBNAIL_SIZE = "1280" as const;
-const STRIP_THUMBNAIL_SIZE = "480" as const;
+const LQIP_THUMBNAIL_SIZE = "240" as const;
+const STRIP_THUMBNAIL_SIZE = "240" as const;
 const UP_NEXT_COUNT = 4;
 
 type TileImageState = "queued" | "ready" | "failed";
@@ -89,7 +92,7 @@ function useQueuedThumbnail(
   return { loadState, loadedUrl, markReady, markFailed };
 }
 
-/** 全出血主图：1280 高清档 crossfade 显影 + 极慢 Ken Burns（CSS 门控） */
+/** 全出血主图：240 LQIP 即刻显影 → 1280 就绪后原地升级（极慢 Ken Burns） */
 function FeaturedMedia({
   memory,
   onOpen,
@@ -97,44 +100,56 @@ function FeaturedMedia({
   memory: MemorySummary;
   onOpen: (memoryId: string) => void;
 }) {
-  const thumbnailUrl = resolveThumbnailUrl(
+  const lqipUrl = resolveThumbnailUrl(memory.thumbnail_url, LQIP_THUMBNAIL_SIZE);
+  const hqUrl = resolveThumbnailUrl(
     memory.thumbnail_url,
     FEATURED_THUMBNAIL_SIZE,
   );
-  const { loadState, loadedUrl, markReady, markFailed } = useQueuedThumbnail(
-    thumbnailUrl,
-    "high",
-  );
+  // 同为高优先级：hook 顺序保证 240 先入队，1280 随后并行派生
+  const lqip = useQueuedThumbnail(lqipUrl, "high");
+  const hq = useQueuedThumbnail(hqUrl, "high");
   const accessibleName = memory.title || brand.copy.detailPreviewAlt;
+
+  const lqipReady = lqip.loadState === "ready";
+  const hqReady = hq.loadState === "ready";
+  const allFailed = lqip.loadState === "failed" && hq.loadState === "failed";
+  const overallState = allFailed
+    ? "failed"
+    : lqipReady || hqReady
+      ? "ready"
+      : "queued";
+  // 显示档位：240 先行（模糊放大），1280 就绪后原地换源变清晰
+  const displayUrl = hqReady ? hqUrl : lqipReady ? lqipUrl : undefined;
 
   return (
     <button
       aria-label={accessibleName}
       className="hero-stage-media"
+      data-preview-state={overallState}
       onClick={() => onOpen(memory.id)}
       type="button"
     >
-      {loadState !== "failed" ? (
+      {overallState !== "failed" && displayUrl ? (
         // key 随记忆切换重挂载：交叉淡入与 Ken Burns 从新主图重新起拍
         <img
           alt=""
-          className={`hero-feature-img ${loadState === "ready" ? "is-ready" : "is-loading"}`}
+          className={`hero-feature-img ${overallState === "ready" ? "is-ready" : "is-loading"} ${
+            lqipReady && !hqReady ? "is-lqip" : ""
+          }`}
           decoding="async"
           fetchPriority="high"
           key={memory.id}
           loading="eager"
-          onError={markFailed}
-          onLoad={markReady}
-          src={loadedUrl ?? undefined}
+          src={displayUrl}
         />
       ) : null}
-      {loadState === "queued" ? (
+      {overallState === "queued" ? (
         <span
           aria-hidden="true"
           className="hero-stage-placeholder media-placeholder media-crossfade is-visible card-shimmer"
         />
       ) : null}
-      {loadState === "failed" ? (
+      {overallState === "failed" ? (
         <span aria-hidden="true" className="hero-stage-fallback">
           {memory.kind === "video" ? (
             <Play className="size-10 opacity-40" />
@@ -147,7 +162,7 @@ function FeaturedMedia({
   );
 }
 
-/** 「接下来」条小瓦：480 快速档，点击切换主图（aria-pressed 标记激活） */
+/** 「接下来」条小瓦：240 预热档（预热即所得），点击切换主图 */
 function StripTile({
   memory,
   active,

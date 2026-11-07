@@ -58,7 +58,10 @@ function memory(index: number) {
 
 const items = Array.from({ length: TOTAL_ITEMS }, (_, i) => memory(i));
 
-async function mockLibrary(page: Page) {
+async function mockLibrary(
+  page: Page,
+  options: { onThumbnailSize?: (size: string) => void } = {},
+) {
   let listCallCount = 0;
   await page.route("**/api/v1/memories/recommend**", (route) =>
     route.fulfill({ json: [] }),
@@ -87,6 +90,7 @@ async function mockLibrary(page: Page) {
       });
     }
     if (url.pathname.endsWith("/thumbnail")) {
+      options.onThumbnailSize?.(url.searchParams.get("size") ?? "");
       return route.fulfill({
         body: Buffer.from(pngBase64, "base64"),
         contentType: "image/webp",
@@ -120,6 +124,25 @@ test("hero opens with a featured real memory and editorial metadata", async ({
   ).toBeAttached();
   // 衬线巨字标题在 hero 内
   await expect(hero.getByRole("heading", { name: "回忆库" })).toBeVisible();
+});
+
+test("hero loads the 240 LQIP first and upgrades to 1280", async ({ page }) => {
+  // 公开预热只覆盖 240px：大档位按需派生需数秒，hero 必须以 240 预热档
+  // 先行显影（模糊放大），1280 就绪后原地升级——首屏不等大图派生。
+  const sizes: string[] = [];
+  await mockLibrary(page, { onThumbnailSize: (size) => sizes.push(size) });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+
+  const featuredImg = page
+    .getByTestId("hero-feature")
+    .locator(".hero-feature-img");
+  await expect(featuredImg).toHaveAttribute("src", /size=1280/);
+  expect(sizes).toContain("240");
+  expect(sizes).toContain("1280");
+  // 「接下来」条固定 240 预热档（零按需派生）
+  await expect(page.getByTestId("hero-feature").locator(".hero-upnext-img").first())
+    .toHaveAttribute("src", /size=240/);
 });
 
 test("featured video surfaces kind and duration in the metadata row", async ({

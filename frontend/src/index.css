@@ -2034,6 +2034,11 @@ html {
 .hero-feature-img.is-ready {
   opacity: 1;
 }
+/* LQIP 档：240 预热图放大先行，轻模糊掩盖放大痕迹；1280 就绪后
+   原地移除（瞬时切换，无过渡动画——动效只动 transform/opacity） */
+.hero-feature-img.is-lqip {
+  filter: blur(12px) saturate(1.08);
+}
 /* Ken Burns：极慢 1→1.06 往返；只动 transform；双门控（指针 + reduced-motion） */
 @keyframes hero-ken-burns {
   from {

@@ -86,8 +86,8 @@ test.describe("1x screens", () => {
     await expect
       .poll(() => sizes.has("240"), { timeout: 5000 })
       .toBe(true);
-    // 卡片固定 240；480 属 hero 侧瓦与查看器海报；1280 仅 hero 主图一次
-    //（V1.5 首屏精选招待，与 DPR 无关）
+    // 卡片固定 240；接下来条也固定 240 预热档；1280 仅 hero 主图一次
+    //（V1.5 首屏精选招待，LQIP 升级档，与 DPR 无关）
     expect(sizes.has("480")).toBe(false);
     expect([...sizes].filter((size) => size === "1280")).toHaveLength(1);
   });
