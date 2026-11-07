@@ -914,6 +914,22 @@
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
   }
 
+  /* 复合数字(如 7 / 4 / 3)的逐段标注,与斜杠顺序一一对应 */
+  .admin-metric-legend {
+    @apply mt-1 text-xs text-muted;
+  }
+
+  /* 键盘跳转链接:默认隐藏,聚焦时浮出 */
+  .skip-link {
+    left: -9999px;
+    position: absolute;
+  }
+
+  .skip-link:focus {
+    @apply fixed left-4 top-4 z-[90] rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground shadow-md;
+    position: fixed;
+  }
+
   .admin-panel {
     @apply rounded-xl border border-border bg-surface p-4 shadow-sm sm:p-5;
   }

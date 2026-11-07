@@ -886,6 +886,14 @@ export default function AdminPage() {
         </Notice>
       ) : null}
 
+      <button
+        className="skip-link"
+        onClick={() => switchTab("content")}
+        type="button"
+      >
+        {brand.copy.adminSkipToContent}
+      </button>
+
       <div
         aria-label={brand.copy.adminTabLabel}
         className="admin-tabbar scroll-tabs mt-6"
@@ -945,6 +953,9 @@ export default function AdminPage() {
                 `${globalCounts.photo + globalCounts.video} / ${globalCounts.photo} / ${globalCounts.video}`,
               )}
             </dd>
+            <dd className="admin-metric-legend">
+              {`${brand.copy.adminFilterAll} / ${brand.copy.photoKind} / ${brand.copy.videoKind}`}
+            </dd>
           </dl>
           <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminDisplayHealthSummary}>
             <dt className="text-xs text-muted">{brand.copy.adminDisplayHealthSummary}</dt>
@@ -953,6 +964,9 @@ export default function AdminPage() {
                 `${displayCounts.displayable} / ${displayCounts.excluded}`,
               )}
             </dd>
+            <dd className="admin-metric-legend">
+              {`${brand.copy.adminDisplayable} / ${brand.copy.adminDisplayExcluded}`}
+            </dd>
           </dl>
           <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminCompatibilitySummary}>
             <dt className="text-xs text-muted">{brand.copy.adminCompatibilitySummary}</dt>
@@ -960,6 +974,9 @@ export default function AdminPage() {
               {countValue(
                 `${browserCounts.supported} / ${browserCounts.unsupported} / ${browserCounts.unknown}`,
               )}
+            </dd>
+            <dd className="admin-metric-legend">
+              {`${brand.copy.adminCompatibilitySupported} / ${brand.copy.adminCompatibilityUnsupported} / ${brand.copy.adminCompatibilityUnknown}`}
             </dd>
           </dl>
           <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.statusPublished}>

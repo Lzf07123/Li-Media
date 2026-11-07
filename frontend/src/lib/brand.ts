@@ -129,6 +129,7 @@ export const brand = {
     adminLogin: "进入管理",
     adminLoginFailed: "管理令牌不正确，或服务暂时不可用",
     adminLogout: "退出登录",
+    adminSkipToContent: "跳到内容列表",
     adminStatusChangedToast: "状态已更新",
     adminDeleteSuccessToast: "回忆已删除",
     adminRemoteRetryQueuedToast: "已请求重试远程索引",

@@ -233,7 +233,7 @@ export default function AdminStatusDashboard({
             id="backend-stack-status"
             title={brand.copy.adminBackendTitle}
           />
-          <dl className="mt-3 space-y-2">
+          <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
             <ServiceMetric
               label={brand.copy.adminBackendApi}
               service={{ status: "ok", detail: null, pool_status: null, dialect: null, used_memory_bytes: null, max_memory_bytes: null, connected_clients: null }}
@@ -267,7 +267,7 @@ export default function AdminStatusDashboard({
             id="remote-storage-status"
             title={brand.copy.adminRemoteStorageTitle}
           />
-          <dl className="mt-3 space-y-2">
+          <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
             <Metric
               label={brand.copy.adminRemoteStorageProvider}
               value={brand.copy.adminRemoteStorageBaidu}
