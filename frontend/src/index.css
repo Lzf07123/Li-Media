@@ -2117,7 +2117,10 @@ html {
 .hero-feature-img.is-lqip {
   filter: blur(12px) saturate(1.08);
 }
-/* Ken Burns：极慢 1→1.06 往返；只动 transform；双门控（指针 + reduced-motion） */
+/* Ken Burns：极慢 1→1.06 往返；只动 transform；只跑在最上层
+   （is-primary：无高清时是 LQIP 层，高清就绪后是高清层），
+   垫底层（is-covered / is-previous）保持静止，交叉淡出期间不叠加缩放；
+   双门控（指针 + reduced-motion） */
 @keyframes hero-ken-burns {
   from {
     transform: scale(1);
@@ -2127,9 +2130,13 @@ html {
   }
 }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .hero-feature-img.is-ready {
+  .hero-feature-img.is-primary.is-ready {
     animation: hero-ken-burns var(--limedia-ken-burns) var(--limedia-ease-out) infinite alternate;
   }
+}
+/* 交叉淡出残影层：垫底旧图，纯视觉，不拦截主图按钮的点击 */
+.hero-feature-img.is-previous {
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-feature-img {

@@ -1,5 +1,5 @@
 import { Image as ImageIcon, Pause, Play, Video } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import BlurText from "@/components/ui/BlurText";
 import { brand } from "@/lib/brand";
@@ -95,13 +95,16 @@ function useQueuedThumbnail(
   return { loadState, loadedUrl, markReady, markFailed };
 }
 
-/** 全出血主图：240 LQIP 即刻显影 → 1280 就绪后原地升级（极慢 Ken Burns） */
+/** 全出血主图：LQIP 模糊先行淡入，1280 就绪后原地淡入覆盖（极慢 Ken Burns） */
 function FeaturedMedia({
   memory,
   onOpen,
+  crossfading = false,
 }: {
   memory: MemorySummary;
   onOpen: (memoryId: string) => void;
+  /** 上一主图残影垫底期间不显示占位闪光，避免盖住残影层 */
+  crossfading?: boolean;
 }) {
   const lqipUrl = resolveThumbnailUrl(memory.thumbnail_url, LQIP_THUMBNAIL_SIZE);
   const hqUrl = resolveThumbnailUrl(
@@ -121,8 +124,6 @@ function FeaturedMedia({
     : lqipReady || hqReady
       ? "ready"
       : "queued";
-  // 显示档位：240 先行（模糊放大），1280 就绪后原地换源变清晰
-  const displayUrl = hqReady ? hqUrl : lqipReady ? lqipUrl : undefined;
 
   return (
     <button
@@ -132,21 +133,36 @@ function FeaturedMedia({
       onClick={() => onOpen(memory.id)}
       type="button"
     >
-      {overallState !== "failed" && displayUrl ? (
-        // key 随记忆切换重挂载：交叉淡入与 Ken Burns 从新主图重新起拍
+      {/* LQIP 层：模糊先行淡入；高清就绪后垫底（is-covered，不参与缩放）。
+          两层各自 key 随记忆重挂载：淡入与 Ken Burns 从新主图重新起拍 */}
+      {lqipUrl ? (
         <img
           alt=""
-          className={`hero-feature-img ${overallState === "ready" ? "is-ready" : "is-loading"} ${
-            lqipReady && !hqReady ? "is-lqip" : ""
+          aria-hidden="true"
+          className={`hero-feature-img is-lqip ${hqReady ? "is-covered" : "is-primary"} ${
+            lqipReady ? "is-ready" : "is-loading"
           }`}
           decoding="async"
           fetchPriority="high"
-          key={memory.id}
+          key={`${memory.id}-lqip`}
           loading="eager"
-          src={displayUrl}
+          src={lqipUrl}
         />
       ) : null}
-      {overallState === "queued" ? (
+      {/* 高清层：就绪后 700ms 电影感淡入覆盖模糊层，消除瞬时换源的「变清晰跳变」 */}
+      {hqUrl ? (
+        <img
+          alt=""
+          aria-hidden="true"
+          className={`hero-feature-img ${hqReady ? "is-ready is-primary" : "is-loading"}`}
+          decoding="async"
+          fetchPriority="high"
+          key={`${memory.id}-hq`}
+          loading="eager"
+          src={hqUrl}
+        />
+      ) : null}
+      {overallState === "queued" && !crossfading ? (
         <span
           aria-hidden="true"
           className="hero-stage-placeholder media-placeholder media-crossfade is-visible card-shimmer"
@@ -306,6 +322,23 @@ export default function HeroFeature({
     return () => window.clearTimeout(timer);
   }, [advanceActive, featuredIndex, memories.length]);
 
+  // 精选切换交叉淡出：旧主图的高清档作为残影层垫底，新图 700ms 淡入覆盖，
+  // 消除「先抽空舞台再从背景淡入」的生硬切换；残影 900ms 后移除（>淡入时长）。
+  // 钩子必须在提前 return 之前声明；旧图 src 在渲染期捕获（避免多提交一帧空档）。
+  const [previousFeatured, setPreviousFeatured] = useState<{
+    key: string;
+    src: string;
+  } | null>(null);
+  const lastFeaturedRef = useRef<{ id: string; src: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!previousFeatured) {
+      return;
+    }
+    const timer = window.setTimeout(() => setPreviousFeatured(null), 900);
+    return () => window.clearTimeout(timer);
+  }, [previousFeatured]);
+
   if (loading) {
     return <HeroFeatureSkeleton />;
   }
@@ -317,6 +350,17 @@ export default function HeroFeature({
 
   const featured = memories[Math.min(featuredIndex, memories.length - 1)];
   const stripItems = memories.slice(1, 1 + UP_NEXT_COUNT);
+  if (featured.id !== lastFeaturedRef.current?.id) {
+    const outgoing = lastFeaturedRef.current;
+    if (outgoing?.src) {
+      setPreviousFeatured({ key: outgoing.id, src: outgoing.src });
+    }
+    lastFeaturedRef.current = {
+      id: featured.id,
+      src: resolveThumbnailUrl(featured.thumbnail_url, FEATURED_THUMBNAIL_SIZE),
+    };
+  }
+
   const featuredMeta = [
     featured.location,
     formatDate(featured.captured_at),
@@ -340,7 +384,21 @@ export default function HeroFeature({
       >
         {/* key 随精选切换重挂载：LQIP→高清交叉淡入与 Ken Burns 从新主图
             重新起拍；避免旧 hook 状态残留导致新 src 以 ready 态直接闪现 */}
-        <FeaturedMedia key={featured.id} memory={featured} onOpen={onOpen} />
+        {previousFeatured ? (
+          <img
+            alt=""
+            aria-hidden="true"
+            className="hero-feature-img is-previous is-ready"
+            key={previousFeatured.key}
+            src={previousFeatured.src}
+          />
+        ) : null}
+        <FeaturedMedia
+          crossfading={previousFeatured !== null}
+          key={featured.id}
+          memory={featured}
+          onOpen={onOpen}
+        />
         <span aria-hidden="true" className="hero-stage-scrim" />
 
         <div className="hero-overlay">
