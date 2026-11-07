@@ -19,6 +19,36 @@ export type CanvasComposition = {
 const STORAGE_KEY = "limedia-canvas-composition";
 const MAX_ITEMS = 36;
 
+/** 未知宽高时的瀑布屏比例兜底：接近真实照片库分布（4:5 竖幅） */
+export const FALLBACK_MASONRY_RATIO = 4 / 5;
+
+/**
+ * 瀑布屏最短列优先放置：按宽高比估算每列累计高度，每条内容放进当前
+ * 最矮的列。轮转均分（index % 列数）只保证条数相等，横竖图聚集时会
+ * 让部分列提前结束、出现大片空白；最短列让列底基本齐平。
+ * 放置顺序稳定：同高并列取最左列；追加数据延续既有累计高度，
+ * 列数变化时整体重排。骨架屏与画布共用本函数保证占位同构。
+ */
+export function distributeMasonryColumns<T>(
+  items: T[],
+  columnCount: number,
+  getRatio: (item: T, index: number) => number,
+): T[][] {
+  const columns: T[][] = Array.from({ length: columnCount }, () => []);
+  const heights = new Array<number>(columnCount).fill(0);
+  items.forEach((item, index) => {
+    let target = 0;
+    for (let column = 1; column < columnCount; column += 1) {
+      if (heights[column] < heights[target]) {
+        target = column;
+      }
+    }
+    columns[target].push(item);
+    heights[target] += getRatio(item, index);
+  });
+  return columns;
+}
+
 function isCompositionSize(value: unknown): value is CompositionSize {
   if (typeof value !== "object" || value === null) {
     return false;

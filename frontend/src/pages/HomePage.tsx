@@ -23,6 +23,8 @@ import {
   type PublicPreheatStatus,
 } from "@/lib/api";
 import {
+  distributeMasonryColumns,
+  FALLBACK_MASONRY_RATIO,
   writeCanvasComposition,
   type CompositionSize,
 } from "@/lib/canvas-composition";
@@ -485,13 +487,17 @@ export default function HomePage() {
     document.body.classList.toggle("has-hero", heroMemories.length > 0);
     return () => document.body.classList.remove("has-hero");
   }, [heroMemories.length]);
-  const canvasColumns = useMemo(() => {
-    const columns = Array.from({ length: columnCount }, () => [] as MemorySummary[]);
-    canvasMemories.forEach((memory, index) => {
-      columns[index % columnCount].push(memory);
-    });
-    return columns;
-  }, [canvasMemories, columnCount]);
+  // 瀑布屏分配：最短列优先（按已知宽高比估算列高），列底基本齐平，
+  // 消除轮转均分因横竖图聚集造成的大片空白；未知尺寸用 4/5 兜底。
+  const canvasColumns = useMemo(
+    () =>
+      distributeMasonryColumns(canvasMemories, columnCount, (memory) =>
+        memory.width && memory.height
+          ? memory.height / memory.width
+          : FALLBACK_MASONRY_RATIO,
+      ),
+    [canvasMemories, columnCount],
+  );
   const firstRowIds = useMemo(
     () =>
       new Set(
