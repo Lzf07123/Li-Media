@@ -2147,6 +2147,8 @@ html {
     rgba(15, 30, 26, 0.38) 55%,
     rgba(15, 30, 26, 0)
   );
+  -webkit-backdrop-filter: blur(2px) saturate(1.2);
+  backdrop-filter: blur(2px) saturate(1.2);
   color: #fff;
   pointer-events: none;
   text-align: left;
@@ -2672,8 +2674,18 @@ html {
   border-radius: 20px;
   background: var(--limedia-glass-shine),
     var(--limedia-glass-bg-strong);
-  box-shadow: var(--limedia-shadow-sm),
+  box-shadow: var(--limedia-shadow-md),
     inset 0 1px 0 var(--limedia-glass-highlight);
+  transition:
+    transform var(--limedia-motion-base) var(--limedia-ease-out),
+    box-shadow var(--limedia-motion-base) var(--limedia-ease-out);
+}
+@media (hover: hover) {
+  .library-toolbar:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--limedia-shadow-lg),
+      inset 0 1px 0 var(--limedia-glass-highlight);
+  }
 }
 .library-search {
   display: flex;

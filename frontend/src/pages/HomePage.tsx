@@ -621,33 +621,48 @@ export default function HomePage() {
     <section aria-labelledby="library-title" className="page-enter">
       <BlurText
         as="h1"
-        className="page-title text-3xl font-semibold"
+        className="page-title text-3xl sm:text-5xl font-semibold tracking-wide"
         id="library-title"
         text={brand.copy.libraryTitle}
       />
-      <div aria-hidden="true" className="flow-rule mx-auto mt-3 w-16" />
-      <p className="mt-2 text-center text-sm text-muted">{brand.copy.libraryDescription}</p>
+      <div aria-hidden="true" className="flow-rule mx-auto mt-4 w-16" />
+      <p className="mt-3 text-center text-base text-muted">{brand.copy.libraryDescription}</p>
 
       <p
         aria-live="polite"
-        className="tnum mt-3 text-center text-sm text-muted"
+        className="tnum page-enter mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-center"
         data-testid="public-count"
+        style={{ animationDelay: "80ms" }}
       >
         {publicCountState === "loading" ? (
-          brand.copy.publicCountLoading
+          <span className="text-sm text-muted">{brand.copy.publicCountLoading}</span>
         ) : publicCountState === "error" ? (
-          brand.copy.publicCountFailed
+          <span className="text-sm text-muted">{brand.copy.publicCountFailed}</span>
         ) : (
           <>
-            <span className="font-medium text-foreground">
-              {brand.copy.publicCountLabel} {counts.photo + counts.video}
+            <span className="flex items-baseline gap-2">
+              <span className="text-sm text-muted">{brand.copy.publicCountLabel}</span>
+              <span className="text-2xl font-semibold text-foreground">
+                {" "}
+                {counts.photo + counts.video}
+              </span>
             </span>
-            <span aria-hidden="true" className="mx-2 text-border">·</span>
-            {brand.copy.photoKind}{" "}
-            <span className="font-medium text-foreground">{counts.photo}</span>
-            <span aria-hidden="true" className="mx-2 text-border">·</span>
-            {brand.copy.videoKind}{" "}
-            <span className="font-medium text-foreground">{counts.video}</span>
+            <span aria-hidden="true" className="h-8 w-px bg-border" />
+            <span className="flex items-baseline gap-2">
+              <span className="text-sm text-muted">{brand.copy.photoKind}</span>
+              <span className="text-2xl font-semibold text-foreground">
+                {" "}
+                {counts.photo}
+              </span>
+            </span>
+            <span aria-hidden="true" className="h-8 w-px bg-border" />
+            <span className="flex items-baseline gap-2">
+              <span className="text-sm text-muted">{brand.copy.videoKind}</span>
+              <span className="text-2xl font-semibold text-foreground">
+                {" "}
+                {counts.video}
+              </span>
+            </span>
           </>
         )}
       </p>
@@ -697,7 +712,10 @@ export default function HomePage() {
         </p>
       ) : null}
 
-      <div className="library-toolbar filter-toolbar mx-auto mt-6 w-full max-w-2xl">
+      <div
+        className="library-toolbar filter-toolbar page-enter mx-auto mt-8 w-full max-w-2xl"
+        style={{ animationDelay: "160ms" }}
+      >
         <form
           className="library-search"
           onSubmit={(event) => event.preventDefault()}
