@@ -677,6 +677,6 @@ test("admin cleanup confirms before clearing local index", async ({ page }) => {
   await expect(page.getByText("本地清理完成，网盘资源未变化。")).toBeVisible();
   // 清空后的空表格在内容管理分区
   await page.getByRole("tab", { name: "内容管理" }).click();
-  await expect(page.locator(".table-empty-row td")).toHaveAttribute("colSpan", "11");
+  await expect(page.locator(".table-empty-row td")).toHaveAttribute("colSpan", "8");
   await expect(page.getByText("网盘中还没有照片或视频；请先完成接入步骤，再点击扫描。")).toBeVisible();
 });

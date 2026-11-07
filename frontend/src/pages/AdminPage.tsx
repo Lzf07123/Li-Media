@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw } from "lucide-react";
+import { Check, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { LogOut } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import AdminLoginCard from "@/components/AdminLoginCard";
@@ -56,6 +57,7 @@ import Modal from "@/components/ui/Modal";
 import Notice from "@/components/ui/Notice";
 import { ToastViewport, TOAST_DURATION_MS, type Toast } from "@/components/ui/Toast";
 import { Input, TextArea } from "@/components/ui/Input";
+import IconButton from "@/components/ui/IconButton";
 import Pagination from "@/components/ui/Pagination";
 import ProgressBar from "@/components/ui/ProgressBar";
 import StatusDot from "@/components/ui/StatusDot";
@@ -1267,7 +1269,7 @@ export default function AdminPage() {
           <table>
             <tbody>
               <tr className="table-empty-row">
-                <td colSpan={11}>{brand.copy.adminEmpty}</td>
+                <td colSpan={8}>{brand.copy.adminEmpty}</td>
               </tr>
             </tbody>
           </table>
@@ -1281,6 +1283,7 @@ export default function AdminPage() {
                   <input
                     aria-label={brand.copy.adminSelectAll}
                     checked={memories.length > 0 && selectedIds.length === memories.length}
+                    className="admin-check"
                     onChange={toggleAllSelected}
                     type="checkbox"
                   />
@@ -1288,22 +1291,35 @@ export default function AdminPage() {
                 <th scope="col">{brand.copy.adminFileHeader}</th>
                 <th scope="col">{brand.copy.adminKindHeader}</th>
                 <th scope="col">{brand.copy.adminStatusHeader}</th>
-                <th scope="col">{brand.copy.adminSyncStatusHeader}</th>
-                <th scope="col">{brand.copy.adminRemoteStateHeader}</th>
-                <th scope="col">{brand.copy.adminPreviewStateHeader}</th>
-                <th scope="col">{brand.copy.adminStreamStateHeader}</th>
-                <th scope="col">{brand.copy.adminCompatibilityHeader}</th>
+                <th scope="col">{brand.copy.adminCloudHeader}</th>
+                <th scope="col">{brand.copy.adminMediaHealthHeader}</th>
                 <th scope="col">{brand.copy.adminLastSyncedHeader}</th>
                 <th scope="col">{brand.copy.adminActionsHeader}</th>
               </tr>
             </thead>
             <tbody>
-              {memories.map((memory) => (
+              {memories.map((memory) => {
+                const file = memory.primary_file;
+                // 降噪口径:全部就绪的维度折叠为一枚灰阶「✓」徽章,
+                // 只有异常维度保留彩色徽章,扫一眼只看到需要处理的事。
+                const cloudReady =
+                  file?.status === "matched" && file.remote_state === "ready";
+                const mediaHealthy =
+                  file?.thumbnail_state === "ready"
+                  && file.stream_state === "ready"
+                  && file.browser_compatibility === "supported";
+                const thumbnailFailureLabel = file?.thumbnail_failure_kind
+                  ? brand.copy.adminThumbnailFailureReasons[
+                      file.thumbnail_failure_kind as keyof typeof brand.copy.adminThumbnailFailureReasons
+                    ] ?? file.thumbnail_failure_kind
+                  : null;
+                return (
                 <tr key={memory.id}>
                   <td>
                     <input
                       aria-label={`${brand.copy.adminSelectMemory} ${memory.title}`}
                       checked={selectedIds.includes(memory.id)}
+                      className="admin-check"
                       onChange={() => toggleSelected(memory.id)}
                       type="checkbox"
                     />
@@ -1326,114 +1342,121 @@ export default function AdminPage() {
                     <StatusBadge status={memory.status} />
                   </td>
                   <td>
-                    {memory.primary_file ? (
-                      <FileStatusBadge status={memory.primary_file.status} />
+                    {file ? (
+                      cloudReady ? (
+                        <Badge tone="muted">
+                          <Check aria-hidden="true" className="size-3" />
+                          {brand.copy.adminCloudReadyBadge}
+                        </Badge>
+                      ) : (
+                        <div className="flex flex-col items-start gap-1">
+                          <FileStatusBadge status={file.status} />
+                          <RemoteStateBadge kind="remote" state={file.remote_state} />
+                        </div>
+                      )
                     ) : (
                       brand.copy.fileMissing
                     )}
                   </td>
                   <td>
-                    {memory.primary_file ? (
-                      <RemoteStateBadge
-                        kind="remote"
-                        state={memory.primary_file.remote_state}
-                      />
-                    ) : null}
-                  </td>
-                  <td>
-                    {memory.primary_file ? (
-                      <RemoteStateBadge
-                        kind="thumbnail"
-                        state={memory.primary_file.thumbnail_state}
-                      />
-                    ) : null}
-                    {memory.primary_file?.thumbnail_failure_kind ? (
-                      <p
-                        className="mt-1 max-w-32 truncate text-xs text-muted"
-                        title={
-                          brand.copy.adminThumbnailFailureReasons[
-                            memory.primary_file.thumbnail_failure_kind as keyof typeof brand.copy.adminThumbnailFailureReasons
-                          ] ?? memory.primary_file.thumbnail_failure_kind
-                        }
-                      >
-                        {
-                          brand.copy.adminThumbnailFailureReasons[
-                            memory.primary_file.thumbnail_failure_kind as keyof typeof brand.copy.adminThumbnailFailureReasons
-                          ]
-                        }
-                      </p>
-                    ) : null}
-                  </td>
-                  <td>
-                    {memory.primary_file ? (
-                      <RemoteStateBadge kind="stream" state={memory.primary_file.stream_state} />
-                    ) : null}
-                  </td>
-                  <td>
-                    {memory.primary_file?.browser_compatibility === "supported" ? (
-                      <Badge tone="success">
-                        {brand.copy.adminCompatibilitySupported}
-                      </Badge>
-                    ) : memory.primary_file?.browser_compatibility === "unsupported" ? (
-                      <Badge tone="danger">
-                        {brand.copy.adminCompatibilityUnsupported}
-                      </Badge>
-                    ) : (
-                      <Badge tone="warning">
-                        {brand.copy.adminCompatibilityUnknown}
-                      </Badge>
-                    )}
-                    {memory.primary_file?.browser_compatibility_error ? (
-                      <p
-                        className="mt-1 max-w-32 truncate text-xs text-muted"
-                        title={memory.primary_file.browser_compatibility_error}
-                      >
-                        {memory.primary_file.browser_compatibility_error}
-                      </p>
+                    {file ? (
+                      mediaHealthy ? (
+                        <Badge tone="muted">
+                          <Check aria-hidden="true" className="size-3" />
+                          {brand.copy.adminMediaHealthyBadge}
+                        </Badge>
+                      ) : (
+                        <div className="flex flex-col items-start gap-1">
+                          <RemoteStateBadge kind="thumbnail" state={file.thumbnail_state} />
+                          <RemoteStateBadge kind="stream" state={file.stream_state} />
+                          {file.browser_compatibility === "supported" ? (
+                            <Badge tone="success">
+                              {brand.copy.adminCompatibilitySupported}
+                            </Badge>
+                          ) : file.browser_compatibility === "unsupported" ? (
+                            <Badge tone="danger">
+                              {brand.copy.adminCompatibilityUnsupported}
+                            </Badge>
+                          ) : (
+                            <Badge tone="warning">
+                              {brand.copy.adminCompatibilityUnknown}
+                            </Badge>
+                          )}
+                          {thumbnailFailureLabel ? (
+                            <p className="table-cell-clip text-xs text-muted" title={thumbnailFailureLabel}>
+                              {thumbnailFailureLabel}
+                            </p>
+                          ) : null}
+                          {file.browser_compatibility_error ? (
+                            <p
+                              className="table-cell-clip text-xs text-muted"
+                              title={file.browser_compatibility_error}
+                            >
+                              {file.browser_compatibility_error}
+                            </p>
+                          ) : null}
+                        </div>
+                      )
                     ) : null}
                   </td>
                   <td>
                     <p className="text-sm">
-                      {memory.primary_file?.last_synced_at
-                        ? formatDateTime(memory.primary_file.last_synced_at)
+                      {file?.last_synced_at
+                        ? formatDateTime(file.last_synced_at)
                         : brand.copy.adminNeverSynced}
                     </p>
-                    {memory.primary_file?.sync_error ? (
-                      <p
-                        className="mt-1 max-w-64 truncate text-xs text-muted"
-                        title={memory.primary_file.sync_error}
-                      >
-                        {memory.primary_file.sync_error}
+                    {file?.sync_error ? (
+                      <p className="table-cell-clip text-xs text-muted" title={file.sync_error}>
+                        {file.sync_error}
                       </p>
                     ) : null}
                   </td>
                   <td>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {memory.status !== "published" ? (
-                        <Button disabled={isStatusUpdating} onClick={() => void changeStatus(memory, "published")}>
-                          {brand.copy.adminPublish}
-                        </Button>
+                        <IconButton
+                          aria-label={brand.copy.adminPublish}
+                          disabled={isStatusUpdating}
+                          onClick={() => void changeStatus(memory, "published")}
+                          title={brand.copy.adminPublish}
+                        >
+                          <Eye aria-hidden="true" />
+                        </IconButton>
                       ) : (
-                        <Button disabled={isStatusUpdating} onClick={() => void changeStatus(memory, "hidden")} variant="secondary">
-                          {brand.copy.adminHide}
-                        </Button>
+                        <IconButton
+                          aria-label={brand.copy.adminHide}
+                          disabled={isStatusUpdating}
+                          onClick={() => void changeStatus(memory, "hidden")}
+                          title={brand.copy.adminHide}
+                        >
+                          <EyeOff aria-hidden="true" />
+                        </IconButton>
                       )}
                       {memory.primary_file?.source === "baidupan" ? (
-                        <Button
+                        <IconButton
+                          aria-label={brand.copy.adminRetryRemote}
                           disabled={isRetryingRemote === memory.id}
                           onClick={() => void retryRemote(memory)}
-                          variant="secondary"
+                          title={brand.copy.adminRetryRemote}
                         >
-                          {brand.copy.adminRetryRemote}
-                        </Button>
+                          <RefreshCw
+                            aria-hidden="true"
+                            className={isRetryingRemote === memory.id ? "animate-spin" : ""}
+                          />
+                        </IconButton>
                       ) : null}
-                      <Button onClick={() => setPendingDelete(memory)} variant="danger">
-                        {brand.copy.adminDelete}
-                      </Button>
+                      <IconButton
+                        aria-label={brand.copy.adminDelete}
+                        onClick={() => setPendingDelete(memory)}
+                        title={brand.copy.adminDelete}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </IconButton>
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

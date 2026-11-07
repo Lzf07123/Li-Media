@@ -1069,8 +1069,14 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* 表格选择框:定制尺寸与主色 accent,摆脱原生默认观感 */
+  .admin-check {
+    @apply size-4 cursor-pointer align-middle;
+    accent-color: var(--limedia-primary);
+  }
+
   .admin-table-shell table {
-    min-width: 1180px;
+    min-width: 980px;
   }
 
   .admin-table-shell thead th {
