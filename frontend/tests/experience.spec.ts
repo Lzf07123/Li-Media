@@ -1134,7 +1134,8 @@ test("photo viewer selects card and viewer sizes by viewport", async ({ page }) 
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
   await expect.poll(() => thumbnailSizes).toContain("240");
-  expect(thumbnailSizes).not.toContain("1280");
+  // hero 主图固定占用一次 1280（首屏精选档），画布卡片仍固定 240
+  expect(thumbnailSizes.filter((size) => size === "1280")).toHaveLength(1);
 
   await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
@@ -1155,10 +1156,10 @@ test("mobile viewer uses 480px poster instead of desktop large image", async ({ 
   await page.goto("/");
   await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
-  // 小图先行 240 + 移动大图 480，桌面 1280 不出现
+  // 小图先行 240 + 移动大图 480；1280 仅 hero 主图占用一次
   await expect.poll(() => thumbnailSizes).toContain("240");
   await expect.poll(() => thumbnailSizes).toContain("480");
-  expect(thumbnailSizes).not.toContain("1280");
+  expect(thumbnailSizes.filter((size) => size === "1280")).toHaveLength(1);
 });
 
 test("video does not request playback until play and can use server fallback", async ({ page }) => {

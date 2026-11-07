@@ -281,8 +281,11 @@ test("home shows memory and toggles between light and dark", async ({ page }) =>
   await expect(page.locator("img[alt=\"湖边清晨\"]")).toBeVisible({
     timeout: 10_000,
   });
-  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  // V1.5 暗夜档案馆：无存储偏好时默认深色
+  await expect(page.locator("html")).toHaveClass(/dark/);
 
+  await page.getByRole("button", { name: "切换到浅色主题" }).click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
   await page.getByRole("button", { name: "切换到深色主题" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(
@@ -319,6 +322,10 @@ test("old detail address redirects to viewer", async ({ page }) => {
 });
 
 test("admin table is visible in dark mode", async ({ page }) => {
+  // 种浅色偏好，保留「切到深色」的测试路径（V1.5 默认已是深色）
+  await page.addInitScript(() => {
+    localStorage.setItem("limedia-theme", "light");
+  });
   let statusRequests = 0;
   let preheatRequests = 0;
   let preheatPayload: { kind?: string; limit: number } | null = null;

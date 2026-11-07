@@ -96,22 +96,23 @@ test("immersive header stays transparent on top and fogs after scrolling", async
   const header = page.locator(".site-header");
   const heightBefore = (await header.boundingBox())?.height ?? 0;
 
-  // 顶部：背景与边框全透明、无雾化、流光线隐藏
-  await expect(header).toHaveCSS("background-color", "rgba(246, 251, 249, 0)");
-  await expect(header).toHaveCSS("border-bottom-color", "rgba(216, 231, 226, 0)");
+  // 顶部：背景与边框全透明、无雾化、流光线隐藏（V1.5 默认深色主题；
+  // 首页 hero 在视口内时页眉压图，边框走 transparent 关键字）
+  await expect(header).toHaveCSS("background-color", "rgba(13, 17, 16, 0)");
+  await expect(header).toHaveCSS("border-bottom-color", "rgba(0, 0, 0, 0)");
   await expect(header).toHaveCSS("backdrop-filter", "none");
   await expect(header).not.toHaveClass(/is-scrolled/);
   await expect(header.locator(".flow-rule")).toHaveCSS("opacity", "0");
 
   await page.evaluate(() => window.scrollTo(0, 200));
   await expect(header).toHaveClass(/is-scrolled/);
-  // 浏览器对 alpha 计算值保留两位小数：eb/255 ≈ 0.92
-  await expect(header).toHaveCSS("background-color", "rgba(246, 251, 249, 0.92)");
+  // 浏览器对 alpha 计算值保留两位小数：f2/255 ≈ 0.95
+  await expect(header).toHaveCSS("background-color", "rgba(13, 17, 16, 0.95)");
   expect(await header.evaluate((el) => getComputedStyle(el).backdropFilter)).toContain(
     "blur(18px)",
   );
   expect(await header.evaluate((el) => getComputedStyle(el).backdropFilter)).toContain(
-    "saturate(1.45)",
+    "saturate(1.35)",
   );
   expect(await header.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
   await expect(header.locator(".flow-rule")).toHaveCSS("opacity", "0.2");
