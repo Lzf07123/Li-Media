@@ -44,12 +44,15 @@ class Settings(BaseSettings):
     video_frame_offset_seconds: float = 0.0
     remote_thumbnail_source_max_bytes: int = 16 * 1024 * 1024
     remote_thumbnail_video_source_max_bytes: int = 64 * 1024 * 1024
+    # 单次源文件下载的整体总时限：只看 connect/read 不够，慢流会长期
+    # 占住预热 worker 与 tmp 配额；64MB 视频在慢链路下约需数分钟。
+    source_download_timeout_seconds: float = Field(default=600, ge=30, le=3600)
     remote_thumbnail_disk_quota_bytes: int = Field(
         default=4 * 1024 * 1024 * 1024,
         ge=0,
         le=64 * 1024 * 1024 * 1024,
     )
-    remote_thumbnail_max_temp_files: int = Field(default=2, ge=0, le=64)
+    remote_thumbnail_max_temp_files: int = Field(default=8, ge=0, le=64)
     browser_probe_max_bytes: int = 2 * 1024 * 1024
     browser_probe_timeout_seconds: float = 12.0
     scan_concurrency_limit: int = Field(default=1, ge=1, le=4)

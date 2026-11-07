@@ -341,6 +341,61 @@ def test_remote_preheat_failure_is_classified(tmp_path: Path) -> None:
         )
 
 
+def test_download_remote_source_enforces_total_deadline(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """下载超过整体总时限即分类 timeout 并清理临时文件，不无限占住 worker。"""
+    from app.services.thumbnail_preheat import _download_remote_source
+
+    settings = Settings(
+        media_root=str(tmp_path),
+        source_download_timeout_seconds=30,
+    )
+    clock = {"now": 0.0}
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat.time.monotonic",
+        lambda: clock["now"],
+    )
+
+    class SlowStream:
+        def iter_bytes(self):
+            while True:
+                clock["now"] += 10
+                yield b"chunk"
+
+        def close(self) -> None:
+            return None
+
+    class SlowClient:
+        def open_stream(self, remote_id: str, *, range_header: str | None):
+            clock["now"] += 1
+            return 200, None, None, None, SlowStream()
+
+    memory = Memory(
+        id=UUID("00000000-0000-0000-0000-0000000000f1"),
+        kind=MemoryKind.PHOTO,
+    )
+    memory_file = MemoryFile(mime_type="image/jpeg")
+    failure_sink: dict[str, str] = {}
+
+    path, written = _download_remote_source(
+        client=SlowClient(),
+        remote_id="remote-1",
+        media_root=tmp_path,
+        memory=memory,
+        memory_file=memory_file,
+        settings=settings,
+        failure_sink=failure_sink,
+        cancel_event=None,
+    )
+
+    assert path is None
+    assert failure_sink["kind"] == DerivativeFailureKind.TIMEOUT.value
+    assert written > 0
+    assert list((tmp_path / "tmp").glob("*.tmp")) == []
+
+
 def test_unexpected_preheat_failure_is_retryable(tmp_path: Path, monkeypatch) -> None:
     session_factory = create_database(tmp_path)
     memory_id = UUID("00000000-0000-0000-0000-000000000011")

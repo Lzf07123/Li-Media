@@ -94,7 +94,7 @@ def test_system_status_reports_backend_remote_and_resources(
                 "scan_concurrency_limit": 1,
                 "stream_global_concurrency_limit": 16,
                 "stream_user_concurrency_limit": 3,
-                "temp_max_files": 2,
+                "temp_max_files": 8,
                 "temp_disk_quota_bytes": 4294967296,
             }
             assert payload["resources"]["filesystem"]["total_bytes"] > 0

@@ -592,6 +592,10 @@ def _download_remote_source(
             failure_sink.setdefault("kind", DerivativeFailureKind.DISK_QUOTA.value)
             return None, 0
 
+        # 单次下载的整体总时限：connect/read 超时之外兜底慢流，
+        # 避免长期占住预热 worker 与 tmp 配额。
+        download_deadline = time.monotonic() + settings.source_download_timeout_seconds
+
         status_code, content_length, _, _, stream = client.open_stream(
             remote_id,
             range_header=None,
@@ -615,6 +619,9 @@ def _download_remote_source(
             for chunk in stream.iter_bytes():
                 if cancel_event is not None and cancel_event.is_set():
                     failure_sink.setdefault("kind", DerivativeFailureKind.CANCELLED.value)
+                    return None, written_bytes
+                if time.monotonic() >= download_deadline:
+                    failure_sink.setdefault("kind", DerivativeFailureKind.TIMEOUT.value)
                     return None, written_bytes
                 if not chunk:
                     continue

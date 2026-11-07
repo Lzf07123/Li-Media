@@ -13,6 +13,16 @@ from app.services.baidu_pan import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_shared_request_interval():
+    """限速状态是进程级全局：每个用例前后重置，避免跨用例串扰。"""
+    from app.services import baidu_pan as baidu_pan_module
+
+    baidu_pan_module._LAST_REQUEST_AT = None
+    yield
+    baidu_pan_module._LAST_REQUEST_AT = None
+
+
 @pytest.mark.parametrize(
     ("status_code", "message"),
     [
@@ -145,6 +155,36 @@ def test_request_interval_is_serialized_between_threads(monkeypatch):
 
     assert len(sleeps) == workers - 1
     assert all(delay == 0.2 for delay in sleeps)
+
+
+def test_request_interval_is_shared_across_client_instances(monkeypatch):
+    """限速是进程级共享：不同客户端实例之间同样遵守全局间隔。"""
+    settings = Settings(
+        baidu_access_token="test-access-token",
+        baidu_request_interval_seconds=0.2,
+    )
+    first = BaiduPanClient(settings)
+    second = BaiduPanClient(settings)
+    clock = {"now": 100.0}
+    sleeps: list[float] = []
+
+    def fake_monotonic():
+        return clock["now"]
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock["now"] += max(seconds, 0.001)
+
+    monkeypatch.setattr("app.services.baidu_pan.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("app.services.baidu_pan.time.sleep", fake_sleep)
+
+    first._wait_for_request_interval()
+    second._wait_for_request_interval()
+    # 间隔走完后再次请求不再等待
+    clock["now"] += 0.3
+    first._wait_for_request_interval()
+
+    assert sleeps == [0.2]
 
 
 def test_thumbnail_request_supports_detail_size(monkeypatch):

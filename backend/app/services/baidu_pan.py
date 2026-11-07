@@ -17,6 +17,13 @@ from app.services.baidu_oauth import get_baidu_access_token
 
 MEDIA_USER_AGENT = "netdisk; BaiduNetdisk"
 
+# 进程级共享限速：所有客户端实例（预热各线程、访客请求）共同遵守
+# baidu_request_interval_seconds，聚合 QPS 有界——并发提升不再线性放大
+# 百度接口压力。lock 保护「读上次请求时间 → 睡足间隔 → 记录本次」
+# 的完整临界区，保证任意两次请求间隔不小于 interval。
+_REQUEST_INTERVAL_LOCK = RLock()
+_LAST_REQUEST_AT: float | None = None
+
 
 class BaiduPanError(RuntimeError):
     """Raised when Baidu Pan returns an unusable response."""
@@ -134,8 +141,6 @@ class BaiduPanClient:
         self._settings = settings.model_copy(
             update={"baidu_access_token": access_token}
         )
-        self._last_request_at: float | None = None
-        self._request_interval_lock = RLock()
 
     def list_page(
         self,
@@ -458,15 +463,16 @@ class BaiduPanClient:
         raise BaiduPanError("百度网盘请求失败") from None
 
     def _wait_for_request_interval(self) -> None:
+        global _LAST_REQUEST_AT
         interval = max(0.0, self._settings.baidu_request_interval_seconds)
-        with self._request_interval_lock:
+        with _REQUEST_INTERVAL_LOCK:
             now = time.monotonic()
-            if self._last_request_at is not None:
-                remaining = interval - (now - self._last_request_at)
+            if _LAST_REQUEST_AT is not None:
+                remaining = interval - (now - _LAST_REQUEST_AT)
                 if remaining > 0:
                     time.sleep(remaining)
 
-            self._last_request_at = time.monotonic()
+            _LAST_REQUEST_AT = time.monotonic()
 
     def _sleep_backoff(self, attempt: int) -> None:
         delay = min(
