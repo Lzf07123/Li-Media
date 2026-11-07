@@ -608,21 +608,40 @@ test("kind and scroll restore after closing viewer", async ({ page }) => {
 
 test("search, kind filter and refresh share one toolbar row", async ({ page }) => {
   await mockMemoryRoutes(page);
+  // 工具条带 page-enter 入场动画（160ms 延迟 + 位移），且计数行从
+  // “加载中”切到数字时布局高度会变：未稳定时 boundingBox 是瞬时值，
+  // 四次测量可能跨越同一次重排。等计数行进入终态 + 减动效后再量。
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
+  await expect(page.getByTestId("public-count")).toContainText("已收录媒体");
 
-  const toolbarBox = await page.locator(".filter-toolbar").boundingBox();
-  const searchBox = await page.locator(".library-search").boundingBox();
-  const controlBox = await page.locator(".segmented").boundingBox();
-  const refreshBox = await page
-    .locator(".filter-toolbar .icon-btn")
-    .boundingBox();
-  expect(toolbarBox).not.toBeNull();
-  expect(searchBox).not.toBeNull();
-  expect(controlBox).not.toBeNull();
-  expect(refreshBox).not.toBeNull();
-  if (!toolbarBox || !searchBox || !controlBox || !refreshBox) {
+  // 同一帧内原子取样：四次独立 boundingBox() 会跨越入场 transform 的
+  // 收尾瞬间（探针实测 search 与 segmented 相差 12px），同帧快照下
+  // 工具条整体位移不影响内部相对关系。
+  const boxes = await page.evaluate(() => {
+    const box = (selector: string) => {
+      const el = document.querySelector(selector);
+      if (!el) {
+        return null;
+      }
+      const { x, y, width, height } = el.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    return {
+      toolbar: box(".filter-toolbar"),
+      search: box(".library-search"),
+      control: box(".segmented"),
+      refresh: box(".filter-toolbar .icon-btn"),
+    };
+  });
+  expect(boxes.toolbar).not.toBeNull();
+  expect(boxes.search).not.toBeNull();
+  expect(boxes.control).not.toBeNull();
+  expect(boxes.refresh).not.toBeNull();
+  if (!boxes.toolbar || !boxes.search || !boxes.control || !boxes.refresh) {
     return;
   }
+  const { search: searchBox, control: controlBox, refresh: refreshBox } = boxes;
 
   // 搜索、筛选、换一批在同一行内（桌面），垂直中心对齐（≤2px 亚像素容差）
   expect(
@@ -1219,6 +1238,8 @@ test("card caption reveals on hover and stays decorative for screen readers", as
   page,
 }) => {
   await mockMemoryRoutes(page);
+  // 卡片入场动画期间 hover 命中点与透明度轮询都是瞬时值；减动效固定终态。
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
 
