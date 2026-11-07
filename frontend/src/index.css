@@ -1905,7 +1905,7 @@ html {
 .masonry .post-card {
   padding: 0;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 12px;
 }
   .media-placeholder {
   position: absolute;
@@ -2360,34 +2360,23 @@ html {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border: 1px solid var(--limedia-glass-border-soft);
+  border: 1px solid rgba(240, 244, 243, 0.28);
   border-radius: 999px;
-  background: var(--limedia-primary-soft-solid);
-  color: var(--limedia-primary-soft-fg);
+  background: rgba(13, 17, 16, 0.62);
+  color: rgba(240, 244, 243, 0.92);
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
-  backdrop-filter: blur(var(--limedia-glass-blur));
 }
 
-/* 卡片表面使用预烘焙的强着色背景：每卡常驻 backdrop-filter 压在持续
-   动画的极光背景上会导致逐帧重采样（GPU/电量成本随卡数线性增长），
-   改用原先仅供应不支持浏览器的高不透明度背景，观感保持一致来源。 */
-.project-card,
+/* V1.5 画布卡片去玻璃化（档案馆口径）：无边框纯图瓦，照片即卡片。
+   占位/内容可见性契约不变：content-visibility 保留在 .post-card 上；
+   hover 反馈 = 封面轻缩放 + 兄弟压暗，不再抬升位移与描边换色。 */
 .post-card {
   position: relative;
-  border: 1px solid var(--limedia-glass-border-soft);
-  border-radius: 20px;
-  background:
-    var(--limedia-glass-shine),
-    var(--limedia-glass-bg-strong);
-  box-shadow: var(--limedia-shadow-sm),
-    inset 0 1px 0 var(--limedia-glass-highlight);
-  transition:
-    transform var(--limedia-motion-base) var(--limedia-ease-out),
-    box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
-    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+  border-radius: 12px;
+  background: var(--limedia-surface-2);
 }
 /* 画布卡片离开视口后跳过渲染：布局框保留，交叉观察与占位行为不变，
    屏外卡片不再参与绘制与合成。contain-intrinsic-size 用 auto 前缀让
@@ -2396,59 +2385,13 @@ html {
   content-visibility: auto;
   contain-intrinsic-size: auto 320px;
 }
-.project-card:hover,
-.post-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--limedia-shadow-md),
-    inset 0 1px 0 var(--limedia-glass-highlight);
-}
-.post-card::before,
-.project-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 18px;
-  right: 18px;
-  height: 2px;
-  border-radius: 0 0 2px 2px;
-  background: var(--limedia-primary);
-  transform: scaleX(0);
-  transform-origin: center;
-  transition: transform var(--limedia-motion-slow) var(--limedia-ease-out);
-  pointer-events: none;
-}
-.post-card:hover::before,
-.post-card:focus-within::before,
-.project-card:hover::before,
-.project-card:focus-within::before {
-  transform: scaleX(1);
-}
-.card-grid > .post-card:hover,
-.card-grid > .post-card:focus-within,
-.card-grid > .project-card:hover,
-.card-grid > .project-card:focus-within,
-.masonry .post-card:hover,
-.masonry > .post-card:focus-within,
-.masonry > .project-card:hover,
-.masonry > .project-card:focus-within {
-  transform: translateY(-5px) scale(1.006);
-  box-shadow: var(--limedia-shadow-lg),
-    inset 0 1px 0 var(--limedia-glass-highlight);
-  border-color: var(--limedia-primary);
-  transition:
-    transform var(--limedia-motion-base) var(--limedia-ease-spring),
-    box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
-    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
-}
 .post-card:hover .post-cover,
 .post-card:focus-within .post-cover {
-  transform: scale(1.03);
+  transform: scale(1.025);
 }
 @media (hover: hover) and (pointer: fine) {
-  .card-grid:has(> .post-card:hover, > .post-card:focus-within, > .project-card:hover, > .project-card:focus-within) > :not(:hover, :focus-within),
-  .masonry:has(> .post-card:hover, > .post-card:focus-within, > .project-card:hover, > .project-card:focus-within) > :not(:hover, :focus-within) {
-    opacity: 0.55;
-    transform: scale(0.985);
+  .masonry:has(> .post-card:hover, > .post-card:focus-within) > :not(:hover, :focus-within) {
+    opacity: 0.62;
   }
 }
 

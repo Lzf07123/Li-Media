@@ -708,7 +708,7 @@ export default function HomePage() {
           <>
             <span className="flex items-baseline gap-2">
               <span className="text-sm text-muted">{brand.copy.publicCountLabel}</span>
-              <span className="text-2xl font-semibold text-foreground">
+              <span className="font-display text-2xl font-semibold text-foreground">
                 {" "}
                 {counts.photo + counts.video}
               </span>
@@ -716,7 +716,7 @@ export default function HomePage() {
             <span aria-hidden="true" className="h-8 w-px bg-border" />
             <span className="flex items-baseline gap-2">
               <span className="text-sm text-muted">{brand.copy.photoKind}</span>
-              <span className="text-2xl font-semibold text-foreground">
+              <span className="font-display text-2xl font-semibold text-foreground">
                 {" "}
                 {counts.photo}
               </span>
@@ -724,7 +724,7 @@ export default function HomePage() {
             <span aria-hidden="true" className="h-8 w-px bg-border" />
             <span className="flex items-baseline gap-2">
               <span className="text-sm text-muted">{brand.copy.videoKind}</span>
-              <span className="text-2xl font-semibold text-foreground">
+              <span className="font-display text-2xl font-semibold text-foreground">
                 {" "}
                 {counts.video}
               </span>
