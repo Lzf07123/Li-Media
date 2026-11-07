@@ -1984,6 +1984,13 @@ html {
 .hero-feature {
   width: 100vw;
   margin-inline: calc(50% - 50vw);
+  /* 上移到沉浸式页眉底下：顶部透明页眉浮于图面（两主题一致） */
+  margin-top: calc(-1 * var(--limedia-header-height));
+}
+@media (max-width: 768px) {
+  .hero-feature {
+    margin-top: calc(-1 * var(--limedia-header-height-mobile));
+  }
 }
 /* hero 页贴住视口顶：page-shell 首子元素的 32px 上边距不适用 */
 .page-shell > section.hero-page:first-child {
@@ -2239,7 +2246,7 @@ html {
     right: 1rem;
     bottom: auto;
   }
-  .hero-upnext-tile:nth-child(n + 4) {
+  .hero-upnext-list > :nth-child(n + 4) {
     display: none;
   }
 }
@@ -2255,6 +2262,7 @@ html {
   max-height: 58%;
   aspect-ratio: 3 / 2;
   border-radius: 14px;
+  border: 1px solid var(--limedia-border);
   background: var(--limedia-surface-2);
 }
 .hero-overlay-skeleton {

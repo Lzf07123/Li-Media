@@ -215,19 +215,19 @@ function HeroFeatureSkeleton() {
               : undefined
           }
         />
-      </div>
-      <div aria-hidden="true" className="hero-overlay hero-overlay-skeleton">
-        <span className="hero-skel-line hero-skel-meta card-shimmer" />
-        <span className="hero-skel-line hero-skel-title card-shimmer" />
-        <span className="hero-skel-line hero-skel-desc card-shimmer" />
-        <span className="hero-skel-chip card-shimmer" />
-      </div>
-      <div aria-hidden="true" className="hero-upnext hero-upnext-skeleton">
-        <span className="hero-skel-label card-shimmer" />
-        <div className="hero-upnext-list">
-          {Array.from({ length: UP_NEXT_COUNT }, (_, index) => (
-            <span className="hero-upnext-tile card-shimmer" key={index} />
-          ))}
+        <div aria-hidden="true" className="hero-overlay hero-overlay-skeleton">
+          <span className="hero-skel-line hero-skel-meta card-shimmer" />
+          <span className="hero-skel-line hero-skel-title card-shimmer" />
+          <span className="hero-skel-line hero-skel-desc card-shimmer" />
+          <span className="hero-skel-chip card-shimmer" />
+        </div>
+        <div aria-hidden="true" className="hero-upnext hero-upnext-skeleton">
+          <span className="hero-skel-label card-shimmer" />
+          <div className="hero-upnext-list">
+            {Array.from({ length: UP_NEXT_COUNT }, (_, index) => (
+              <span className="hero-upnext-tile card-shimmer" key={index} />
+            ))}
+          </div>
         </div>
       </div>
     </div>
