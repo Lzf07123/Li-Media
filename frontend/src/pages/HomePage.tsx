@@ -3,7 +3,7 @@ import { Images, RefreshCw, X } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
-import HeroMosaic from "@/components/HeroMosaic";
+import HeroFeature from "@/components/HeroFeature";
 import { brand } from "@/lib/brand";
 import {
   getMemoryById,
@@ -430,6 +430,12 @@ export default function HomePage() {
       writeCanvasComposition(canvasMemories);
     }
   }, [canvasMemories, isLoadingInitial]);
+
+  // 页眉压图配色开关：hero 在首屏时页眉切浅色（滚过阈值由 .is-scrolled 接管）
+  useEffect(() => {
+    document.body.classList.toggle("has-hero", heroMemories.length > 0);
+    return () => document.body.classList.remove("has-hero");
+  }, [heroMemories.length]);
   const canvasColumns = useMemo(() => {
     const columns = Array.from({ length: columnCount }, () => [] as MemorySummary[]);
     canvasMemories.forEach((memory, index) => {
@@ -623,6 +629,16 @@ export default function HomePage() {
     }, 100);
   };
 
+  // hero CTA「进入回忆库」：滚动到画布工具条，尊重 reduced-motion 偏好
+  const enterLibrary = useCallback(() => {
+    const target = document.querySelector(".library-toolbar");
+    if (!target) {
+      return;
+    }
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  }, []);
+
   const activeMemory = viewerMemories.find((memory) => memory.id === viewerId)
     ?? directMemory;
   const activeMemoryIndex = activeMemory
@@ -653,20 +669,30 @@ export default function HomePage() {
   );
 
   return (
-    <section aria-labelledby="library-title" className="page-enter">
-      <HeroMosaic
+    <section aria-labelledby="library-title" className="page-enter hero-page">
+      <HeroFeature
         loading={isLoadingInitial && heroMemories.length === 0}
         memories={heroMemories}
+        onEnter={enterLibrary}
         onOpen={openViewer}
       />
-      <BlurText
-        as="h1"
-        className="page-title text-3xl sm:text-5xl font-semibold tracking-wide"
-        id="library-title"
-        text={brand.copy.libraryTitle}
-      />
-      <div aria-hidden="true" className="flow-rule mx-auto mt-4 w-16" />
-      <p className="mt-3 text-center text-base text-muted">{brand.copy.libraryDescription}</p>
+      {/* hero 不在时保证页面恰有一个 h1：空库/加载失败场景兜底 */}
+      {heroMemories.length === 0 ? (
+        <BlurText
+          as="h1"
+          className={`page-title text-3xl sm:text-5xl font-semibold tracking-wide ${
+            isLoadingInitial ? "sr-only" : ""
+          }`}
+          id="library-title"
+          text={brand.copy.libraryTitle}
+        />
+      ) : null}
+      {heroMemories.length === 0 && !isLoadingInitial ? (
+        <>
+          <div aria-hidden="true" className="flow-rule mx-auto mt-4 w-16" />
+          <p className="mt-3 text-center text-base text-muted">{brand.copy.libraryDescription}</p>
+        </>
+      ) : null}
 
       <p
         aria-live="polite"

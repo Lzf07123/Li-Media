@@ -487,6 +487,33 @@
     }
   }
 
+  /* 页眉压图（V1.5）：首屏 hero 存在且未滚过阈值时（body.has-hero 且
+     非 .is-scrolled），品牌/导航/图标切浅色浮于图面，两主题通用；
+     滚过阈值后 .is-scrolled 恢复常规同源配色。 */
+  body.has-hero .site-header:not(.is-scrolled) {
+    border-color: transparent;
+  }
+  body.has-hero .site-header:not(.is-scrolled) .brand,
+  body.has-hero .site-header:not(.is-scrolled) .site-nav a,
+  body.has-hero .site-header:not(.is-scrolled) .mobile-nav-link,
+  body.has-hero .site-header:not(.is-scrolled) .site-menu-trigger,
+  body.has-hero .site-header:not(.is-scrolled) .icon-btn {
+    color: rgba(240, 244, 243, 0.92);
+  }
+  body.has-hero .site-header:not(.is-scrolled) .site-nav a:hover,
+  body.has-hero .site-header:not(.is-scrolled) .site-nav a[aria-current="page"] {
+    color: #ffffff;
+  }
+  body.has-hero .site-header:not(.is-scrolled) .icon-btn {
+    border-color: rgba(240, 244, 243, 0.28);
+    background: rgba(13, 17, 16, 0.32);
+  }
+
+  /* hero CTA 滚动目标：为沉浸式页眉预留高度 */
+  .library-toolbar {
+    scroll-margin-top: calc(var(--limedia-header-height) + 12px);
+  }
+
   /* 按钮：统一 8px 圆角；可点击必须有 cursor-pointer；按压 scale(0.97) */
   .btn {
     @apply relative inline-flex cursor-pointer select-none items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-lg px-4 py-3 text-sm font-medium leading-none disabled:pointer-events-none disabled:opacity-50;
@@ -1938,9 +1965,7 @@ html {
       transform var(--limedia-motion-fast) var(--limedia-ease-out);
   }
   .post-card:hover .card-caption,
-  .post-card:focus-within .card-caption,
-  .hero-tile:hover .card-caption,
-  .hero-tile:focus-within .card-caption {
+  .post-card:focus-within .card-caption {
     opacity: 1;
     transform: translateY(0);
   }
@@ -1951,60 +1976,245 @@ html {
   }
 }
 
-/* ========== 首页图像 hero（精选拼贴） ==========
-   图像即第一印象：首屏以真实回忆缩略图拼贴开场，标题随其后。
-   瓦片几何由网格行高固定（零 CLS）；信息层复用 card-caption；
-   视频徽标独立命名（.hero-kind-badge），不与画布 .waterfall-badge
-   契约测试耦合；hover 缩放仅在允许动效的指针设备生效。 */
-.hero-mosaic {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: clamp(110px, 26vw, 150px);
-  grid-auto-flow: dense;
-  list-style: none;
-  margin: 8px auto 32px;
-  padding: 0;
-  max-width: 64rem;
+/* ========== 首页电影感 hero（V1.5 单幅精选） ==========
+   图像即第一印象：全出血单幅精选回忆 + 衬线巨字压图。
+   舞台几何由 clamp 高度固定（零 CLS）；底部重渐变保文字 AA；
+   Ken Burns 极慢缩放仅在允许动效的指针设备生效；
+   骨架为结构镜像（比例框 + 文本条 + 接下来条），非一整块。 */
+.hero-feature {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
 }
-.hero-tile {
+/* hero 页贴住视口顶：page-shell 首子元素的 32px 上边距不适用 */
+.page-shell > section.hero-page:first-child {
+  margin-top: 0;
+}
+.hero-stage {
   position: relative;
+  height: clamp(560px, 92svh, 920px);
   overflow: hidden;
-  border-radius: 20px;
-  background: var(--limedia-surface-2);
-  border: 1px solid var(--limedia-glass-border-soft);
+  background: var(--limedia-surface);
 }
-.hero-tile:first-child {
-  grid-column: span 2;
-  grid-row: span 2;
+@supports not (height: 92svh) {
+  .hero-stage {
+    height: clamp(560px, 92vh, 920px);
+  }
 }
-.hero-tile-skeleton .media-placeholder {
+.hero-stage-media {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.hero-stage-media:focus-visible {
+  outline: 2px solid var(--limedia-ring);
+  outline-offset: -3px;
+}
+.hero-feature-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--limedia-motion-cinematic) var(--limedia-ease-out);
+}
+.hero-feature-img.is-ready {
+  opacity: 1;
+}
+/* Ken Burns：极慢 1→1.06 往返；只动 transform；双门控（指针 + reduced-motion） */
+@keyframes hero-ken-burns {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06);
+  }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .hero-feature-img.is-ready {
+    animation: hero-ken-burns var(--limedia-ken-burns) var(--limedia-ease-out) infinite alternate;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-feature-img {
+    transition: none;
+  }
+  .hero-feature-img.is-ready {
+    animation: none;
+  }
+}
+/* 双层遮罩：顶部轻渐晕（页眉压图区）+ 底部重渐变（文字 AA） */
+.hero-stage-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(10, 14, 13, 0.4) 0%, rgba(10, 14, 13, 0) 20%),
+    linear-gradient(180deg, rgba(10, 14, 13, 0) 36%, rgba(10, 14, 13, 0.55) 66%, rgba(10, 14, 13, 0.82) 100%);
+}
+.hero-stage-placeholder,
+.hero-stage-fallback {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.hero-tile-button {
-  display: block;
+/* 文字层：与 page-shell 版心对齐；点击穿透到主图按钮，仅 CTA 可点 */
+.hero-overlay {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
   width: 100%;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  text-align: left;
+  max-width: 80rem;
+  margin-inline: auto;
+  padding: 0 1rem 4.25rem;
+  pointer-events: none;
+  z-index: 2;
 }
-.hero-tile-button:focus-visible {
+@media (min-width: 640px) {
+  .hero-overlay {
+    padding-inline: 1.5rem;
+  }
+}
+@media (min-width: 1024px) {
+  .hero-overlay {
+    padding-inline: 2rem;
+    padding-bottom: 5rem;
+  }
+}
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(240, 244, 243, 0.85);
+}
+.hero-meta-index {
+  font-weight: 600;
+  color: #f2f7f5;
+}
+.hero-meta-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid rgba(240, 244, 243, 0.3);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.42);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: rgba(240, 244, 243, 0.92);
+}
+.hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-hero);
+  font-weight: 600;
+  line-height: var(--text-hero--line-height);
+  letter-spacing: var(--text-hero--letter-spacing);
+  color: #f5f9f8;
+  text-shadow: 0 2px 28px rgba(10, 14, 13, 0.45);
+}
+.hero-description {
+  margin: 0;
+  max-width: 42ch;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: rgba(240, 244, 243, 0.78);
+}
+.hero-cta {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 0 22px;
+  border: 1px solid rgba(240, 244, 243, 0.34);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.38);
+  color: #f0f4f3;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.hero-cta:hover {
+  background: rgba(13, 17, 16, 0.56);
+  border-color: rgba(240, 244, 243, 0.56);
+}
+.hero-cta:focus-visible {
   outline: 2px solid var(--limedia-ring);
   outline-offset: 2px;
 }
-.hero-media {
+/* 接下来条：主图右下角（≤640px 移到页眉下方，避让大字标题） */
+.hero-upnext {
   position: absolute;
-  inset: 0;
-  display: block;
+  right: max(1rem, calc(50% - 39rem));
+  bottom: 3.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 2;
 }
-.hero-media-img {
+@media (min-width: 1024px) {
+  .hero-upnext {
+    right: max(2rem, calc(50% - 38rem));
+  }
+}
+.hero-upnext-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(240, 244, 243, 0.66);
+}
+.hero-upnext-list {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hero-upnext-tile {
+  position: relative;
+  width: clamp(64px, 8vw, 96px);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(240, 244, 243, 0.22);
+  border-radius: 12px;
+  background: rgba(13, 17, 16, 0.5);
+  cursor: pointer;
+  transition: border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.hero-upnext-tile[aria-pressed="true"] {
+  border-color: rgba(240, 244, 243, 0.85);
+}
+.hero-upnext-tile:focus-visible {
+  outline: 2px solid var(--limedia-ring);
+  outline-offset: 2px;
+}
+.hero-upnext-img {
   display: block;
   width: 100%;
   height: 100%;
@@ -2012,58 +2222,82 @@ html {
   opacity: 0;
   transition: opacity var(--limedia-motion-base) var(--limedia-ease-out);
 }
-.hero-media-img.is-ready {
+.hero-upnext-img.is-ready {
   opacity: 1;
 }
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .hero-media-img {
-    transform: scale(1);
-    transition:
-      opacity var(--limedia-motion-base) var(--limedia-ease-out),
-      transform 600ms var(--limedia-ease-out);
-  }
-  .hero-tile:hover .hero-media-img,
-  .hero-tile:focus-within .hero-media-img {
-    transform: scale(1.04);
-  }
-}
-.hero-kind-badge {
+.hero-upnext-fallback {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
-  display: inline-flex;
+  inset: 0;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border: 1px solid var(--limedia-glass-border-soft);
-  border-radius: 999px;
-  background: var(--limedia-primary-soft-solid);
-  color: var(--limedia-primary-soft-fg);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1;
+  justify-content: center;
 }
-@media (min-width: 768px) {
-  .hero-mosaic {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-auto-rows: clamp(150px, 15vw, 200px);
-    margin-top: 20px;
-    margin-bottom: 44px;
+/* 窄屏：接下来条移到页眉下方横排，只露 3 枚（编辑取舍） */
+@media (max-width: 639.98px) {
+  .hero-upnext {
+    top: calc(var(--limedia-header-height-mobile) + 12px);
+    right: 1rem;
+    bottom: auto;
   }
-}
-/* 窄屏只保留主瓦片 + 2 块侧瓦片：拼贴是编辑取舍，不是全部内容 */
-@media (max-width: 767.98px) {
-  .hero-tile:nth-child(n + 4) {
+  .hero-upnext-tile:nth-child(n + 4) {
     display: none;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .hero-media-img,
-  .hero-tile:hover .hero-media-img,
-  .hero-tile:focus-within .hero-media-img {
-    transform: none;
-    transition: none;
-  }
+/* 结构镜像骨架：比例框随构图缓存实时计算，文本条/接下来条各自微闪 */
+.hero-stage-skeleton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hero-stage-frame {
+  position: relative;
+  width: min(72%, 560px);
+  max-height: 58%;
+  aspect-ratio: 3 / 2;
+  border-radius: 14px;
+  background: var(--limedia-surface-2);
+}
+.hero-overlay-skeleton {
+  gap: 12px;
+}
+.hero-skel-line {
+  position: relative;
+  display: block;
+  height: 13px;
+  border-radius: 7px;
+  background: var(--limedia-surface-2);
+}
+.hero-skel-meta {
+  width: 180px;
+}
+.hero-skel-title {
+  height: clamp(2.5rem, 6vw, 4.5rem);
+  width: min(340px, 60vw);
+  border-radius: 10px;
+}
+.hero-skel-desc {
+  height: 12px;
+  width: 260px;
+}
+.hero-skel-chip {
+  position: relative;
+  display: block;
+  height: 44px;
+  width: 128px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--limedia-surface-2);
+}
+.hero-skel-label {
+  position: relative;
+  display: block;
+  height: 10px;
+  width: 56px;
+  border-radius: 5px;
+  background: var(--limedia-surface-2);
+}
+.hero-upnext-skeleton .hero-upnext-tile {
+  border: 0;
 }
 
 .card-shimmer::after {

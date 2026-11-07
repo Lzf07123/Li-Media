@@ -11,7 +11,10 @@ export const brand = {
   copy: {
     libraryTitle: "回忆库",
     libraryDescription: "按拍摄时间浏览照片与视频回忆。",
-    heroMosaicLabel: "精选回忆",
+    heroFeatureLabel: "精选回忆",
+    heroFeaturedLabel: "精选",
+    heroUpNextLabel: "接下来",
+    heroEnterLabel: "进入回忆库",
     homeRefresh: "换一批",
     publicCountLabel: "已收录媒体",
     publicCountDetail: "公开照片 / 公开视频",
