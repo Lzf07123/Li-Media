@@ -1,14 +1,14 @@
 /* =============================================================
-   Li& 系列 · 品牌令牌骨架（Tailwind CSS 4）· V1.3 海玻璃全量版
+   Li& 系列 · 品牌令牌骨架（Tailwind CSS 4）· V1.5 暗夜档案馆版
 
-   用法（详见同目录 REUSABLE-BRAND-SCHEME.md §4.2）：
-   ⚠️ 本模板仅首次设计时复制使用，落地后以项目内文件为准。
-   1. 复制本文件到新项目 frontend/src/index.css（或项目实际样式文件）
-   2. 全局替换 limedia 为项目技术标识（如 lipass / chat / liblog）
-   3. 按槽位表 7–12、16、21–22 填主色、中性色、语义色、强调色（明暗两套）
-   4. 组件一律引用语义类（bg-primary 等），禁止硬编码 hex
-
-   V1.3 变更（2026-08-20，全家族实现总览见 PROJECTS-IMPLEMENTATION-INDEX.md）：
+   V1.5 变更（2026-11-07，暗夜档案馆重构）：
+   - 深色主题主打：近黑深底 #0D1110（海玻璃同源低饱和色相），照片是
+     唯一色彩来源；无存储偏好时默认深色
+   - 新增展示衬线字体 --font-display 与 --text-hero 展示字号；
+     新增 --limedia-motion-cinematic / --limedia-ken-burns 电影感动效
+   - 氛围层收敛：移除极光（aurora）与科技光效（tech-grid/beam/dot）
+     令牌与全部 CSS，改为静态胶片颗粒 + 单枚极淡光晕
+   - V1.3 变更（2026-08-20，全家族实现总览见 PROJECTS-IMPLEMENTATION-INDEX.md）：
    - 浅色语义色采用 AA 调校值（muted #64736C / success #2A7C52 /
      warning #9A5C05 / destructive #C43737，Li&Chat + Li&Blog 已验证）
    - 新增深色软底实色粉彩令牌（*-soft-solid / *-soft-fg，带文字组件必用）
@@ -42,6 +42,18 @@
     "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", sans-serif;
+
+  /* 展示字体（V1.5 暗夜档案馆）：系统衬线混排——Latin/数字走
+     New York / Georgia，CJK 回退宋体；零远程加载、零 CLS */
+  --font-display:
+    "New York", "Songti SC", "STSong", SimSun, "Noto Serif SC", Georgia,
+    "Times New Roman", serif;
+
+  /* 展示字号：hero 巨字（Tailwind 4 生成 text-hero utility） */
+  --text-hero: clamp(2.75rem, 7vw, 6.5rem);
+  --text-hero--line-height: 1.06;
+  --text-hero--letter-spacing: 0.01em;
+  --text-hero--font-weight: 600;
 
   /* 语义别名：组件只引用这一层，值由 :root / .dark 提供 */
   --color-background: var(--limedia-bg);
@@ -140,20 +152,10 @@
     #7fd4c6
   );
 
-  /* 科技光效层（网格/光束/光点），浅色侧 */
-  --limedia-tech-grid-line: rgba(47, 127, 116, 0.09);
-  --limedia-tech-grid-accent: rgba(127, 212, 198, 0.22);
-  --limedia-tech-grid-accent-2: rgba(74, 143, 191, 0.18);
-  --limedia-tech-beam: rgba(127, 212, 198, 0.26);
-  --limedia-tech-beam-2: rgba(143, 199, 240, 0.22);
-  --limedia-tech-beam-3: rgba(176, 199, 158, 0.2);
-  --limedia-tech-dot-glow: rgba(127, 212, 198, 0.6);
-
-  /* 极光层（4 枚弥散光斑），浅色侧 */
-  --limedia-aurora-1: rgba(127, 212, 198, 0.32);
-  --limedia-aurora-2: rgba(143, 199, 240, 0.3);
-  --limedia-aurora-3: rgba(169, 162, 232, 0.26);
-  --limedia-aurora-4: rgba(169, 204, 143, 0.24);
+  /* V1.5 起氛围层收敛为静态胶片颗粒：科技光效（网格/光束/光点）
+     与极光令牌已移除，颗粒/光晕浓度见下方 ambient 层令牌 */
+  --limedia-ambient-glow: rgba(127, 212, 198, 0.1);
+  --limedia-grain-opacity: 0.035;
 
   /* 弥散阴影（水绿 tint，透明度总和 < 0.1，三层叠加） */
   --limedia-shadow-sm: 0px 0.6px 1.8px rgba(24, 58, 51, 0.04),
@@ -189,18 +191,22 @@
   --limedia-motion-fast: 150ms;
   --limedia-motion-base: 250ms;
   --limedia-motion-slow: 350ms;
+  /* 电影感时长（V1.5）：hero 入场与 Ken Burns 极慢缩放 */
+  --limedia-motion-cinematic: 700ms;
+  --limedia-ken-burns: 26s;
 
   color-scheme: light;
 }
 
-/* 深色模式：D1 雾灰中间调（不压黑），主色取雾面 300 档 */
+/* 深色模式（V1.5 主打）：暗夜档案馆近黑深底，带海玻璃同源低饱和
+   色相；照片是唯一色彩来源，主色仍取雾面 300 档做小面积强调 */
 .dark {
-  --limedia-bg: #3a3f45;
-  --limedia-surface: #434950;
-  --limedia-surface-2: #4b5259;
-  --limedia-fg: #f0f2f4;
-  --limedia-muted: #b8c0c7;
-  --limedia-border: #545c64;
+  --limedia-bg: #0d1110;
+  --limedia-surface: #141918;
+  --limedia-surface-2: #1a201f;
+  --limedia-fg: #f0f4f3;
+  --limedia-muted: #9fb0ab;
+  --limedia-border: #242c2a;
 
   --limedia-primary: #7fd4c6;
   --limedia-primary-hover: #a5e4d9;
@@ -251,18 +257,8 @@
     rgba(127, 212, 198, 0.65)
   );
 
-  --limedia-tech-grid-line: rgba(176, 199, 158, 0.13);
-  --limedia-tech-grid-accent: rgba(127, 212, 198, 0.18);
-  --limedia-tech-grid-accent-2: rgba(168, 212, 240, 0.16);
-  --limedia-tech-beam: rgba(127, 212, 198, 0.2);
-  --limedia-tech-beam-2: rgba(168, 212, 240, 0.19);
-  --limedia-tech-beam-3: rgba(176, 199, 158, 0.15);
-  --limedia-tech-dot-glow: rgba(127, 212, 198, 0.55);
-
-  --limedia-aurora-1: rgba(127, 212, 198, 0.4);
-  --limedia-aurora-2: rgba(168, 212, 240, 0.36);
-  --limedia-aurora-3: rgba(176, 168, 222, 0.32);
-  --limedia-aurora-4: rgba(176, 199, 158, 0.28);
+  --limedia-ambient-glow: rgba(127, 212, 198, 0.07);
+  --limedia-grain-opacity: 0.05;
 
   /* 深色软底带文字组件：实色粉彩底 + 深字（rgba 软底对比上限 ≈3.9，不达标） */
   --limedia-primary-soft-solid: #d9f4ee;
@@ -274,11 +270,11 @@
   --limedia-destructive-soft-solid: #fdeeee;
   --limedia-destructive-soft-fg: #7f1d1d;
 
-  /* 沉浸式页眉（深色）：与模板 V1.7 逐值一致，雾化饱和度 135% */
-  --limedia-header-bg: #3a3f4500;
-  --limedia-header-bg-scrolled: #3a3f45eb;
-  --limedia-header-border: #59616900;
-  --limedia-header-border-scrolled: #59616980;
+  /* 沉浸式页眉（深色）：近黑底 92% 雾化，雾化饱和度 135% */
+  --limedia-header-bg: #0d111000;
+  --limedia-header-bg-scrolled: #0d1110f2;
+  --limedia-header-border: #242c2a00;
+  --limedia-header-border-scrolled: #242c2a80;
   --limedia-header-blur: 18px;
   --limedia-header-saturate: 135%;
   --limedia-header-shadow-scrolled:
@@ -1723,17 +1719,13 @@
 }
 
 /* =============================================================
-   氛围与科技光效层（按槽位 19/22 接入）
-   - FloatingBackground（Canvas）：z-0 垫底、pointer-events: none；
-     认证 10 / 授权 4 / 中心 10 + scrollWind / 后台 4 × 0.5；
-     Chat 零依赖 ambient.js 与 Blog React 版见实现总览 §3
-   - AuroraBackground：4 枚弥散光斑（18/22/28/24s），full=4 / soft=2
-   - TechAmbience：缓移网格 12s + 3 条光束 10s（错峰 0.8/4.2/7.5s）
-     + 8 枚光点 6s；认证默认、工作台/后台 soft；移动端隐藏光束/光点
-   - ⚠️ 每个 animation 必须定义对应 @keyframes；reduced-motion 下单帧
+   氛围层（V1.5 暗夜档案馆口径）
+   - 静态胶片颗粒：SVG feTurbulence 灰度噪点，无动画
+   - 单枚极淡光晕：主色 radial-gradient，无动画
+   - 本层无任何动画，无需 prefers-reduced-motion 分支
 ============================================================= */
 
-/* Canvas 氛围层容器：垫底、不拦截交互 */
+/* 容器：垫底、不拦截交互 */
 .ambient-layer {
   position: fixed;
   inset: 0;
@@ -1741,257 +1733,24 @@
   pointer-events: none;
 }
 
-/* 极光层：4 枚 radial-gradient 光斑缓慢漂移（仅 transform） */
-.aurora,
-.tech-ambience {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.aurora-blob {
-  position: absolute;
-  width: min(46vw, 720px);
-  height: min(46vw, 720px);
-  border-radius: 50%;
-  opacity: 0.9;
-  will-change: transform;
-  animation: aurora-drift-1 24s var(--limedia-ease-out) infinite alternate;
-}
-
-.aurora-blob:nth-child(1) {
-  top: -14%;
-  left: -8%;
-  background: radial-gradient(closest-side, var(--limedia-aurora-1), transparent 72%);
-}
-
-.aurora-blob:nth-child(2) {
-  top: 8%;
-  right: -12%;
-  background: radial-gradient(closest-side, var(--limedia-aurora-2), transparent 72%);
-  animation-name: aurora-drift-2;
-  animation-duration: 22s;
-}
-
-.aurora-blob:nth-child(3) {
-  bottom: -18%;
-  left: 8%;
-  background: radial-gradient(closest-side, var(--limedia-aurora-3), transparent 72%);
-  animation-name: aurora-drift-3;
-  animation-duration: 28s;
-}
-
-.aurora-blob:nth-child(4) {
-  bottom: -8%;
-  right: 6%;
-  background: radial-gradient(closest-side, var(--limedia-aurora-4), transparent 72%);
-  animation-name: aurora-drift-4;
-  animation-duration: 18s;
-}
-
-@keyframes aurora-drift-1 {
-  from {
-    transform: translate(0, 0) scale(1);
-  }
-  to {
-    transform: translate(7vw, 6vh) scale(1.08);
-  }
-}
-
-@keyframes aurora-drift-2 {
-  from {
-    transform: translate(0, 0) scale(1.06);
-  }
-  to {
-    transform: translate(-6vw, 5vh) scale(0.98);
-  }
-}
-
-@keyframes aurora-drift-3 {
-  from {
-    transform: translate(0, 0) scale(0.96);
-  }
-  to {
-    transform: translate(5vw, -7vh) scale(1.05);
-  }
-}
-
-@keyframes aurora-drift-4 {
-  from {
-    transform: translate(0, 0) scale(1.02);
-  }
-  to {
-    transform: translate(-7vw, -5vh) scale(0.94);
-  }
-}
-
-/* 已登录/工作台降浓度 */
-.aurora-soft {
-  opacity: 0.55;
-}
-
-/* 科技光效层：缓移网格（56px 基线 + 336px 亮线双层，径向渐隐） */
-.tech-grid {
+/* 胶片颗粒：灰度噪点平铺，浓度由 --limedia-grain-opacity 控制 */
+.ambient-grain {
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(to right, var(--limedia-tech-grid-accent) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--limedia-tech-grid-accent-2) 1px, transparent 1px),
-    linear-gradient(to right, var(--limedia-tech-grid-line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--limedia-tech-grid-line) 1px, transparent 1px);
-  background-size:
-    336px 336px,
-    336px 336px,
-    56px 56px,
-    56px 56px;
-  -webkit-mask-image: radial-gradient(
-    ellipse 88% 76% at 50% 42%,
-    #000 22%,
-    transparent 80%
-  );
-  mask-image: radial-gradient(
-    ellipse 88% 76% at 50% 42%,
-    #000 22%,
-    transparent 80%
-  );
-  animation: tech-grid-pan 12s linear infinite;
-  will-change: background-position;
-  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)'/%3E%3C/svg%3E");
+  background-size: 280px 280px;
+  opacity: var(--limedia-grain-opacity);
 }
 
-@keyframes tech-grid-pan {
-  from {
-    background-position:
-      0 0,
-      0 0,
-      0 0,
-      0 0;
-  }
-  to {
-    background-position:
-      336px 336px,
-      336px 336px,
-      336px 336px,
-      336px 336px;
-  }
-}
-
-/* 扫掠光束：斜切 16° 透明渐变带，三条错峰；基态 opacity:0 */
-.tech-beam {
+/* 极淡光晕：顶部一抹主色微光，暗夜里托出空间层次 */
+.ambient-halo {
   position: absolute;
-  top: -15%;
-  bottom: -15%;
-  left: 0;
-  width: 36%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--limedia-tech-beam) 45%,
-    var(--limedia-tech-beam) 55%,
-    transparent 100%
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 46% at 50% -8%,
+    var(--limedia-ambient-glow),
+    transparent 72%
   );
-  transform: translateX(-150%) skewX(-16deg);
-  opacity: 0;
-  animation: tech-beam-sweep 10s var(--limedia-ease-out) 0.8s infinite;
-  will-change: transform, opacity;
-  pointer-events: none;
-}
-
-.tech-beam--violet {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--limedia-tech-beam-2) 45%,
-    var(--limedia-tech-beam-2) 55%,
-    transparent 100%
-  );
-  animation-delay: 4.2s;
-}
-
-.tech-beam--sage {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--limedia-tech-beam-3) 45%,
-    var(--limedia-tech-beam-3) 55%,
-    transparent 100%
-  );
-  animation-delay: 7.5s;
-}
-
-@keyframes tech-beam-sweep {
-  0% {
-    transform: translateX(-150%) skewX(-16deg);
-    opacity: 0;
-  }
-  8% {
-    opacity: 1;
-  }
-  42% {
-    transform: translateX(560%) skewX(-16deg);
-    opacity: 0.7;
-  }
-  50%,
-  100% {
-    transform: translateX(560%) skewX(-16deg);
-    opacity: 0;
-  }
-}
-
-/* 呼吸光点：7px 圆点 + 辉光；颜色默认 secondary，可经
-   --tech-dot-color 覆盖（Blog 用六强调色做实体→色相稳定哈希） */
-.tech-dot {
-  position: absolute;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: var(--tech-dot-color, var(--limedia-secondary));
-  box-shadow: 0 0 14px 3px var(--limedia-tech-dot-glow);
-  opacity: 0.55;
-  animation: tech-dot-pulse 6s ease-in-out infinite;
-  will-change: transform, opacity;
-  pointer-events: none;
-}
-
-@keyframes tech-dot-pulse {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(-7px) scale(1.45);
-  }
-}
-
-/* 工作台/后台降浓度 */
-.tech-ambience--soft .tech-grid {
-  opacity: 0.45;
-}
-.tech-ambience--soft .tech-beam,
-.tech-ambience--soft .tech-dot {
-  opacity: 0.35;
-}
-
-/* 移动端：隐藏光束/光点，停用网格动画，极光减速 */
-@media (max-width: 767px) {
-  .tech-beam,
-  .tech-dot {
-    display: none;
-  }
-  .tech-grid {
-    animation: none;
-    opacity: 0.55;
-  }
-  .aurora {
-    opacity: 0.7;
-  }
-  .aurora-blob {
-    animation-duration: 52s;
-  }
 }
 
 /* =============================================================
@@ -2044,15 +1803,15 @@ html {
 }
 
 .dark {
-  --limedia-glass-bg: rgba(67, 73, 80, 0.56);
-  --limedia-glass-bg-strong: rgba(67, 73, 80, 0.76);
-  --limedia-glass-border: rgba(240, 242, 244, 0.18);
-  --limedia-glass-border-soft: rgba(84, 92, 100, 0.68);
-  --limedia-glass-highlight: rgba(240, 242, 244, 0.14);
+  --limedia-glass-bg: rgba(20, 25, 24, 0.56);
+  --limedia-glass-bg-strong: rgba(20, 25, 24, 0.76);
+  --limedia-glass-border: rgba(240, 244, 243, 0.16);
+  --limedia-glass-border-soft: rgba(36, 44, 42, 0.68);
+  --limedia-glass-highlight: rgba(240, 244, 243, 0.12);
   --limedia-glass-shine: linear-gradient(
     135deg,
-    rgba(240, 242, 244, 0.16),
-    rgba(240, 242, 244, 0) 46%
+    rgba(240, 244, 243, 0.14),
+    rgba(240, 244, 243, 0) 46%
   );
 }
 
