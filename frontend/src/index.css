@@ -3324,3 +3324,177 @@ html {
     display: none !important;
   }
 }
+
+/* =============================================================
+   首页电影感深化（V1.5 暗夜档案馆口径内叠加）
+   - hero 内容交错入场：meta → 描述 → CTA 依次淡入上移；
+     标题保留词级 blur-in，不叠加（排除 .hero-title）
+   - 精选自动轮播：9s 一拍，悬停/聚焦/切后台即停；可见暂停控件 +
+     活跃瓦片进度发丝线；reduced-motion 下机制整体不启动（JS 门控）
+   - 画布卡片交错入场：transform/opacity only，延迟上限 12 档收口
+============================================================= */
+
+/* hero 内容交错入场（一次性；标题不参与，交给 blur-unit） */
+.hero-feature:not(.is-skeleton) .hero-overlay > *:not(.hero-title) {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hero-overlay-in 600ms var(--limedia-ease-out) forwards;
+}
+.hero-feature:not(.is-skeleton) .hero-overlay > :nth-child(1) {
+  animation-delay: 40ms;
+}
+.hero-feature:not(.is-skeleton) .hero-overlay > :nth-child(3) {
+  animation-delay: 200ms;
+}
+.hero-feature:not(.is-skeleton) .hero-overlay > :nth-child(4) {
+  animation-delay: 320ms;
+}
+@keyframes hero-overlay-in {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-feature:not(.is-skeleton) .hero-overlay > *:not(.hero-title) {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 「接下来」标签行：标签 + 自动轮播暂停控件（视觉 28px，热区扩到 44px） */
+.hero-upnext-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.hero-auto-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(240, 244, 243, 0.3);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.42);
+  color: rgba(240, 244, 243, 0.92);
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+/* 触控热区扩展：28px 视觉 + 8px 透明外环 = 44px 可点范围 */
+.hero-auto-toggle::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: inherit;
+}
+.hero-auto-toggle:hover {
+  background: rgba(13, 17, 16, 0.6);
+  border-color: rgba(240, 244, 243, 0.52);
+}
+.hero-auto-toggle:focus-visible {
+  outline: 2px solid var(--limedia-ring);
+  outline-offset: 2px;
+}
+
+/* 活跃瓦片进度发丝线：与 HeroFeature 的 HERO_ADVANCE_MS=9000 一一对应，
+   只动 transform；暂停时 JS 直接卸载该元素（计时器同生命周期重开） */
+.hero-upnext-progress {
+  position: absolute;
+  inset-inline: 6px;
+  bottom: 5px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(240, 244, 243, 0.88);
+  transform-origin: left;
+  animation: hero-progress-fill 9000ms linear forwards;
+  pointer-events: none;
+}
+@keyframes hero-progress-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* 底部滚动提示：鼠标滚轮隐喻的轨道 + 漂移点，纯装饰（aria-hidden） */
+.hero-scroll-cue {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.hero-scroll-cue-track {
+  position: relative;
+  width: 22px;
+  height: 34px;
+  border: 1px solid rgba(240, 244, 243, 0.4);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.24);
+}
+.hero-scroll-cue-dot {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 3px;
+  height: 7px;
+  margin-left: -1.5px;
+  border-radius: 999px;
+  background: rgba(240, 244, 243, 0.85);
+  animation: hero-scroll-drift 2.4s var(--limedia-ease-out) infinite;
+}
+@keyframes hero-scroll-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  55% {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  56% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  75% {
+    opacity: 1;
+  }
+}
+
+/* 画布卡片交错入场：全局序号 → 延迟（30-50ms/档口径，12 档封顶），
+   只动 opacity/transform；骨架屏不在 .infinite-canvas 内，不受影响 */
+@keyframes canvas-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.infinite-canvas .post-card {
+  animation: canvas-card-in 420ms var(--limedia-ease-out) both;
+  animation-delay: calc(min(var(--card-enter-index, 0), 12) * 35ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .infinite-canvas .post-card {
+    animation: none;
+  }
+}

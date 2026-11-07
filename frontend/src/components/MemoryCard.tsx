@@ -1,5 +1,6 @@
 import { Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
 import { memo, useEffect, useReducer, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
 import { brand } from "@/lib/brand";
 import { formatDate, formatDuration } from "@/lib/format";
@@ -17,6 +18,8 @@ import {
 type MemoryCardProps = {
   memory: MemorySummary;
   priority?: boolean;
+  /** 画布交错入场的全局序号：映射为 --card-enter-index，延迟上限由 CSS 收口 */
+  enterIndex?: number;
   onOpen: (memoryId: string) => void;
   onPrefetch?: () => void;
 };
@@ -36,6 +39,7 @@ function MemoryCard({
   onOpen,
   onPrefetch,
   priority = false,
+  enterIndex = 0,
 }: MemoryCardProps) {
   const [mediaState, dispatchMediaState] = useReducer(
     reduceMediaLifecycle,
@@ -234,6 +238,7 @@ function MemoryCard({
       onFocus={onPrefetch}
       onPointerEnter={onPrefetch}
       ref={cardRef}
+      style={{ "--card-enter-index": enterIndex } as CSSProperties}
     >
       <button
         aria-label={accessibleName}

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Images, RefreshCw, X } from "lucide-react";
+import { Images, RefreshCw, Search, X } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
@@ -783,15 +783,19 @@ export default function HomePage() {
         style={{ animationDelay: "160ms" }}
       >
         <form
-          className="library-search"
+          className="library-search relative"
           onSubmit={(event) => event.preventDefault()}
           role="search"
         >
           <label className="sr-only" htmlFor="library-search">
             {brand.copy.searchLabel}
           </label>
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted"
+          />
           <input
-            className="input min-h-11 w-full"
+            className="input min-h-11 w-full pl-10"
             id="library-search"
             onChange={(event) => setSearchInput(event.target.value)}
             placeholder={brand.copy.searchPlaceholder}
@@ -909,10 +913,11 @@ export default function HomePage() {
           >
             {canvasColumns.map((column, columnIndex) => (
               <div className="canvas-column" key={columnIndex}>
-                {column.map((memory) => (
+                {column.map((memory, itemIndex) => (
                   <MemoryCard
                     key={memory.id}
                     memory={memory}
+                    enterIndex={itemIndex * columnCount + columnIndex}
                     onPrefetch={prefetchMediaViewerChunk}
                     onOpen={openViewer}
                     priority={firstRowIds.has(memory.id)}

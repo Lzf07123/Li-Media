@@ -1,4 +1,4 @@
-import { Image as ImageIcon, Play, Video } from "lucide-react";
+import { Image as ImageIcon, Pause, Play, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import BlurText from "@/components/ui/BlurText";
@@ -30,6 +30,9 @@ const FEATURED_THUMBNAIL_SIZE = "1280" as const;
 const LQIP_THUMBNAIL_SIZE = "240" as const;
 const STRIP_THUMBNAIL_SIZE = "240" as const;
 const UP_NEXT_COUNT = 4;
+// 精选自动轮播节奏：与 Ken Burns 同一「以动衬静」口径——极慢、可暂停、
+// reduced-motion 下完全不启动。切换间隔与 .hero-upnext-progress 时长一致。
+const HERO_ADVANCE_MS = 9000;
 
 type TileImageState = "queued" | "ready" | "failed";
 
@@ -167,10 +170,13 @@ function StripTile({
   memory,
   active,
   onSelect,
+  showProgress = false,
 }: {
   memory: MemorySummary;
   active: boolean;
   onSelect: () => void;
+  /** 自动轮播进行中且本瓦是当前主图：底部进度发丝线（transform 动画） */
+  showProgress?: boolean;
 }) {
   const thumbnailUrl = resolveThumbnailUrl(
     memory.thumbnail_url,
@@ -210,6 +216,9 @@ function StripTile({
           )}
         </span>
       )}
+      {showProgress ? (
+        <span aria-hidden="true" className="hero-upnext-progress" />
+      ) : null}
     </button>
   );
 }
@@ -256,6 +265,46 @@ export default function HeroFeature({
   onOpen,
 }: HeroFeatureProps) {
   const [featuredIndex, setFeaturedIndex] = useState(0);
+  // 自动轮播的四路暂停：用户开关、悬停、键盘聚焦、标签页隐藏；
+  // reduced-motion 下整个机制不启动（档案室允许的环境动效上限）。
+  const [userPaused, setUserPaused] = useState(false);
+  const [hoverPaused, setHoverPaused] = useState(false);
+  const [focusPaused, setFocusPaused] = useState(false);
+  const [hiddenPaused, setHiddenPaused] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      setHiddenPaused(document.visibilityState !== "visible");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  const autoAdvanceSupported = memories.length > 1 && !reducedMotion;
+  const pausedNow = userPaused || hoverPaused || focusPaused || hiddenPaused;
+  const advanceActive = autoAdvanceSupported && !pausedNow;
+
+  // 定时器与进度线同生命周期：featuredIndex / advanceActive 任一变化都重开
+  // 一个完整周期，保证发丝线从 0 重新铺满时与真实切换时刻对齐。
+  useEffect(() => {
+    if (!advanceActive) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setFeaturedIndex((current) => (current + 1) % memories.length);
+    }, HERO_ADVANCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [advanceActive, featuredIndex, memories.length]);
 
   if (loading) {
     return <HeroFeatureSkeleton />;
@@ -278,12 +327,26 @@ export default function HeroFeature({
 
   return (
     <div className="hero-feature" data-testid="hero-feature">
-      <div className="hero-stage">
-        <FeaturedMedia memory={featured} onOpen={onOpen} />
+      <div
+        className="hero-stage"
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setFocusPaused(false);
+          }
+        }}
+        onFocus={() => setFocusPaused(true)}
+        onMouseEnter={() => setHoverPaused(true)}
+        onMouseLeave={() => setHoverPaused(false)}
+      >
+        {/* key 随精选切换重挂载：LQIP→高清交叉淡入与 Ken Burns 从新主图
+            重新起拍；避免旧 hook 状态残留导致新 src 以 ready 态直接闪现 */}
+        <FeaturedMedia key={featured.id} memory={featured} onOpen={onOpen} />
         <span aria-hidden="true" className="hero-stage-scrim" />
 
         <div className="hero-overlay">
-          <p aria-live="polite" className="hero-meta tnum">
+          {/* 自动轮播不进 aria-live：每 9s 朗读元数据是噪声；
+              手动切换的状态变化由瓦片 aria-pressed 表达 */}
+          <p className="hero-meta tnum">
             <span className="hero-meta-index">
               {String(featuredIndex + 1).padStart(2, "0")}
             </span>
@@ -311,9 +374,27 @@ export default function HeroFeature({
 
         {stripItems.length > 0 ? (
           <div className="hero-upnext">
-            <span aria-hidden="true" className="hero-upnext-label">
-              {brand.copy.heroUpNextLabel}
-            </span>
+            <div className="hero-upnext-head">
+              <span aria-hidden="true" className="hero-upnext-label">
+                {brand.copy.heroUpNextLabel}
+              </span>
+              {autoAdvanceSupported ? (
+                <button
+                  aria-label={brand.copy.heroAutoToggle}
+                  aria-pressed={!userPaused}
+                  className="hero-auto-toggle"
+                  onClick={() => setUserPaused((current) => !current)}
+                  title={userPaused ? brand.copy.heroAutoResume : brand.copy.heroAutoPause}
+                  type="button"
+                >
+                  {userPaused ? (
+                    <Play aria-hidden="true" className="size-3.5" />
+                  ) : (
+                    <Pause aria-hidden="true" className="size-3.5" />
+                  )}
+                </button>
+              ) : null}
+            </div>
             <ul className="hero-upnext-list">
               {stripItems.map((memory, index) => (
                 <li key={memory.id}>
@@ -321,12 +402,19 @@ export default function HeroFeature({
                     active={featuredIndex === index + 1}
                     memory={memory}
                     onSelect={() => setFeaturedIndex(index + 1)}
+                    showProgress={advanceActive && featuredIndex === index + 1}
                   />
                 </li>
               ))}
             </ul>
           </div>
         ) : null}
+
+        <span aria-hidden="true" className="hero-scroll-cue">
+          <span className="hero-scroll-cue-track">
+            <span className="hero-scroll-cue-dot" />
+          </span>
+        </span>
       </div>
     </div>
   );
