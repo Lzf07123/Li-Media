@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import time
 import gc
 from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
@@ -57,6 +59,151 @@ logger = logging.getLogger(__name__)
 HOME_PREHEAT_SIZE = 240
 DETAIL_PREHEAT_SIZES = (480, 768, 1280)
 MAX_PREHEAT_JOB_HISTORY = 20
+PREHEAT_HISTORY_FILENAME = "preheat-history.json"
+
+
+def _preheat_history_path(settings: Settings) -> Path:
+    return Path(settings.media_root) / PREHEAT_HISTORY_FILENAME
+
+
+def _serialize_job_snapshot(job: ThumbnailPreheatJob) -> dict[str, object]:
+    return {
+        "id": str(job.id),
+        "status": job.status,
+        "sizes": list(job.sizes),
+        "kind": job.kind.value if job.kind is not None else None,
+        "limit": job.limit,
+        "concurrency": job.concurrency,
+        "queue_limit": job.queue_limit,
+        "include_failed": job.include_failed,
+        "total": job.total,
+        "processed": job.processed,
+        "generated": job.generated,
+        "cached": job.cached,
+        "failed": job.failed,
+        "skipped": job.skipped,
+        "source_bytes_downloaded": job.source_bytes_downloaded,
+        "derivative_duration_ms": job.derivative_duration_ms,
+        "size_results": job.size_results,
+        "message": job.message,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": (
+            job.completed_at.isoformat() if job.completed_at else None
+        ),
+    }
+
+
+def _parse_snapshot_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _job_from_snapshot(snapshot: object) -> ThumbnailPreheatJob | None:
+    if not isinstance(snapshot, dict):
+        return None
+    try:
+        kind_value = snapshot.get("kind")
+        job = ThumbnailPreheatJob(
+            id=UUID(str(snapshot["id"])),
+            sizes=tuple(int(size) for size in snapshot.get("sizes") or []),
+            kind=MemoryKind(kind_value) if kind_value else None,
+            limit=max(0, int(snapshot.get("limit", 0))),
+            concurrency=max(1, int(snapshot.get("concurrency", 1))),
+            queue_limit=max(0, int(snapshot.get("queue_limit", 0))),
+            include_failed=bool(snapshot.get("include_failed", False)),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    status = str(snapshot.get("status", "completed"))
+    # 重启前仍非终态的任务按失败收尾：执行体已随进程消失。
+    job.status = status if status in {"completed", "cancelled", "failed"} else "failed"
+    if snapshot.get("status") in {"queued", "running"}:
+        job.message = "服务重启，任务中断"
+    job.total = max(0, int(snapshot.get("total", 0)))
+    job.processed = max(0, int(snapshot.get("processed", 0)))
+    job.generated = max(0, int(snapshot.get("generated", 0)))
+    job.cached = max(0, int(snapshot.get("cached", 0)))
+    job.failed = max(0, int(snapshot.get("failed", 0)))
+    job.skipped = max(0, int(snapshot.get("skipped", 0)))
+    job.source_bytes_downloaded = max(0, int(snapshot.get("source_bytes_downloaded", 0)))
+    job.derivative_duration_ms = max(0, int(snapshot.get("derivative_duration_ms", 0)))
+    size_results = snapshot.get("size_results")
+    if isinstance(size_results, dict):
+        job.size_results = {
+            str(size): counts
+            for size, counts in size_results.items()
+            if isinstance(counts, dict)
+        }
+    if job.message is None and snapshot.get("message") is not None:
+        job.message = str(snapshot["message"])
+    job.created_at = (
+        _parse_snapshot_datetime(snapshot.get("created_at")) or job.created_at
+    )
+    job.started_at = _parse_snapshot_datetime(snapshot.get("started_at"))
+    job.completed_at = _parse_snapshot_datetime(snapshot.get("completed_at"))
+    return job
+
+
+def persist_preheat_history(
+    job: ThumbnailPreheatJob,
+    settings: Settings | None,
+) -> None:
+    """任务终态时原子落盘最近 N 条摘要；纯诊断数据，存储失败静默放弃。"""
+
+    if settings is None:
+        # 直接以 registry 驱动的调用方（测试/脚本）可以不携带 settings
+        return
+    try:
+        path = _preheat_history_path(settings)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entries: list[dict[str, object]] = []
+        if path.is_file():
+            try:
+                parsed = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(parsed, list):
+                    entries = [e for e in parsed if isinstance(e, dict)]
+            except (OSError, ValueError):
+                entries = []
+        entries = [e for e in entries if e.get("id") != str(job.id)]
+        entries.append(_serialize_job_snapshot(job))
+        entries = entries[-MAX_PREHEAT_JOB_HISTORY:]
+
+        temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temporary_path.write_text(
+            json.dumps(entries, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(temporary_path, path)
+    except OSError:
+        logger.debug("preheat history persistence failed", exc_info=True)
+
+
+def restore_preheat_history_from_disk(
+    registry: ThumbnailPreheatRegistry,
+    settings: Settings,
+) -> None:
+    """进程启动时把磁盘历史装回注册表；损坏文件按空历史处理。"""
+
+    path = _preheat_history_path(settings)
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(parsed, list):
+        return
+    jobs = [
+        job
+        for snapshot in parsed
+        if (job := _job_from_snapshot(snapshot)) is not None
+    ]
+    if jobs:
+        registry.restore_history(jobs)
 
 
 @dataclass(slots=True)
@@ -140,6 +287,27 @@ class ThumbnailPreheatRegistry:
                 else:
                     break
             return job, True
+
+    def restore_history(self, jobs: list[ThumbnailPreheatJob]) -> None:
+        """进程重启后从磁盘恢复历史任务（仅终态），供 admin 事后诊断。
+
+        快照只进历史、不重挂任何执行体；latest 指向最新一条，公开状态
+        聚合口径不受影响（仍以 DB 派生缓存计数为准）。
+        """
+
+        with self._lock:
+            for job in jobs:
+                if job.status in {"queued", "running"}:
+                    continue
+                self._jobs[job.id] = job
+            ordered = sorted(
+                self._jobs.values(),
+                key=lambda item: (item.completed_at or item.created_at),
+                reverse=True,
+            )
+            self._jobs = {job.id: job for job in ordered[:MAX_PREHEAT_JOB_HISTORY]}
+            if ordered:
+                self._latest_id = ordered[0].id
 
     def get(self, job_id: UUID) -> ThumbnailPreheatJob | None:
         with self._lock:
@@ -1220,6 +1388,7 @@ def run_thumbnail_preheat(
         # 进入处理循环前补一次取消检查，避免空跑。
         if job.cancel_event.is_set():
             registry.mark_cancelled(job_id, f"processed=0;total={len(pairs)}")
+            persist_preheat_history(job, settings)
             return
 
         # 说明：不做 count 先行回填 total，也不做分页流式枚举——count 查询
@@ -1319,12 +1488,17 @@ def run_thumbnail_preheat(
                     job_id,
                     f"processed={job.processed};total={job.total}",
                 )
+                persist_preheat_history(job, settings)
                 return
 
         registry.mark_completed(job_id)
+        persist_preheat_history(job, settings)
         task_metrics.record_gc(gc.collect())
     except Exception as exc:
         registry.mark_failed(job_id, str(exc) or type(exc).__name__)
+        refreshed = registry.get(job_id)
+        if refreshed is not None:
+            persist_preheat_history(refreshed, settings)
 
 
 def start_auto_preheat_after_scan(

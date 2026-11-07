@@ -11,6 +11,10 @@ from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.services.remote_thumbnails import cleanup_stale_remote_temporary_files
 from app.services.source_zero import collect_source_zero_status
+from app.services.thumbnail_preheat import (
+    restore_preheat_history_from_disk,
+    thumbnail_preheat_registry,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -41,6 +45,8 @@ async def lifespan(_: FastAPI):
     for warning in settings.credential_warnings():
         logger.warning("credential check: %s", warning)
     cleanup_stale_remote_temporary_files(Path(settings.media_root))
+    # 预热历史装回注册表：重启后 admin 仍能看到上一轮任务的诊断信息。
+    restore_preheat_history_from_disk(thumbnail_preheat_registry, settings)
     log_source_zero_audit()
     to_thread.current_default_thread_limiter().total_tokens = (
         settings.task_thread_pool_size

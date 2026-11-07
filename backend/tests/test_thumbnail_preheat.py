@@ -34,6 +34,8 @@ from app.services.thumbnail_preheat import _set_derivative_cache_state
 from app.services.thumbnail_preheat import (
     ThumbnailPreheatRegistry,
     count_preheat_candidates,
+    persist_preheat_history,
+    restore_preheat_history_from_disk,
     run_thumbnail_preheat,
     start_auto_preheat_after_scan,
 )
@@ -590,6 +592,50 @@ def test_download_resumes_from_range_after_stream_interruption(
     assert path.read_bytes() == b"hello world!"
     assert written == 12
     assert opened_ranges == [None, "bytes=10-"]
+
+
+def test_preheat_history_persists_and_restores_across_restart(tmp_path: Path) -> None:
+    """任务终态摘要落盘，新进程装回注册表后 latest 与统计完整可诊断。"""
+    settings = Settings(media_root=str(tmp_path / "media"))
+    registry = ThumbnailPreheatRegistry()
+    job, started = registry.start(sizes=(240,), kind=None, limit=0)
+    assert started
+    registry.mark_running(job.id, total=2)
+    registry.mark_item_processed(job.id, outcomes={240: "generated"})
+    registry.mark_item_processed(job.id, outcomes={240: "cached"})
+    registry.mark_completed(job.id)
+    persist_preheat_history(job, settings)
+
+    assert (tmp_path / "media" / "preheat-history.json").is_file()
+
+    fresh_registry = ThumbnailPreheatRegistry()
+    restore_preheat_history_from_disk(fresh_registry, settings)
+    restored = fresh_registry.get_latest()
+
+    assert restored is not None
+    assert restored.id == job.id
+    assert restored.status == "completed"
+    assert restored.total == 2
+    assert restored.processed == 2
+    assert restored.generated == 1
+    assert restored.cached == 1
+
+
+def test_running_snapshot_is_coerced_to_failed_on_restore(tmp_path: Path) -> None:
+    """重启前仍非终态的快照按失败收尾，不再悬空为 running。"""
+    settings = Settings(media_root=str(tmp_path / "media"))
+    registry = ThumbnailPreheatRegistry()
+    job, _ = registry.start(sizes=(240,), kind=None, limit=0)
+    registry.mark_running(job.id, total=5)
+    persist_preheat_history(job, settings)
+
+    fresh_registry = ThumbnailPreheatRegistry()
+    restore_preheat_history_from_disk(fresh_registry, settings)
+    restored = fresh_registry.get_latest()
+
+    assert restored is not None
+    assert restored.status == "failed"
+    assert restored.message == "服务重启，任务中断"
 
 
 def test_unexpected_preheat_failure_is_retryable(tmp_path: Path, monkeypatch) -> None:
