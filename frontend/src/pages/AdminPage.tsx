@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Check, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { Check, Eye, EyeOff, Images, RefreshCw } from "lucide-react";
 import { LogOut } from "lucide-react";
 import { Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -60,6 +60,7 @@ import { Input, TextArea } from "@/components/ui/Input";
 import IconButton from "@/components/ui/IconButton";
 import Pagination from "@/components/ui/Pagination";
 import ProgressBar from "@/components/ui/ProgressBar";
+import EmptyState from "@/components/ui/EmptyState";
 import StatusDot from "@/components/ui/StatusDot";
 
 type AdminTabId = "overview" | "content" | "maintenance";
@@ -200,6 +201,34 @@ export default function AdminPage() {
 
   const loadMemoriesTokenRef = useRef(0);
 
+  // 控制台面板数据(作业/配置/系统状态)与列表解耦:翻页、筛选不再
+  // 重拉这六个接口,只在登录后与手动刷新时更新。
+  const refreshConsoleData = useCallback(async () => {
+    const [scan, config, preheat, status, batch, probe] = await Promise.allSettled([
+      getLatestRemoteScan(),
+      getRemoteConfig(),
+      getLatestThumbnailPreheat(),
+      getSystemStatus(),
+      getLatestBatchStatusJob(),
+      getLatestBrowserCompatibilityProbe(),
+    ]);
+    const valueOf = <T,>(result: PromiseSettledResult<T>): T | null =>
+      result.status === "fulfilled" ? result.value : null;
+    setScanTask(valueOf(scan));
+    setRemoteConfig(valueOf(config));
+    setPreheatJob(valueOf(preheat));
+    setSystemStatus(valueOf(status));
+    setBatchJob(valueOf(batch));
+    setProbeJob(valueOf(probe));
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return;
+    }
+    void refreshConsoleData();
+  }, [isAdmin, refreshConsoleData]);
+
   const loadMemories = useCallback(async () => {
     // 竞态令牌：慢的旧筛选响应不得覆盖新结果。
     const requestToken = ++loadMemoriesTokenRef.current;
@@ -215,6 +244,9 @@ export default function AdminPage() {
         page: adminPage,
         page_size: adminPageSize,
       });
+      if (requestToken !== loadMemoriesTokenRef.current) {
+        return;
+      }
       setMemories(data.items);
       setAdminTotal(data.total);
       setDisplayCounts(data.display_counts);
@@ -225,23 +257,6 @@ export default function AdminPage() {
       );
       setIsAdmin(true);
       setCountsState("ready");
-      // 辅助状态请求并行执行；单个失败只降级对应面板，不再拖长整条刷新链。
-      const [scan, config, preheat, status, batch, probe] = await Promise.allSettled([
-        getLatestRemoteScan(),
-        getRemoteConfig(),
-        getLatestThumbnailPreheat(),
-        getSystemStatus(),
-        getLatestBatchStatusJob(),
-        getLatestBrowserCompatibilityProbe(),
-      ]);
-      const valueOf = <T,>(result: PromiseSettledResult<T>): T | null =>
-        result.status === "fulfilled" ? result.value : null;
-      setScanTask(valueOf(scan));
-      setRemoteConfig(valueOf(config));
-      setPreheatJob(valueOf(preheat));
-      setSystemStatus(valueOf(status));
-      setBatchJob(valueOf(batch));
-      setProbeJob(valueOf(probe));
       setError(null);
     } catch (loadError) {
       if (requestToken !== loadMemoriesTokenRef.current) {
@@ -458,9 +473,10 @@ export default function AdminPage() {
     setIsStatusUpdating(true);
     try {
       await updateMemory(memory.id, { status });
+      pushToast(brand.copy.adminStatusChangedToast, "success");
       await loadMemories();
     } catch {
-      setError(brand.copy.adminStatusUpdateFailed);
+      pushToast(brand.copy.adminStatusUpdateFailed, "error");
     } finally {
       setIsStatusUpdating(false);
     }
@@ -475,9 +491,10 @@ export default function AdminPage() {
       await deleteMemory(memory.id);
       setPendingDelete(null);
       setSelectedIds((current) => current.filter((id) => id !== memory.id));
+      pushToast(brand.copy.adminDeleteSuccessToast, "success");
       await loadMemories();
     } catch {
-      setError(brand.copy.adminDeleteFailed);
+      pushToast(brand.copy.adminDeleteFailed, "error");
     } finally {
       setIsDeleting(false);
     }
@@ -820,10 +837,10 @@ export default function AdminPage() {
     setIsRetryingRemote(memory.id);
     try {
       await retryRemoteEntry(memory.primary_file.id);
-      setError(null);
+      pushToast(brand.copy.adminRemoteRetryQueuedToast, "success");
       await loadMemories();
     } catch {
-      setError(brand.copy.adminStreamFailed);
+      pushToast(brand.copy.adminRemoteRetryFailedToast, "error");
     } finally {
       setIsRetryingRemote(null);
     }
@@ -1261,15 +1278,34 @@ export default function AdminPage() {
       ) : null}
 
       {isLoading ? (
-        <div className="admin-panel mt-4 p-5">
-          <div className="shimmer h-24 rounded-xl" />
+        // 骨架行与真实表格同壳同列数,加载完成不发生布局跳变
+        <div className="admin-table-shell table-shell mt-4" aria-hidden="true">
+          <table>
+            <tbody>
+              {Array.from({ length: 8 }, (_, index) => (
+                <tr key={`skeleton-${index}`}>
+                  <td colSpan={8}>
+                    <div
+                      className="shimmer h-10 rounded-lg"
+                      style={{ animationDelay: `${index * 60}ms` }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : memories.length === 0 ? (
         <div className="admin-table-shell table-shell mt-4">
           <table>
             <tbody>
               <tr className="table-empty-row">
-                <td colSpan={8}>{brand.copy.adminEmpty}</td>
+                <td colSpan={8}>
+                  <EmptyState>
+                    <Images aria-hidden="true" className="mb-2 size-8 text-muted" />
+                    {brand.copy.adminEmpty}
+                  </EmptyState>
+                </td>
               </tr>
             </tbody>
           </table>
