@@ -1017,6 +1017,58 @@
     @apply inline-flex items-center rounded-full bg-primary-soft px-3 py-1.5 text-sm font-medium text-foreground;
   }
 
+  /* 分区标签栏:复用 scroll-tabs 的横滑容器,激活态用主色软底药丸 */
+  .admin-tabbar {
+    border-bottom: 1px solid var(--limedia-border);
+    padding-bottom: 0.5rem;
+  }
+
+  .scroll-tab {
+    @apply inline-flex min-h-11 cursor-pointer items-center rounded-lg px-4 text-sm font-medium text-muted transition-colors;
+  }
+
+  .scroll-tab:hover {
+    @apply text-foreground;
+  }
+
+  .scroll-tab[data-active="true"] {
+    @apply bg-primary-soft font-semibold text-foreground;
+  }
+
+  .scroll-tab:focus-visible {
+    outline: 2px solid var(--limedia-ring);
+    outline-offset: 2px;
+  }
+
+  /* 作业状态条:任一后台作业活跃时常驻显示,chip 点击跳对应分区 */
+  .admin-job-strip {
+    align-items: center;
+    background: var(--limedia-surface);
+    border: 1px solid var(--limedia-border);
+    border-radius: 0.875rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.625rem;
+    padding: 0.625rem 0.875rem;
+  }
+
+  .admin-job-strip-label {
+    @apply text-xs font-medium uppercase tracking-widest text-muted;
+  }
+
+  .admin-job-chip {
+    @apply inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border border-border bg-surface-2 px-3.5 text-foreground transition-colors hover:border-primary;
+  }
+
+  .admin-job-chip-label {
+    @apply text-xs font-medium text-muted;
+  }
+
+  .admin-job-chip-value {
+    @apply text-sm font-semibold text-foreground;
+    font-variant-numeric: tabular-nums;
+  }
+
   .admin-table-shell table {
     min-width: 1180px;
   }

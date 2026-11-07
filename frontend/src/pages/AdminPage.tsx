@@ -60,6 +60,14 @@ import Pagination from "@/components/ui/Pagination";
 import ProgressBar from "@/components/ui/ProgressBar";
 import StatusDot from "@/components/ui/StatusDot";
 
+type AdminTabId = "overview" | "content" | "maintenance";
+
+const ADMIN_TABS: { id: AdminTabId; label: string }[] = [
+  { id: "overview", label: brand.copy.adminTabOverview },
+  { id: "content", label: brand.copy.adminTabContent },
+  { id: "maintenance", label: brand.copy.adminTabMaintenance },
+];
+
 export default function AdminPage() {
   useDocumentTitle(brand.pageTitleAdmin);
   const [tokenInput, setTokenInput] = useState("");
@@ -132,6 +140,22 @@ export default function AdminPage() {
   const [batchLocation, setBatchLocation] = useState("");
   const [batchCapturedAt, setBatchCapturedAt] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // 分区走 URL 深链（?tab=content）：刷新、分享、回退都落在同一分区；
+  // 总览是默认值，不出现在 URL 里。
+  const rawTab = searchParams.get("tab");
+  const activeTab: AdminTabId =
+    rawTab === "content" || rawTab === "maintenance" ? rawTab : "overview";
+
+  const switchTab = (tab: AdminTabId) => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === "overview") {
+      next.delete("tab");
+    } else {
+      next.set("tab", tab);
+    }
+    setSearchParams(next, { replace: true });
+  };
 
   const toastSeq = useRef(0);
 
@@ -258,6 +282,55 @@ export default function AdminPage() {
     || probeJob?.status === "queued"
     || probeJob?.status === "running";
 
+  // 作业状态条：任一作业活跃时常驻 tab 栏下，点击 chip 跳到对应分区，
+  // 消除「作业卡随状态在流中弹出」的布局跳动。
+  const activeJobs = [
+    scanTask?.status === "running"
+      ? {
+          key: "scan",
+          label: brand.copy.adminJobStripScan,
+          progress:
+            scanTask.max_items > 0
+              ? scanTask.processed_items / scanTask.max_items
+              : 0,
+          tab: "maintenance" as const,
+        }
+      : null,
+    preheatJob?.status === "queued" || preheatJob?.status === "running"
+      ? {
+          key: "preheat",
+          label: brand.copy.adminJobStripPreheat,
+          progress:
+            preheatJob && preheatJob.total > 0
+              ? preheatJob.processed / preheatJob.total
+              : 0,
+          tab: "maintenance" as const,
+        }
+      : null,
+    batchJob?.status === "queued" || batchJob?.status === "running"
+      ? {
+          key: "batch",
+          label: brand.copy.adminJobStripBatch,
+          progress:
+            batchJob && batchJob.total > 0
+              ? batchJob.processed / batchJob.total
+              : 0,
+          tab: "content" as const,
+        }
+      : null,
+    probeJob?.status === "queued" || probeJob?.status === "running"
+      ? {
+          key: "probe",
+          label: brand.copy.adminJobStripProbe,
+          progress:
+            probeJob && probeJob.total > 0
+              ? probeJob.processed / probeJob.total
+              : 0,
+          tab: "maintenance" as const,
+        }
+      : null,
+  ].filter((job): job is NonNullable<typeof job> => job !== null);
+
   useEffect(() => {
     if (!anyJobActive) {
       return;
@@ -346,7 +419,10 @@ export default function AdminPage() {
         : brand.copy.adminRemoteCallbackFailed,
       authorizationResult === "success" ? "success" : "error",
     );
-    setSearchParams({}, { replace: true });
+    // 只清授权参数：保留当前分区深链，避免回调后跳回总览。
+    const next = new URLSearchParams(searchParams);
+    next.delete("baidu_auth");
+    setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
   const submitToken = async (event: FormEvent<HTMLFormElement>) => {
@@ -791,275 +867,134 @@ export default function AdminPage() {
         </Notice>
       ) : null}
 
-      {remoteConfig ? (
-        <BaiduSetupCard
-          configured={remoteConfig.configured}
-          authorized={remoteConfig.authorized}
-          docsUrl={remoteConfig.docs_url}
-          isAuthorizing={isAuthorizing}
-          oauthConfigured={remoteConfig.oauth_configured}
-          onAuthorize={() => void startAuthorization()}
-          redirectUri={remoteConfig.redirect_uri}
-          scanDir={remoteConfig.scan_dir}
-          tokenExpiresAt={remoteConfig.token_expires_at}
-        />
-      ) : null}
-
-      <AdminStatusDashboard
-        isRefreshing={isRefreshingStatus}
-        onRefresh={() => void refreshSystemStatus()}
-        status={systemStatus}
-      />
-
-      <ThumbnailPreheatCard
-        isStarting={isPreheating}
-        isCancelling={isCancellingPreheat}
-        job={preheatJob}
-        onCancel={() => void cancelPreheat()}
-        onStart={startPreheat}
-      />
-
-      <div className="admin-page-head">
-        <div>
-          <p className="admin-eyebrow">{brand.copy.adminMediaWorkspaceTitle}</p>
-          <h2 className="admin-heading" id="media-workspace-title">
-            {brand.copy.adminAllMemories}
-          </h2>
-          <p className="mt-2 text-sm text-muted">
-            {brand.copy.adminMediaWorkspaceDescription}
-          </p>
-        </div>
-        <Button disabled={isSyncing} onClick={() => void triggerSync()}>
-          <RefreshCw aria-hidden="true" className={`size-4 ${isSyncing ? "animate-spin" : ""}`} />
-          {isSyncing ? brand.copy.adminSyncing : brand.copy.adminSync}
-        </Button>
-      </div>
-
-      <div className="admin-metric-grid mt-4">
-        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminGlobalCountsLabel}>
-          <dt className="text-xs text-muted">{brand.copy.adminGlobalCountsLabel}</dt>
-          <dd className="mt-1 text-lg font-semibold">
-            {countValue(
-              `${globalCounts.photo + globalCounts.video} / ${globalCounts.photo} / ${globalCounts.video}`,
-            )}
-          </dd>
-        </dl>
-        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminDisplayHealthSummary}>
-          <dt className="text-xs text-muted">{brand.copy.adminDisplayHealthSummary}</dt>
-          <dd className="mt-1 text-lg font-semibold">
-            {countValue(
-              `${displayCounts.displayable} / ${displayCounts.excluded}`,
-            )}
-          </dd>
-        </dl>
-        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminCompatibilitySummary}>
-          <dt className="text-xs text-muted">{brand.copy.adminCompatibilitySummary}</dt>
-          <dd className="mt-1 text-lg font-semibold">
-            {countValue(
-              `${browserCounts.supported} / ${browserCounts.unsupported} / ${browserCounts.unknown}`,
-            )}
-          </dd>
-        </dl>
-        <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.statusPublished}>
-          <dt className="text-xs text-muted">
-            {brand.copy.statusPublished} / {brand.copy.adminUnpublished}
-          </dt>
-          <dd className="mt-1 text-lg font-semibold">
-            {countValue(
-              `${statusCounts.published} / ${statusCounts.unpublished}`,
-            )}
-          </dd>
-        </dl>
-      </div>
-
-      <div className="card mt-4 flex flex-wrap items-center justify-between gap-3 p-4">
-        <div>
-          <h3 className="text-sm font-semibold">
-            {brand.copy.adminCompatibilityProbeTitle}
-          </h3>
-          <p className="mt-1 text-xs text-muted">
-            {brand.copy.adminCompatibilityProbeDescription}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            disabled={isProbing || probeJob?.status === "running" || probeJob?.status === "queued"}
-            onClick={() => void startCompatibilityProbe()}
+      <div
+        aria-label={brand.copy.adminTabLabel}
+        className="admin-tabbar scroll-tabs mt-6"
+        role="tablist"
+      >
+        {ADMIN_TABS.map((tab) => (
+          <button
+            aria-controls={`admin-panel-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            className="scroll-tab"
+            data-active={activeTab === tab.id ? "true" : "false"}
+            id={`admin-tab-${tab.id}`}
+            key={tab.id}
+            onClick={() => switchTab(tab.id)}
+            role="tab"
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            type="button"
           >
-            {isProbing
-              ? brand.copy.adminCompatibilityProbing
-              : brand.copy.adminCompatibilityProbe}
-          </Button>
-          {probeJob?.status === "running" || probeJob?.status === "queued" ? (
-            <Button
-              disabled={isProbing}
-              onClick={() => void cancelCompatibilityProbe()}
-              variant="secondary"
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {anyJobActive ? (
+        <div className="admin-job-strip mt-3" role="status">
+          <span className="admin-job-strip-label">
+            {brand.copy.adminJobStripLabel}
+          </span>
+          {activeJobs.map((job) => (
+            <button
+              className="admin-job-chip"
+              key={job.key}
+              onClick={() => switchTab(job.tab)}
+              type="button"
             >
-              {brand.copy.adminBatchJobCancel}
-            </Button>
-          ) : null}
-        </div>
-      </div>
-
-      {probeJob ? (
-        <div className="card mt-4 p-4">
-          <ProgressBar
-            label={brand.copy.adminCompatibilityProbeTitle}
-            tone={probeJob.status === "failed" ? "danger" : "primary"}
-            value={probeJob.total ? (probeJob.processed / probeJob.total) * 100 : 0}
-          />
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
-              <dd className="text-sm">{probeJob.status}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
-              <dd className="text-sm">{probeJob.processed} / {probeJob.total}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminBatchJobChanged}</dt>
-              <dd className="text-sm">{probeJob.changed}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminBatchJobFailed}</dt>
-              <dd className="text-sm">{probeJob.failed}</dd>
-            </div>
-          </dl>
+              <span className="admin-job-chip-label">{job.label}</span>
+              <span className="admin-job-chip-value">
+                {Math.round(job.progress * 100)}%
+              </span>
+            </button>
+          ))}
         </div>
       ) : null}
 
-      {scanTask ? (
-        <div className="card mt-4 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">{brand.copy.adminRemoteScanTitle}</h3>
-              <p className="mt-1 text-xs text-muted">{scanTask.remote_dir}</p>
-            </div>
-            {scanTask.status === "failed" ? (
-              <Button
-                disabled={isSyncing}
-                onClick={() => void triggerSync(scanTask.id)}
-                variant="secondary"
-              >
-                {brand.copy.adminResumeScan}
-              </Button>
-            ) : null}
-          </div>
-          <ProgressBar
-            label={brand.copy.adminScanProgress}
-            tone={scanTask.status === "failed" ? "danger" : "primary"}
-            value={(scanTask.processed_items / scanTask.max_items) * 100}
-          />
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
-              <dd className="text-sm">
-                <span className="inline-flex items-center gap-2">
-                  <StatusDot
-                    tone={
-                      scanTask.status === "completed"
-                        ? "connected"
-                        : scanTask.status === "running"
-                          ? "connecting"
-                          : "invalid"
-                    }
-                  />
-                  {scanTask.status === "running"
-                    ? brand.copy.adminScanRunning
-                    : scanTask.status === "completed"
-                      ? brand.copy.adminScanCompleted
-                      : brand.copy.adminScanFailed}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
-              <dd className="text-sm">
-                {scanTask.processed_items} / {scanTask.max_items}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanFiles}</dt>
-              <dd className="text-sm">{scanTask.scanned_files}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanDirectories}</dt>
-              <dd className="text-sm">{scanTask.scanned_directories}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanDiscovered}</dt>
-              <dd className="text-sm">{scanTask.discovered}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.adminScanSkipped}</dt>
-              <dd className="text-sm">{scanTask.skipped}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.statusDeletedCount}</dt>
-              <dd className="text-sm">{lastDeleted}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">{brand.copy.statusCompletionTime}</dt>
-              <dd className="text-sm">
-                {scanTask.completed_at
-                  ? formatDateTime(scanTask.completed_at)
-                  : scanTask.status === "running"
-                    ? brand.copy.adminScanRunning
-                    : brand.copy.adminNeverSynced}
-              </dd>
-            </div>
+      <div
+        aria-labelledby="admin-tab-overview"
+        className="mt-4"
+        hidden={activeTab !== "overview"}
+        id="admin-panel-overview"
+        role="tabpanel"
+      >
+        <div className="admin-metric-grid">
+          <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminGlobalCountsLabel}>
+            <dt className="text-xs text-muted">{brand.copy.adminGlobalCountsLabel}</dt>
+            <dd className="mt-1 text-lg font-semibold">
+              {countValue(
+                `${globalCounts.photo + globalCounts.video} / ${globalCounts.photo} / ${globalCounts.video}`,
+              )}
+            </dd>
           </dl>
-          {scanTask.failure_reason ? (
-            <p className="mt-3 text-sm text-muted">
-              <span className="font-medium">{brand.copy.adminScanFailure}: </span>
-              {scanTask.failure_reason}
+          <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminDisplayHealthSummary}>
+            <dt className="text-xs text-muted">{brand.copy.adminDisplayHealthSummary}</dt>
+            <dd className="mt-1 text-lg font-semibold">
+              {countValue(
+                `${displayCounts.displayable} / ${displayCounts.excluded}`,
+              )}
+            </dd>
+          </dl>
+          <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.adminCompatibilitySummary}>
+            <dt className="text-xs text-muted">{brand.copy.adminCompatibilitySummary}</dt>
+            <dd className="mt-1 text-lg font-semibold">
+              {countValue(
+                `${browserCounts.supported} / ${browserCounts.unsupported} / ${browserCounts.unknown}`,
+              )}
+            </dd>
+          </dl>
+          <dl className="card min-w-52 flex-1 p-4" aria-label={brand.copy.statusPublished}>
+            <dt className="text-xs text-muted">
+              {brand.copy.statusPublished} / {brand.copy.adminUnpublished}
+            </dt>
+            <dd className="mt-1 text-lg font-semibold">
+              {countValue(
+                `${statusCounts.published} / ${statusCounts.unpublished}`,
+              )}
+            </dd>
+          </dl>
+        </div>
+
+        <AdminStatusDashboard
+          isRefreshing={isRefreshingStatus}
+          onRefresh={() => void refreshSystemStatus()}
+          status={systemStatus}
+        />
+
+        {remoteConfig ? (
+          <BaiduSetupCard
+            configured={remoteConfig.configured}
+            authorized={remoteConfig.authorized}
+            docsUrl={remoteConfig.docs_url}
+            isAuthorizing={isAuthorizing}
+            oauthConfigured={remoteConfig.oauth_configured}
+            onAuthorize={() => void startAuthorization()}
+            redirectUri={remoteConfig.redirect_uri}
+            scanDir={remoteConfig.scan_dir}
+            tokenExpiresAt={remoteConfig.token_expires_at}
+          />
+        ) : null}
+      </div>
+
+      <div
+        aria-labelledby="admin-tab-content"
+        className="mt-4"
+        hidden={activeTab !== "content"}
+        id="admin-panel-content"
+        role="tabpanel"
+      >
+        <div className="admin-page-head">
+          <div>
+            <p className="admin-eyebrow">{brand.copy.adminMediaWorkspaceTitle}</p>
+            <h2 className="admin-heading" id="media-workspace-title">
+              {brand.copy.adminAllMemories}
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              {brand.copy.adminMediaWorkspaceDescription}
             </p>
-          ) : null}
+          </div>
         </div>
-      ) : null}
 
-      <div className="card mt-4 flex flex-wrap items-center gap-3 p-4">
-        <div className="mr-auto">
-          <h3 className="text-sm font-semibold">{brand.copy.adminCleanupTitle}</h3>
-          <p className="mt-1 text-xs text-muted">{brand.copy.adminCleanupDescription}</p>
-        </div>
-        <Button
-          disabled={isCleaning}
-          onClick={() => void prepareCleanup()}
-          variant="danger"
-        >
-          {isCleaning && pendingCleanup === null
-            ? brand.copy.adminCleanupRunning
-            : brand.copy.adminCleanup}
-        </Button>
-      </div>
-
-      {cleanupResult ? (
-        <dl className="card mt-4 grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">
-          <div>
-            <dt className="text-xs text-muted">{brand.copy.adminCleanupMemories}</dt>
-            <dd className="text-sm">{cleanupResult.stats.memories}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">{brand.copy.adminCleanupRemoteIndexes}</dt>
-            <dd className="text-sm">{cleanupResult.stats.remote_file_indexes}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">{brand.copy.adminCleanupThumbnails}</dt>
-            <dd className="text-sm">{cleanupResult.stats.thumbnail_files}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">{brand.copy.adminCleanupNginxCache}</dt>
-            <dd className="text-sm">{cleanupResult.stats.nginx_cache_files}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">{brand.copy.adminCleanupBytes}</dt>
-            <dd className="text-sm">{formatBytes(cleanupResult.stats.estimated_bytes_to_free)}</dd>
-          </div>
-        </dl>
-      ) : null}
 
       <section className="admin-panel mt-4" aria-labelledby="admin-filter-title">
         <div className="admin-panel-head">
@@ -1266,6 +1201,63 @@ export default function AdminPage() {
         </section>
       ) : null}
 
+      {batchJob ? (
+        <div className="card mt-4 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">
+                {brand.copy.adminBatchJobTitle}
+              </h3>
+              <p className="mt-1 text-xs text-muted">{batchJob.action}</p>
+            </div>
+            {batchJob.status === "running" || batchJob.status === "queued" ? (
+              <Button
+                disabled={isCancellingBatch}
+                onClick={() => void cancelBatchJob()}
+                variant="secondary"
+              >
+                {brand.copy.adminBatchJobCancel}
+              </Button>
+            ) : null}
+          </div>
+          <ProgressBar
+            label={brand.copy.adminScanProgress}
+            tone={batchJob.status === "failed" ? "danger" : "primary"}
+            value={batchJob.total ? (batchJob.processed / batchJob.total) * 100 : 0}
+          />
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
+              <dd className="text-sm">{batchJob.status}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
+              <dd className="text-sm">{batchJob.processed} / {batchJob.total}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobChanged}</dt>
+              <dd className="text-sm">{batchJob.changed}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobSkipped}</dt>
+              <dd className="text-sm">{batchJob.skipped}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobFailed}</dt>
+              <dd className="text-sm">{batchJob.failed}</dd>
+            </div>
+          </dl>
+          {batchJob.error_message ? (
+            <p className="mt-3 text-sm text-muted">
+              <span className="font-medium">
+                {brand.copy.adminBatchJobRetryReason}:{" "}
+              </span>
+              {batchJob.error_message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {isLoading ? (
         <div className="admin-panel mt-4 p-5">
           <div className="shimmer h-24 rounded-xl" />
@@ -1457,63 +1449,228 @@ export default function AdminPage() {
           />
         </div>
       ) : null}
+      </div>
 
-      {batchJob ? (
+      <div
+        aria-labelledby="admin-tab-maintenance"
+        className="mt-4"
+        hidden={activeTab !== "maintenance"}
+        id="admin-panel-maintenance"
+        role="tabpanel"
+      >
+        <div className="admin-page-head">
+          <div>
+            <p className="admin-eyebrow">{brand.copy.adminMaintenanceEyebrow}</p>
+            <h2 className="admin-heading" id="admin-maintenance-title">
+              {brand.copy.adminMaintenanceTitle}
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              {brand.copy.adminMaintenanceDescription}
+            </p>
+          </div>
+          <Button disabled={isSyncing} onClick={() => void triggerSync()}>
+            <RefreshCw aria-hidden="true" className={`size-4 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? brand.copy.adminSyncing : brand.copy.adminSync}
+          </Button>
+        </div>
+
+        <ThumbnailPreheatCard
+          isStarting={isPreheating}
+          isCancelling={isCancellingPreheat}
+          job={preheatJob}
+          onCancel={() => void cancelPreheat()}
+          onStart={startPreheat}
+        />
+
+      <div className="card mt-4 flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <h3 className="text-sm font-semibold">
+            {brand.copy.adminCompatibilityProbeTitle}
+          </h3>
+          <p className="mt-1 text-xs text-muted">
+            {brand.copy.adminCompatibilityProbeDescription}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            disabled={isProbing || probeJob?.status === "running" || probeJob?.status === "queued"}
+            onClick={() => void startCompatibilityProbe()}
+          >
+            {isProbing
+              ? brand.copy.adminCompatibilityProbing
+              : brand.copy.adminCompatibilityProbe}
+          </Button>
+          {probeJob?.status === "running" || probeJob?.status === "queued" ? (
+            <Button
+              disabled={isProbing}
+              onClick={() => void cancelCompatibilityProbe()}
+              variant="secondary"
+            >
+              {brand.copy.adminBatchJobCancel}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {probeJob ? (
+        <div className="card mt-4 p-4">
+          <ProgressBar
+            label={brand.copy.adminCompatibilityProbeTitle}
+            tone={probeJob.status === "failed" ? "danger" : "primary"}
+            value={probeJob.total ? (probeJob.processed / probeJob.total) * 100 : 0}
+          />
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
+              <dd className="text-sm">{probeJob.status}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
+              <dd className="text-sm">{probeJob.processed} / {probeJob.total}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobChanged}</dt>
+              <dd className="text-sm">{probeJob.changed}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminBatchJobFailed}</dt>
+              <dd className="text-sm">{probeJob.failed}</dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
+
+      {scanTask ? (
         <div className="card mt-4 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold">
-                {brand.copy.adminBatchJobTitle}
-              </h3>
-              <p className="mt-1 text-xs text-muted">{batchJob.action}</p>
+              <h3 className="text-sm font-semibold">{brand.copy.adminRemoteScanTitle}</h3>
+              <p className="mt-1 text-xs text-muted">{scanTask.remote_dir}</p>
             </div>
-            {batchJob.status === "running" || batchJob.status === "queued" ? (
+            {scanTask.status === "failed" ? (
               <Button
-                disabled={isCancellingBatch}
-                onClick={() => void cancelBatchJob()}
+                disabled={isSyncing}
+                onClick={() => void triggerSync(scanTask.id)}
                 variant="secondary"
               >
-                {brand.copy.adminBatchJobCancel}
+                {brand.copy.adminResumeScan}
               </Button>
             ) : null}
           </div>
           <ProgressBar
             label={brand.copy.adminScanProgress}
-            tone={batchJob.status === "failed" ? "danger" : "primary"}
-            value={batchJob.total ? (batchJob.processed / batchJob.total) * 100 : 0}
+            tone={scanTask.status === "failed" ? "danger" : "primary"}
+            value={(scanTask.processed_items / scanTask.max_items) * 100}
           />
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminScanStatus}</dt>
-              <dd className="text-sm">{batchJob.status}</dd>
+              <dd className="text-sm">
+                <span className="inline-flex items-center gap-2">
+                  <StatusDot
+                    tone={
+                      scanTask.status === "completed"
+                        ? "connected"
+                        : scanTask.status === "running"
+                          ? "connecting"
+                          : "invalid"
+                    }
+                  />
+                  {scanTask.status === "running"
+                    ? brand.copy.adminScanRunning
+                    : scanTask.status === "completed"
+                      ? brand.copy.adminScanCompleted
+                      : brand.copy.adminScanFailed}
+                </span>
+              </dd>
             </div>
             <div>
               <dt className="text-xs text-muted">{brand.copy.adminScanProgress}</dt>
-              <dd className="text-sm">{batchJob.processed} / {batchJob.total}</dd>
+              <dd className="text-sm">
+                {scanTask.processed_items} / {scanTask.max_items}
+              </dd>
             </div>
             <div>
-              <dt className="text-xs text-muted">{brand.copy.adminBatchJobChanged}</dt>
-              <dd className="text-sm">{batchJob.changed}</dd>
+              <dt className="text-xs text-muted">{brand.copy.adminScanFiles}</dt>
+              <dd className="text-sm">{scanTask.scanned_files}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted">{brand.copy.adminBatchJobSkipped}</dt>
-              <dd className="text-sm">{batchJob.skipped}</dd>
+              <dt className="text-xs text-muted">{brand.copy.adminScanDirectories}</dt>
+              <dd className="text-sm">{scanTask.scanned_directories}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted">{brand.copy.adminBatchJobFailed}</dt>
-              <dd className="text-sm">{batchJob.failed}</dd>
+              <dt className="text-xs text-muted">{brand.copy.adminScanDiscovered}</dt>
+              <dd className="text-sm">{scanTask.discovered}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.adminScanSkipped}</dt>
+              <dd className="text-sm">{scanTask.skipped}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.statusDeletedCount}</dt>
+              <dd className="text-sm">{lastDeleted}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">{brand.copy.statusCompletionTime}</dt>
+              <dd className="text-sm">
+                {scanTask.completed_at
+                  ? formatDateTime(scanTask.completed_at)
+                  : scanTask.status === "running"
+                    ? brand.copy.adminScanRunning
+                    : brand.copy.adminNeverSynced}
+              </dd>
             </div>
           </dl>
-          {batchJob.error_message ? (
+          {scanTask.failure_reason ? (
             <p className="mt-3 text-sm text-muted">
-              <span className="font-medium">
-                {brand.copy.adminBatchJobRetryReason}:{" "}
-              </span>
-              {batchJob.error_message}
+              <span className="font-medium">{brand.copy.adminScanFailure}: </span>
+              {scanTask.failure_reason}
             </p>
           ) : null}
         </div>
       ) : null}
+
+      <div className="card mt-4 flex flex-wrap items-center gap-3 p-4">
+        <div className="mr-auto">
+          <h3 className="text-sm font-semibold">{brand.copy.adminCleanupTitle}</h3>
+          <p className="mt-1 text-xs text-muted">{brand.copy.adminCleanupDescription}</p>
+        </div>
+        <Button
+          disabled={isCleaning}
+          onClick={() => void prepareCleanup()}
+          variant="danger"
+        >
+          {isCleaning && pendingCleanup === null
+            ? brand.copy.adminCleanupRunning
+            : brand.copy.adminCleanup}
+        </Button>
+      </div>
+
+      {cleanupResult ? (
+        <dl className="card mt-4 grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupMemories}</dt>
+            <dd className="text-sm">{cleanupResult.stats.memories}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupRemoteIndexes}</dt>
+            <dd className="text-sm">{cleanupResult.stats.remote_file_indexes}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupThumbnails}</dt>
+            <dd className="text-sm">{cleanupResult.stats.thumbnail_files}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupNginxCache}</dt>
+            <dd className="text-sm">{cleanupResult.stats.nginx_cache_files}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">{brand.copy.adminCleanupBytes}</dt>
+            <dd className="text-sm">{formatBytes(cleanupResult.stats.estimated_bytes_to_free)}</dd>
+          </div>
+        </dl>
+      ) : null}
+      </div>
 
       <Link className="mt-8 inline-flex min-h-11 items-center text-primary" to="/">
         {brand.copy.backHome}

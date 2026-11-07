@@ -378,23 +378,28 @@ test("admin table is visible in dark mode", async ({ page }) => {
   });
   await page.goto("/admin");
 
+  // 总览(默认分区):接入引导与系统状态仪表盘
   await expect(page.getByRole("heading", { name: "回忆管理" })).toBeVisible();
-  await expect(page.getByText("湖边清晨")).toBeVisible();
   await expect(page.getByRole("heading", { name: "百度网盘接入步骤" })).toBeVisible();
   await expect(page.getByText("/apps/Li&Media").first()).toBeVisible();
-  await expect(page.getByText("远程索引扫描")).toBeVisible();
   await expect(page.getByText("后端栈与资源状态")).toBeVisible();
   await expect(page.getByText("远端存储状态")).toBeVisible();
   await expect(page.getByText("百度网盘", { exact: true })).toBeVisible();
   await expect(page.getByText("资源与队列")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "任务队列" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "任务队列" })).toBeVisible();
   await expect(page.getByText("单帧派生", { exact: true })).toBeVisible();
   await expect(page.getByText("预热调度")).toBeVisible();
+  await expect(page.getByText("预览就绪").first()).toBeVisible();
+
+  // 内容管理:记忆表格
+  await page.getByRole("tab", { name: "内容管理" }).click();
+  await expect(page.getByText("湖边清晨")).toBeVisible();
+
+  // 资源维护:扫描任务卡与预热控制
+  await page.getByRole("tab", { name: "资源维护" }).click();
+  await expect(page.getByText("远程索引扫描")).toBeVisible();
   await expect(page.getByText("预热缩略图")).toBeVisible();
   await expect(page.getByText("并发", { exact: true })).toBeVisible();
-  await expect(page.getByText("预览就绪").first()).toBeVisible();
   await page.locator("#preheat-kind").selectOption({ label: "图片资源" });
   await expect(page.getByText("预计 3 项")).toBeVisible();
   await page.getByRole("button", { name: "开始预热" }).click();
@@ -402,6 +407,8 @@ test("admin table is visible in dark mode", async ({ page }) => {
     .poll(() => preheatPayload)
     .toEqual({ sizes: ["240"], kind: "photo", limit: 0, include_failed: false });
   await expect.poll(() => preheatRequests).toBeGreaterThan(1);
+  // 回总览刷新系统状态,再切换主题
+  await page.getByRole("tab", { name: "总览" }).click();
   await page.getByRole("button", { name: "刷新状态" }).click();
   await expect.poll(() => statusRequests).toBeGreaterThan(1);
   await page.getByRole("button", { name: "切换到深色主题" }).click();
@@ -590,6 +597,8 @@ test("admin can retry a remote entry", async ({ page }) => {
   });
 
   await page.goto("/admin");
+  // 行内操作在内容管理分区
+  await page.getByRole("tab", { name: "内容管理" }).click();
   await page.getByRole("button", { name: "重试远程" }).click();
   await expect.poll(() => retried).toBe(true);
 });
@@ -660,10 +669,14 @@ test("admin cleanup confirms before clearing local index", async ({ page }) => {
   });
 
   await page.goto("/admin");
+  // 清理入口在资源维护分区
+  await page.getByRole("tab", { name: "资源维护" }).click();
   await page.getByRole("button", { name: "一键清理" }).click();
   await expect(page.getByText("确认清理全部本地索引？")).toBeVisible();
   await page.getByRole("button", { name: "确认清理" }).click();
   await expect(page.getByText("本地清理完成，网盘资源未变化。")).toBeVisible();
+  // 清空后的空表格在内容管理分区
+  await page.getByRole("tab", { name: "内容管理" }).click();
   await expect(page.locator(".table-empty-row td")).toHaveAttribute("colSpan", "11");
   await expect(page.getByText("网盘中还没有照片或视频；请先完成接入步骤，再点击扫描。")).toBeVisible();
 });

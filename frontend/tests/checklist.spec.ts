@@ -417,6 +417,7 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
   await expect(page.getByText("2 / 64")).toBeVisible();
   await expect(page.getByText("16 / 3")).toBeVisible();
 
+  await page.getByRole("tab", { name: "内容管理" }).click();
   await page.getByRole("button", { name: "发布当前筛选" }).click();
   await expect(page.getByText("当前没有筛选条件，本次将影响全部媒体。")).toBeVisible();
   await expect(page.getByText("影响总数")).toBeVisible();
