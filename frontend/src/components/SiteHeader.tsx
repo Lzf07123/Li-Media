@@ -148,6 +148,7 @@ export default function SiteHeader() {
           <IconButton
             aria-label={theme === "dark" ? brand.copy.themeLight : brand.copy.themeDark}
             onClick={toggleTheme}
+            title={theme === "dark" ? brand.copy.themeLight : brand.copy.themeDark}
           >
             {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
           </IconButton>

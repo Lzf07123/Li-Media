@@ -2606,7 +2606,11 @@ html {
   margin: 0;
   color: var(--limedia-muted);
 }
+
 .empty-state-action {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
   font-weight: 600;
 }
 

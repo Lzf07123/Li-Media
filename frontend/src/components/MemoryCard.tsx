@@ -2,7 +2,7 @@ import { Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
 import { memo, useEffect, useReducer, useRef, useState } from "react";
 
 import { brand } from "@/lib/brand";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDuration } from "@/lib/format";
 import {
   appendQueryParam,
   resolveThumbnailUrl,
@@ -210,6 +210,10 @@ function MemoryCard({
   const captionMeta = [memory.location, formatDate(memory.captured_at)]
     .filter(Boolean)
     .join(" · ");
+  const videoDuration = formatDuration(memory.duration_seconds);
+  const videoBadgeLabel = videoDuration
+    ? `${brand.copy.videoKind} ${videoDuration}`
+    : brand.copy.videoKind;
 
   const retryThumbnail = () => {
     if (!thumbnailUrl) {
@@ -298,7 +302,8 @@ function MemoryCard({
       {memory.kind === "video" ? (
         <span className="waterfall-badge">
           <Video aria-hidden="true" className="size-3.5" />
-          {brand.copy.videoKind}
+          {/* 第一直觉：视频卡片应能感知「是视频 + 多长」 */}
+          {videoBadgeLabel}
         </span>
       ) : null}
       {captionMeta ? (

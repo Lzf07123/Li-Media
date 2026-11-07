@@ -503,6 +503,27 @@ export default function MediaViewer({
     }
   };
 
+  // 暗区点击关闭：记录指针起点，click 命中 stage 本体且位移 < 8px 才触发
+  //（拖拽平移与双击缩放位移大或 target 在图片上，不会误关）
+  const backdropPointer = useRef<{ x: number; y: number } | null>(null);
+  const handleStagePointerDown = (event: React.PointerEvent) => {
+    backdropPointer.current = { x: event.clientX, y: event.clientY };
+  };
+  const handleStageBackdropClick = (event: React.MouseEvent) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    const start = backdropPointer.current;
+    backdropPointer.current = null;
+    if (!start) {
+      return;
+    }
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 8) {
+      return;
+    }
+    onClose();
+  };
+
   useEffect(() => {
     setPlaybackSource(null);
     dispatchMediaState({ type: "reset" });
@@ -513,18 +534,26 @@ export default function MediaViewer({
       aria-label={memory.title || brand.copy.detailPreviewAlt}
       aria-modal="true"
       className="photo-viewer"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
       ref={viewerRef}
       role="dialog"
       tabIndex={0}
     >
       {isVideo ? (
-        <div className="photo-viewer-stage is-video">
-          <div className="video-viewer-shell" style={videoShellStyle}>
+        <div
+          className="photo-viewer-stage is-video"
+          onClick={handleStageBackdropClick}
+          onPointerDown={handleStagePointerDown}
+        >
+          <div
+            className="video-viewer-shell"
+            onClick={() => {
+              // 点海报即播放（中央按钮仍保留）；已起播时忽略
+              if (!playbackSource) {
+                void startPlayback();
+              }
+            }}
+            style={videoShellStyle}
+          >
             {playbackSource ? (
               <VideoPlayer
                 key={memory.id}
@@ -553,7 +582,10 @@ export default function MediaViewer({
                   aria-label={brand.copy.viewerPlay}
                   className="video-viewer-play"
                   disabled={mediaState.playback === "loading"}
-                  onClick={() => void startPlayback()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void startPlayback();
+                  }}
                   type="button"
                 >
                   <Play aria-hidden="true" />
@@ -589,9 +621,13 @@ export default function MediaViewer({
       ) : (
         <div
           className="photo-viewer-stage"
+          onClick={handleStageBackdropClick}
           onDoubleClick={() => (zoom > 1 ? resetTransform() : setZoom(2.5))}
           onPointerCancel={handlePointerUp}
-          onPointerDown={handlePointerDown}
+          onPointerDown={(event) => {
+            handleStagePointerDown(event);
+            handlePointerDown(event);
+          }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onWheel={handleWheel}
@@ -630,9 +666,18 @@ export default function MediaViewer({
             </p>
           ) : null}
           {mediaState.preview === "failed" ? (
-            <p aria-live="assertive" className="photo-viewer-error">
-              {brand.copy.detailImageLoadFailed}
-            </p>
+            <div aria-live="assertive" className="video-playback-overlay">
+              <p>{brand.copy.detailImageLoadFailed}</p>
+              <button
+                onClick={() => {
+                  dispatchMediaState({ scope: "preview", type: "retry" });
+                  setPhotoRetryKey((current) => current + 1);
+                }}
+                type="button"
+              >
+                {brand.copy.detailRetry}
+              </button>
+            </div>
           ) : null}
           <div
             aria-hidden="true"
@@ -668,6 +713,7 @@ export default function MediaViewer({
         <button
           aria-label={brand.copy.viewerPrevious}
           className="photo-viewer-button photo-viewer-nav photo-viewer-nav-prev"
+          title={brand.copy.viewerPrevious}
           onClick={onPrev}
           type="button"
         >
@@ -677,6 +723,7 @@ export default function MediaViewer({
       {onNext ? (
         <button
           aria-label={brand.copy.viewerNext}
+          title={brand.copy.viewerNext}
           className="photo-viewer-button photo-viewer-nav photo-viewer-nav-next"
           onClick={onNext}
           type="button"
@@ -690,6 +737,7 @@ export default function MediaViewer({
           aria-label={brand.copy.detailRetry}
           className="photo-viewer-button"
           disabled={!isVideo && !hasIndexFailure && mediaState.preview === "ready"}
+          title={brand.copy.detailRetry}
           onClick={() => {
             if (isVideo) {
               void startPlayback();
@@ -708,6 +756,9 @@ export default function MediaViewer({
             : brand.copy.viewerDownload}
           className="photo-viewer-button"
           disabled={mediaState.download === "loading"}
+          title={mediaState.download === "failed"
+            ? brand.copy.viewerRetryDownload
+            : brand.copy.viewerDownload}
           onClick={() => void startDownload()}
           type="button"
         >
@@ -721,6 +772,7 @@ export default function MediaViewer({
           aria-label={brand.copy.close}
           className="photo-viewer-button"
           onClick={onClose}
+          title={brand.copy.close}
           type="button"
         >
           <X aria-hidden="true" />

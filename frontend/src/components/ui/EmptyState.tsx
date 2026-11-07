@@ -1,11 +1,16 @@
 import type { ComponentType, ReactNode } from "react";
 
 type EmptyStateProps = {
+  action?: ReactNode;
   art?: ComponentType<{ className?: string }>;
   children: ReactNode;
 };
 
-export default function EmptyState({ art: Art, children }: EmptyStateProps) {
+export default function EmptyState({
+  action,
+  art: Art,
+  children,
+}: EmptyStateProps) {
   return (
     <div className="empty-state">
       {Art ? (
@@ -14,6 +19,7 @@ export default function EmptyState({ art: Art, children }: EmptyStateProps) {
         </div>
       ) : null}
       <p className="empty-state-text">{children}</p>
+      {action ? <div className="empty-state-action">{action}</div> : null}
     </div>
   );
 }

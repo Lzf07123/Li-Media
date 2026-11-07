@@ -146,9 +146,9 @@ export default function HomePage() {
   // referentially stable so memoized MemoryCards skip reconciliation while
   // the URL (and therefore searchParams) is unchanged.
   const updateParams = useCallback(
-    (next: URLSearchParams) => {
+    (next: URLSearchParams, options?: { replace?: boolean }) => {
       const query = next.toString();
-      setSearchParams(query ? `?${query}` : "");
+      setSearchParams(query ? `?${query}` : "", options);
     },
     [setSearchParams],
   );
@@ -257,6 +257,8 @@ export default function HomePage() {
         next.delete("keyword");
       }
       updateParams(next);
+      // 新关键词生效后从顶部看结果（与换一批行为对齐）
+      window.scrollTo({ behavior: "auto", top: 0 });
     }, 400);
     return () => window.clearTimeout(timer);
   }, [keyword, searchInput, searchParams, updateParams]);
@@ -545,6 +547,8 @@ export default function HomePage() {
     next.delete("sort");
     next.delete("page");
     updateParams(next);
+    // 直觉对齐：切换类型后从顶部看新结果（与换一批一致）
+    window.scrollTo({ behavior: "auto", top: 0 });
   };
 
   const clearSearch = () => {
@@ -557,11 +561,14 @@ export default function HomePage() {
   };
 
   const openViewer = useCallback(
-    (memoryId: string) => {
+    (memoryId: string, options?: { replace?: boolean }) => {
       const next = new URLSearchParams(searchParams);
-      scrollBeforeViewer = window.scrollY;
+      // 仅从画布进入 viewer 时记录原位；翻页（replace）不覆盖滚动原点
+      if (!searchParams.get("viewer")) {
+        scrollBeforeViewer = window.scrollY;
+      }
       next.set("viewer", memoryId);
-      updateParams(next);
+      updateParams(next, options);
     },
     [searchParams, updateParams],
   );
@@ -571,7 +578,8 @@ export default function HomePage() {
     next.delete("viewer");
     setDirectMemory(null);
     setViewerMissing(false);
-    updateParams(next);
+    // 关闭 viewer 用 replace：back 不应重新打开 viewer，而是离开本页
+    updateParams(next, { replace: true });
     const previousScroll = scrollBeforeViewer;
     window.setTimeout(() => {
       if (Number.isFinite(previousScroll) && previousScroll > 0) {
@@ -788,7 +796,16 @@ export default function HomePage() {
         </Notice>
       ) : canvasMemories.length === 0 ? (
         <div className="mt-8">
-          <EmptyState art={Images}>
+          <EmptyState
+            action={
+              keyword ? (
+                <Button onClick={clearSearch} variant="secondary">
+                  {brand.copy.clearSearch}
+                </Button>
+              ) : null
+            }
+            art={Images}
+          >
             {keyword
               ? brand.copy.emptySearch
               : preheatSummary !== null &&
@@ -866,8 +883,8 @@ export default function HomePage() {
           <MediaViewer
             memory={activeMemory}
             onClose={closeViewer}
-            onNext={nextMemory ? () => openViewer(nextMemory.id) : undefined}
-            onPrev={previousMemory ? () => openViewer(previousMemory.id) : undefined}
+            onNext={nextMemory ? () => openViewer(nextMemory.id, { replace: true }) : undefined}
+            onPrev={previousMemory ? () => openViewer(previousMemory.id, { replace: true }) : undefined}
             prefetchTargets={viewerNeighbors}
           />
         </Suspense>
