@@ -290,7 +290,6 @@
 
   body {
     overflow-x: hidden;
-    padding-bottom: 88px;
     @apply bg-background font-sans text-foreground antialiased;
   }
 
