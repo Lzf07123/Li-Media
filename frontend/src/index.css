@@ -2643,8 +2643,8 @@ html {
   place-items: center;
   width: 44px;
   height: 44px;
-  border: 1px solid var(--limedia-glass-border-soft);
-  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, var(--limedia-muted) 26%, transparent);
+  border-radius: 999px;
   background:
     var(--limedia-glass-shine),
     var(--limedia-glass-bg-strong);
@@ -2653,16 +2653,29 @@ html {
   color: var(--limedia-muted);
   box-shadow: var(--limedia-shadow-md),
     inset 0 1px 0 var(--limedia-glass-highlight);
+  cursor: pointer;
   text-decoration: none;
+  /* 常驻改按需浮现：未滚过一屏完全退场，visibility 延迟到淡出后再隐藏 */
+  opacity: 0;
+  transform: translateY(10px) scale(0.94);
+  visibility: hidden;
   transition:
+    opacity var(--limedia-motion-base) var(--limedia-ease-out),
+    transform var(--limedia-motion-base) var(--limedia-ease-spring),
     color var(--limedia-motion-fast) var(--limedia-ease-out),
     background-color var(--limedia-motion-fast) var(--limedia-ease-out),
     box-shadow var(--limedia-motion-base) var(--limedia-ease-out),
-    transform var(--limedia-motion-base) var(--limedia-ease-spring);
+    visibility 0s linear var(--limedia-motion-base);
+}
+.back-to-top.is-visible {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
 }
 .back-to-top svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 .back-to-top:hover,
 .back-to-top:focus-visible {
