@@ -1,6 +1,6 @@
 # Li&Media Master
 
-> 版本：V1.4 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
+> 版本：V1.5 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
 > 相关：[BRAND.md](BRAND.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
 
 ## 技术栈与路由
@@ -12,9 +12,10 @@
 ## 令牌快照
 
 - 文件：`frontend/src/index.css`，是颜色、阴影、缓动和动效时长唯一事实来源。
-- 前缀：`--limedia-*`；主题：`:root` 浅色、`.dark` 深色。
+- 前缀：`--limedia-*`；主题：`:root` 浅色（次要）、`.dark` 深色（主打，近黑 `#0D1110` 底）；无存储偏好时默认深色。
 - 语义层：background / surface / surface-2 / foreground / muted / border / primary / secondary / success / warning / destructive / ring / 六组 accent。
-- 辅助层：`--limedia-shadow-*`、`--limedia-ease-*`、`--limedia-motion-*`、`--limedia-glass-*`、`--limedia-aurora-*`、`--limedia-tech-*`、`--limedia-flow-gradient`。
+- 辅助层：`--limedia-shadow-*`、`--limedia-ease-*`、`--limedia-motion-*`（含 `motion-cinematic` 与 `ken-burns`）、`--limedia-glass-*`、`--limedia-flow-gradient`。V1.5 起移除 `--limedia-aurora-*` 与 `--limedia-tech-*`（氛围层收敛为静态胶片颗粒）。
+- 展示排版：`--font-display` 系统衬线栈（New York / Songti SC / Georgia），`--text-hero` 系 clamp 字号生成 `text-hero` utility；元数据行 tnum + 大写字距。
 - Tailwind 组件只引用 `bg-primary`、`text-muted`、`border-border`、`.card` 等语义类；不硬编码颜色值。
 - 深色带文字软底使用 `--limedia-*-soft-solid` 与 `--limedia-*-soft-fg`。
 
@@ -24,15 +25,16 @@
 | --- | --- |
 | 交互控件 | `Button`、`IconButton`、`Input`、`TextArea`、`DropdownMenu`、`Pagination` |
 | 反馈 | `Badge`、`StatusBadge`、`FileStatusBadge`、`Notice`、`Toast`、`Modal`、`ProgressBar`、`EmptyState`、`MediaSkeleton`、`SearchSkeleton`、`StatusDot` |
-| 氛围 | `AmbientBackground`（软极光 + 科技光效层）、`BlurText`、`FlowRule`（CSS 类） |
-| 内容组件 | `MemoryCard`、`HeroMosaic`（首屏精选拼贴：≤5 块真实缩略图瓦片、主瓦 768 / 侧瓦 480 派生图走共享队列、捕获后稳定、空库退场）、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
+| 氛围 | `AmbientBackground`（静态胶片颗粒 + 单枚极淡光晕，V1.5 起无极光/科技层）、`BlurText`、`FlowRule`（CSS 类） |
+| 内容组件 | `MemoryCard`（无边框纯图瓦 + 底部渐变说明层，占位按 `memory.width/height` 实时计算）、`HeroFeature`（电影感单幅首屏：全出血精选图 1280/768 派生图走共享队列、极慢 Ken Burns、双层渐变遮罩、衬线巨字标题压图、「接下来」条切换主图、捕获 ≤5 条后稳定、窄屏露 3 枚、空库退场）、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
+| 骨架 | `MediaSkeleton`（数据驱动：按真实图像宽高逐条实时计算 `aspect-ratio`，尺寸解析链 = 内存 items → `limedia-canvas-composition` 构图缓存 → 多样比例兜底；与真实画布同构零位移）、`HeroFeature` 内结构镜像骨架（非一整块均色） |
 | 外壳 | `SiteHeader`（沉浸式 V1.7：`.site-header`/`.site-header-inner`/`.is-scrolled`）、`SiteFooter`（模板 V1.5：`mt-auto` 贴底 56px）、`BackToTop`、`Breadcrumb` |
 
 ## 页面与状态
 
 | 页面 | 关键状态 |
 | --- | --- |
-| `HomePage` | 首屏精选拼贴 hero（图像先行，首屏捕获 ≤5 条后保持稳定，换批/筛选/翻页不影响；窄屏编辑性裁剪至 3 块）、类型导航、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、媒体骨架、加载失败、空库（预热未到终态时显示「回忆预览正在准备」）、画布仅展示 240px 预热就绪内容（卡片固定请求 240px）、预热到终态且用户在顶部附近时自动补图刷新一次、「已收录媒体」为可展示口径（与画布一致）、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
+| `HomePage` | 电影感单幅 hero（图像先行：全出血精选图 + 衬线巨字标题压图 + 元数据行 + CTA +「接下来」条切换主图；首屏捕获 ≤5 条后保持稳定，换批/筛选/翻页不影响；窄屏露 3 枚；空库退场并渲染兜底 h1）、类型导航、编辑部风统计行、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、数据驱动媒体骨架（按真实宽高）、加载失败、空库（预热未到终态时显示「回忆预览正在准备」）、画布仅展示 240px 预热就绪内容（卡片固定请求 240px）、预热到终态且用户在顶部附近时自动补图刷新一次、「已收录媒体」为可展示口径（与画布一致）、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复、hero 存在时页眉压图浅色配色（`.has-hero` + `data-on-hero`） |
 | `AdminPage` | 登录态、分区工作台、自适应搜索筛选、当前范围/选中记录操作分离、状态徽章、浏览器兼容、批量进度、发布、下架、删除确认、远程扫描、确认式本地清理 |
 | `NotFoundPage` | 空态图标、返回首页 |
 
@@ -45,7 +47,7 @@
 - 桌面导航在 769px 显示；768px 及以下显示外露首页和二级菜单，菜单项与图标按钮均为 44px 热区。
 - 360px 隐藏品牌文字，仅保留品牌图标；所有主视图不允许横向溢出。
 - 响应式覆盖放在 `@layer components` 之外，避免 utilities 覆盖。
-- 全站使用 `AmbientBackground` 软氛围层；表格、正文和媒体内容保持前景层优先，移动端隐藏光束与光点。
+- 全站使用 `AmbientBackground` 静态胶片颗粒氛围层（无动画，不参与 reduced-motion 分支）；表格、正文和媒体内容保持前景层优先。
 
 ## 资产与品牌单点
 
