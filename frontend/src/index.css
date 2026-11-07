@@ -583,16 +583,21 @@
     animation: ripple-expand 500ms var(--limedia-ease-out) forwards;
   }
 
-  /* 图标按钮：44px 触控热区，移动端不缩小 */
+  /* 图标按钮：44px 触控热区，移动端不缩小；圆角对齐菜单触发器（10px），
+     悬浮轻抬 + 按压回缩与 .btn 同一弹簧手感 */
   .icon-btn {
-    @apply inline-flex h-11 w-11 shrink-0 cursor-pointer select-none items-center justify-center rounded-lg border border-border bg-surface text-foreground transition-colors hover:bg-surface-2;
+    @apply inline-flex h-11 w-11 shrink-0 cursor-pointer select-none items-center justify-center rounded-[10px] border border-border bg-surface text-foreground transition-colors hover:bg-surface-2;
+    overflow: hidden;
     transition:
       background-color var(--limedia-motion-fast) var(--limedia-ease-out),
       color var(--limedia-motion-fast) var(--limedia-ease-out),
       transform var(--limedia-motion-base) var(--limedia-ease-spring);
   }
-  .icon-btn:active {
-    transform: scale(0.95);
+  .icon-btn:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+  .icon-btn:not(:disabled):active {
+    transform: translateY(0) scale(0.95);
   }
   .icon-btn svg {
     height: 1.25rem;
@@ -2241,11 +2246,16 @@ html {
   backdrop-filter: blur(10px);
   transition:
     background-color var(--limedia-motion-fast) var(--limedia-ease-out),
-    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+    border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    transform var(--limedia-motion-base) var(--limedia-ease-spring);
 }
 .hero-cta:hover {
   background: rgba(13, 17, 16, 0.56);
   border-color: rgba(240, 244, 243, 0.56);
+  transform: translateY(-1px);
+}
+.hero-cta:active {
+  transform: translateY(0) scale(0.97);
 }
 .hero-cta:focus-visible {
   outline: 2px solid var(--limedia-ring);
@@ -2860,7 +2870,8 @@ html {
   cursor: pointer;
   transition:
     background-color var(--limedia-motion-fast) var(--limedia-ease-out),
-    color var(--limedia-motion-fast) var(--limedia-ease-out);
+    color var(--limedia-motion-fast) var(--limedia-ease-out),
+    transform var(--limedia-motion-base) var(--limedia-ease-spring);
 }
 
 .segmented button::after {
@@ -2873,6 +2884,10 @@ html {
 .segmented button:focus-visible {
   background: var(--limedia-surface-2);
   color: var(--limedia-fg);
+}
+
+.segmented button:not(:disabled):active {
+  transform: scale(0.96);
 }
 
 .segmented button[data-active="true"] {
@@ -3386,7 +3401,8 @@ html {
   backdrop-filter: blur(8px);
   transition:
     background-color var(--limedia-motion-fast) var(--limedia-ease-out),
-    border-color var(--limedia-motion-fast) var(--limedia-ease-out);
+    border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    transform var(--limedia-motion-base) var(--limedia-ease-spring);
 }
 /* 触控热区扩展：28px 视觉 + 8px 透明外环 = 44px 可点范围 */
 .hero-auto-toggle::after {
@@ -3398,6 +3414,9 @@ html {
 .hero-auto-toggle:hover {
   background: rgba(13, 17, 16, 0.6);
   border-color: rgba(240, 244, 243, 0.52);
+}
+.hero-auto-toggle:active {
+  transform: scale(0.94);
 }
 .hero-auto-toggle:focus-visible {
   outline: 2px solid var(--limedia-ring);
