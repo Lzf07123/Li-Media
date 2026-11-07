@@ -3,6 +3,7 @@ import { Images, RefreshCw, X } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
+import HeroMosaic from "@/components/HeroMosaic";
 import { brand } from "@/lib/brand";
 import {
   getMemoryById,
@@ -395,6 +396,16 @@ export default function HomePage() {
           : "hidden";
 
   const viewerMemories = canvasMemories;
+
+  // 图像 hero：首屏数据一到就捕获精选集（≤5 条），之后画布换批/翻页/
+  // 筛选都不再改动 hero——它是「这个库长什么样」的第一印象，保持稳定。
+  // 捕获必须在渲染期完成：若放到 effect，列表到达时会先提交一帧
+  // 「hero 消失」再提交「hero 出现」，整页内容两次大跳（CLS 预算实测 0.18）。
+  const [heroSource, setHeroSource] = useState<MemorySummary[] | null>(null);
+  if (heroSource === null && !isLoadingInitial && canvasMemories.length > 0) {
+    setHeroSource(canvasMemories.slice(0, 5));
+  }
+  const heroMemories = heroSource ?? [];
   const canvasColumns = useMemo(() => {
     const columns = Array.from({ length: columnCount }, () => [] as MemorySummary[]);
     canvasMemories.forEach((memory, index) => {
@@ -619,6 +630,11 @@ export default function HomePage() {
 
   return (
     <section aria-labelledby="library-title" className="page-enter">
+      <HeroMosaic
+        loading={isLoadingInitial && heroMemories.length === 0}
+        memories={heroMemories}
+        onOpen={openViewer}
+      />
       <BlurText
         as="h1"
         className="page-title text-3xl sm:text-5xl font-semibold tracking-wide"

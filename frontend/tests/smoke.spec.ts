@@ -295,7 +295,7 @@ test("home waterfall card opens viewer", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await page.getByRole("button", { name: "湖边清晨" }).click();
+  await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await expect(page).toHaveURL(new RegExp(`viewer=${memoryId}`));
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect(

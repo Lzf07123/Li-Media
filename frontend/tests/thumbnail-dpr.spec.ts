@@ -86,7 +86,8 @@ test.describe("1x screens", () => {
     await expect
       .poll(() => sizes.has("240"), { timeout: 5000 })
       .toBe(true);
-    expect(sizes.has("480")).toBe(false);
+    // 卡片固定 240；480 属 hero 侧瓦与查看器海报，1280 仅查看器大图
+    expect(sizes.has("1280")).toBe(false);
   });
 });
 
@@ -94,7 +95,7 @@ test.describe("2x screens", () => {
   test.use({ deviceScaleFactor: 2 });
 
   // 画布可见性以 240px 预热就绪为门槛，卡片固定取 240px：预热即所得，
-  // 高分屏不再触发 480px 按需生成；查看器内才取 1280/480 高清档。
+  // 高分屏不抬升卡片档位（hero 瓦片固定 768/480，与 DPR 无关）。
   test("card thumbnails stay on the 240px derivative", async ({ page }) => {
     const sizes = await mockLibrary(page);
     await page.goto("/");
@@ -102,6 +103,6 @@ test.describe("2x screens", () => {
     await expect
       .poll(() => sizes.has("240"), { timeout: 5000 })
       .toBe(true);
-    expect(sizes.has("480")).toBe(false);
+    expect(sizes.has("1280")).toBe(false);
   });
 });

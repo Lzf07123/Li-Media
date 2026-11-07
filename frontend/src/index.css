@@ -2179,13 +2179,130 @@ html {
       transform var(--limedia-motion-fast) var(--limedia-ease-out);
   }
   .post-card:hover .card-caption,
-  .post-card:focus-within .card-caption {
+  .post-card:focus-within .card-caption,
+  .hero-tile:hover .card-caption,
+  .hero-tile:focus-within .card-caption {
     opacity: 1;
     transform: translateY(0);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .card-caption {
+    transition: none;
+  }
+}
+
+/* ========== 首页图像 hero（精选拼贴） ==========
+   图像即第一印象：首屏以真实回忆缩略图拼贴开场，标题随其后。
+   瓦片几何由网格行高固定（零 CLS）；信息层复用 card-caption；
+   视频徽标独立命名（.hero-kind-badge），不与画布 .waterfall-badge
+   契约测试耦合；hover 缩放仅在允许动效的指针设备生效。 */
+.hero-mosaic {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: clamp(110px, 26vw, 150px);
+  grid-auto-flow: dense;
+  list-style: none;
+  margin: 8px auto 32px;
+  padding: 0;
+  max-width: 64rem;
+}
+.hero-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--limedia-surface-2);
+  border: 1px solid var(--limedia-glass-border-soft);
+}
+.hero-tile:first-child {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+.hero-tile-skeleton .media-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hero-tile-button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.hero-tile-button:focus-visible {
+  outline: 2px solid var(--limedia-ring);
+  outline-offset: 2px;
+}
+.hero-media {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.hero-media-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--limedia-motion-base) var(--limedia-ease-out);
+}
+.hero-media-img.is-ready {
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .hero-media-img {
+    transform: scale(1);
+    transition:
+      opacity var(--limedia-motion-base) var(--limedia-ease-out),
+      transform 600ms var(--limedia-ease-out);
+  }
+  .hero-tile:hover .hero-media-img,
+  .hero-tile:focus-within .hero-media-img {
+    transform: scale(1.04);
+  }
+}
+.hero-kind-badge {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--limedia-glass-border-soft);
+  border-radius: 999px;
+  background: var(--limedia-primary-soft-solid);
+  color: var(--limedia-primary-soft-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+@media (min-width: 768px) {
+  .hero-mosaic {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-rows: clamp(150px, 15vw, 200px);
+    margin-top: 20px;
+    margin-bottom: 44px;
+  }
+}
+/* 窄屏只保留主瓦片 + 2 块侧瓦片：拼贴是编辑取舍，不是全部内容 */
+@media (max-width: 767.98px) {
+  .hero-tile:nth-child(n + 4) {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-media-img,
+  .hero-tile:hover .hero-media-img,
+  .hero-tile:focus-within .hero-media-img {
+    transform: none;
     transition: none;
   }
 }

@@ -568,7 +568,7 @@ test("video playback uses server stream and avoids direct links", async ({ page 
 
   await page.goto("/");
   await expect(page.locator(".masonry .post-card")).toHaveCount(1);
-  await page.getByRole("button", { name: "湖边清晨" }).click();
+  await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect.poll(() => serverRequests).toBe(1);
   expect(directRequests).toBe(0);
@@ -1001,7 +1001,7 @@ test("video preparation shows one playback overlay", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "湖边清晨" }).click();
+  await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect(page.locator(".video-playback-overlay")).toBeVisible();
   expect(await page.locator(".video-playback-message").count()).toBe(1);
@@ -1136,7 +1136,7 @@ test("photo viewer selects card and viewer sizes by viewport", async ({ page }) 
   await expect.poll(() => thumbnailSizes).toContain("240");
   expect(thumbnailSizes).not.toContain("1280");
 
-  await page.getByRole("button", { name: "湖边清晨" }).click();
+  await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   await expect.poll(() => thumbnailSizes).toContain("1280");
   // 查看器小图先行与画布同源 240：桌面全链路不再出现 480 请求
@@ -1153,7 +1153,7 @@ test("mobile viewer uses 480px poster instead of desktop large image", async ({ 
 
   await page.setViewportSize({ width: 360, height: 700 });
   await page.goto("/");
-  await page.getByRole("button", { name: "湖边清晨" }).click();
+  await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   // 小图先行 240 + 移动大图 480，桌面 1280 不出现
   await expect.poll(() => thumbnailSizes).toContain("240");
@@ -1200,7 +1200,7 @@ test("video does not request playback until play and can use server fallback", a
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "湖边清晨" }).click();
+  await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
   expect(directRequests).toBe(0);
   await page.getByRole("button", { name: "播放视频" }).click();
@@ -1223,7 +1223,7 @@ test("download button uses the server media stream", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "湖边清晨" }).click();
+  await page.locator(".masonry").getByRole("button", { name: "湖边清晨" }).click();
   await page.locator(".photo-viewer").getByRole("button", { name: "下载" }).click();
   const clickedHrefs = await page.evaluate(
     () => (window as any).__clickedHrefs as string[],

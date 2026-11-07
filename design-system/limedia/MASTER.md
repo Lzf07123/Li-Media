@@ -1,6 +1,6 @@
 # Li&Media Master
 
-> 版本：V1.3 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
+> 版本：V1.4 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
 > 相关：[BRAND.md](BRAND.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
 
 ## 技术栈与路由
@@ -25,14 +25,14 @@
 | 交互控件 | `Button`、`IconButton`、`Input`、`TextArea`、`DropdownMenu`、`Pagination` |
 | 反馈 | `Badge`、`StatusBadge`、`FileStatusBadge`、`Notice`、`Toast`、`Modal`、`ProgressBar`、`EmptyState`、`MediaSkeleton`、`SearchSkeleton`、`StatusDot` |
 | 氛围 | `AmbientBackground`（软极光 + 科技光效层）、`BlurText`、`FlowRule`（CSS 类） |
-| 内容组件 | `MemoryCard`、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
+| 内容组件 | `MemoryCard`、`HeroMosaic`（首屏精选拼贴：≤5 块真实缩略图瓦片、主瓦 768 / 侧瓦 480 派生图走共享队列、捕获后稳定、空库退场）、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
 | 外壳 | `SiteHeader`（沉浸式 V1.7：`.site-header`/`.site-header-inner`/`.is-scrolled`）、`SiteFooter`（模板 V1.5：`mt-auto` 贴底 56px）、`BackToTop`、`Breadcrumb` |
 
 ## 页面与状态
 
 | 页面 | 关键状态 |
 | --- | --- |
-| `HomePage` | 类型导航、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、媒体骨架、加载失败、空库（预热未到终态时显示「回忆预览正在准备」）、画布仅展示 240px 预热就绪内容（卡片固定请求 240px）、预热到终态且用户在顶部附近时自动补图刷新一次、「已收录媒体」为可展示口径（与画布一致）、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
+| `HomePage` | 首屏精选拼贴 hero（图像先行，首屏捕获 ≤5 条后保持稳定，换批/筛选/翻页不影响；窄屏编辑性裁剪至 3 块）、类型导航、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、媒体骨架、加载失败、空库（预热未到终态时显示「回忆预览正在准备」）、画布仅展示 240px 预热就绪内容（卡片固定请求 240px）、预热到终态且用户在顶部附近时自动补图刷新一次、「已收录媒体」为可展示口径（与画布一致）、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复 |
 | `AdminPage` | 登录态、分区工作台、自适应搜索筛选、当前范围/选中记录操作分离、状态徽章、浏览器兼容、批量进度、发布、下架、删除确认、远程扫描、确认式本地清理 |
 | `NotFoundPage` | 空态图标、返回首页 |
 
