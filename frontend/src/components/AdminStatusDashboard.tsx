@@ -1,6 +1,7 @@
 import {
   Activity,
   Database,
+  Flame,
   Gauge,
   HardDrive,
   Layers,
@@ -36,6 +37,31 @@ function statusLabel(status: ServiceStatus) {
 function failureKindLabel(kind: string) {
   const labels = brand.copy.adminThumbnailFailureReasons as Record<string, string>;
   return labels[kind] ?? kind;
+}
+
+function preheatStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    queued: brand.copy.adminPreheatQueued,
+    running: brand.copy.adminPreheatRunning,
+    completed: brand.copy.adminPreheatCompleted,
+    cancelled: brand.copy.adminPreheatCancelled,
+    failed: brand.copy.adminPreheatFailed,
+  };
+  return labels[status] ?? status;
+}
+
+function formatCooldown(seconds: number) {
+  if (seconds <= 0) {
+    return brand.copy.adminPreheatHealthCooldownOff;
+  }
+  return `${Math.round(seconds / 60)} ${brand.copy.adminMinutesUnit}`;
+}
+
+function formatDownloadTimeout(seconds: number) {
+  if (seconds >= 60) {
+    return `${Math.round(seconds / 60)} ${brand.copy.adminMinutesUnit}`;
+  }
+  return `${seconds} ${brand.copy.adminSecondsUnit}`;
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
@@ -143,6 +169,16 @@ export default function AdminStatusDashboard({
         ? "warning"
         : "primary";
   const configuration = status.backend.configuration;
+  // 滚动部署期间旧后端可能未返回 preheat 段：兜底中性值，不炸整个后台页
+  const preheatHealth = status.preheat ?? {
+    history_jobs: 0,
+    last_status: null,
+    last_completed_at: null,
+    recent_generated: 0,
+    recent_cached: 0,
+    recent_failed: 0,
+    recent_success_rate: 1.0,
+  };
   const cacheStatus = {
     ok: "",
     unavailable: brand.copy.adminCacheUnavailable,
@@ -360,7 +396,7 @@ export default function AdminStatusDashboard({
 
       </div>
 
-      <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
         <section aria-labelledby="workload-status">
           <SectionHeader
             icon={Gauge}
@@ -441,6 +477,14 @@ export default function AdminStatusDashboard({
               value={`${configuration.preheat_concurrency_limit} / ${configuration.preheat_queue_limit}`}
             />
             <Metric
+              label={brand.copy.adminConfigRetryCooldown}
+              value={formatCooldown(configuration.preheat_retry_cooldown_seconds)}
+            />
+            <Metric
+              label={brand.copy.adminConfigDownloadTimeout}
+              value={formatDownloadTimeout(configuration.source_download_timeout_seconds)}
+            />
+            <Metric
               label={brand.copy.adminConfigDerivative}
               value={`${configuration.derivative_concurrency_limit} / ${configuration.derivative_queue_limit}`}
             />
@@ -461,6 +505,50 @@ export default function AdminStatusDashboard({
               value={`${configuration.temp_max_files} / ${formatBytes(configuration.temp_disk_quota_bytes) ?? "-"}`}
             />
           </dl>
+        </section>
+
+        <section aria-labelledby="preheat-health-status">
+          <SectionHeader
+            icon={Flame}
+            id="preheat-health-status"
+            title={brand.copy.adminPreheatHealthTitle}
+          />
+          {preheatHealth.history_jobs === 0 ? (
+            <p className="mt-3 text-xs text-muted">
+              {brand.copy.adminPreheatHealthNoHistory}
+            </p>
+          ) : (
+            <dl className="mt-3 space-y-2">
+              <Metric
+                label={brand.copy.adminPreheatHealthLastStatus}
+                value={
+                  preheatHealth.last_status
+                    ? preheatStatusLabel(preheatHealth.last_status)
+                    : "-"
+                }
+              />
+              <Metric
+                label={brand.copy.adminPreheatHealthSuccessRate}
+                value={`${Math.round(preheatHealth.recent_success_rate * 100)}%`}
+              />
+              <Metric
+                label={brand.copy.adminPreheatGenerated}
+                value={preheatHealth.recent_generated}
+              />
+              <Metric
+                label={brand.copy.adminPreheatCached}
+                value={preheatHealth.recent_cached}
+              />
+              <Metric
+                label={brand.copy.adminPreheatFailedCount}
+                value={preheatHealth.recent_failed}
+              />
+              <Metric
+                label={brand.copy.adminPreheatHealthHistory}
+                value={preheatHealth.history_jobs}
+              />
+            </dl>
+          )}
         </section>
 
         <section aria-labelledby="task-queue-status">

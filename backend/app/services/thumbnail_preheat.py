@@ -29,6 +29,7 @@ from app.models.memory import (
     MemoryStatus,
     RemoteThumbnailState,
 )
+from app.schemas.responses import PreheatHealthStatus
 from app.services.baidu_pan import BaiduPanClient, BaiduPanError
 from app.services.derivative_tasks import (
     run_local_derivative,
@@ -204,6 +205,56 @@ def restore_preheat_history_from_disk(
     ]
     if jobs:
         registry.restore_history(jobs)
+
+
+def collect_preheat_health(settings: Settings) -> PreheatHealthStatus:
+    """从磁盘历史聚合预热健康度，供系统状态仪表盘展示。
+
+    无历史或历史损坏时给中性默认值（成功率 1.0、零计数），不阻塞
+    状态接口；口径为「派生图交付」：(生成+缓存命中)/(总尝试)。
+    """
+
+    history: list[dict[str, object]] = []
+    try:
+        parsed = json.loads(
+            _preheat_history_path(settings).read_text(encoding="utf-8")
+        )
+        if isinstance(parsed, list):
+            history = [entry for entry in parsed if isinstance(entry, dict)]
+    except (OSError, ValueError):
+        history = []
+
+    recent_generated = sum(
+        max(0, int(entry.get("generated") or 0)) for entry in history
+    )
+    recent_cached = sum(
+        max(0, int(entry.get("cached") or 0)) for entry in history
+    )
+    recent_failed = sum(
+        max(0, int(entry.get("failed") or 0)) for entry in history
+    )
+    delivered = recent_generated + recent_cached
+    attempts = delivered + recent_failed
+
+    last_status: str | None = None
+    last_completed_at: datetime | None = None
+    for entry in reversed(history):
+        if entry.get("status") in {"completed", "cancelled", "failed"}:
+            last_status = str(entry.get("status"))
+            last_completed_at = _parse_snapshot_datetime(
+                entry.get("completed_at")
+            )
+            break
+
+    return PreheatHealthStatus(
+        history_jobs=len(history),
+        last_status=last_status,
+        last_completed_at=last_completed_at,
+        recent_generated=recent_generated,
+        recent_cached=recent_cached,
+        recent_failed=recent_failed,
+        recent_success_rate=(delivered / attempts) if attempts > 0 else 1.0,
+    )
 
 
 @dataclass(slots=True)

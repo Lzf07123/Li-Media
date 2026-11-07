@@ -86,6 +86,8 @@ def test_system_status_reports_backend_remote_and_resources(
                 "preheat_concurrency_limit": 3,
                 "preheat_queue_limit": 64,
                 "preheat_wait_timeout_seconds": 2.0,
+                "preheat_retry_cooldown_seconds": 3600,
+                "source_download_timeout_seconds": 600.0,
                 "derivative_concurrency_limit": 2,
                 "derivative_queue_limit": 32,
                 "derivative_wait_timeout_seconds": 15.0,
@@ -96,6 +98,16 @@ def test_system_status_reports_backend_remote_and_resources(
                 "stream_user_concurrency_limit": 3,
                 "temp_max_files": 8,
                 "temp_disk_quota_bytes": 4294967296,
+            }
+            # 预热健康度：无历史时给中性默认值，不阻塞状态接口
+            assert payload["preheat"] == {
+                "history_jobs": 0,
+                "last_status": None,
+                "last_completed_at": None,
+                "recent_generated": 0,
+                "recent_cached": 0,
+                "recent_failed": 0,
+                "recent_success_rate": 1.0,
             }
             assert payload["resources"]["filesystem"]["total_bytes"] > 0
             assert payload["resources"]["caches"]["derived_thumbnails"]["status"] == "ok"

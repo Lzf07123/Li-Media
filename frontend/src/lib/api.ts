@@ -317,6 +317,8 @@ export type ResourceRuntimeConfiguration = {
   preheat_concurrency_limit: number;
   preheat_queue_limit: number;
   preheat_wait_timeout_seconds: number;
+  preheat_retry_cooldown_seconds: number;
+  source_download_timeout_seconds: number;
   derivative_concurrency_limit: number;
   derivative_queue_limit: number;
   derivative_wait_timeout_seconds: number;
@@ -327,6 +329,16 @@ export type ResourceRuntimeConfiguration = {
   stream_user_concurrency_limit: number;
   temp_max_files: number;
   temp_disk_quota_bytes: number;
+};
+
+export type PreheatHealthStatus = {
+  history_jobs: number;
+  last_status: string | null;
+  last_completed_at: string | null;
+  recent_generated: number;
+  recent_cached: number;
+  recent_failed: number;
+  recent_success_rate: number;
 };
 
 export type TaskQueueStatus = {
@@ -341,6 +353,7 @@ export type SystemStatus = {
   generated_at: string;
   backend: BackendRuntimeStatus;
   remote_storage: RemoteStorageStatus;
+  preheat: PreheatHealthStatus;
   tasks: Record<keyof typeof TASK_KEYS, TaskQueueStatus>;
   metrics: Record<string, number>;
   resources: {

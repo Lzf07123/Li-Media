@@ -35,6 +35,7 @@ from app.services.baidu_pan import download_url_cache
 from app.services.resource_metrics import collect_resource_metrics
 from app.services.source_zero import collect_source_zero_status
 from app.services.thumbnail_preheat import (
+    collect_preheat_health,
     count_public_detail_derivative_cache_hits,
     count_public_derivative_candidates,
     count_public_derivative_cache_hits,
@@ -244,6 +245,8 @@ def collect_system_status(
                 preheat_concurrency_limit=settings.preheat_concurrency_limit,
                 preheat_queue_limit=settings.preheat_queue_limit,
                 preheat_wait_timeout_seconds=settings.preheat_wait_timeout_seconds,
+                preheat_retry_cooldown_seconds=settings.preheat_retry_cooldown_seconds,
+                source_download_timeout_seconds=settings.source_download_timeout_seconds,
                 derivative_concurrency_limit=settings.derivative_concurrency_limit,
                 derivative_queue_limit=settings.derivative_queue_limit,
                 derivative_wait_timeout_seconds=settings.derivative_wait_timeout_seconds,
@@ -257,6 +260,7 @@ def collect_system_status(
             ),
         ),
         remote_storage=_remote_storage_status(db, settings),
+        preheat=collect_preheat_health(settings),
         source_zero=SourceZeroStatus(
             **collect_source_zero_status(db, Path(settings.media_root))
         ),

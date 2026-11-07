@@ -250,6 +250,8 @@ class ResourceRuntimeConfiguration(BaseModel):
     preheat_concurrency_limit: int
     preheat_queue_limit: int
     preheat_wait_timeout_seconds: float
+    preheat_retry_cooldown_seconds: int
+    source_download_timeout_seconds: float
     derivative_concurrency_limit: int
     derivative_queue_limit: int
     derivative_wait_timeout_seconds: float
@@ -260,6 +262,19 @@ class ResourceRuntimeConfiguration(BaseModel):
     stream_user_concurrency_limit: int
     temp_max_files: int
     temp_disk_quota_bytes: int
+
+
+class PreheatHealthStatus(BaseModel):
+    """预热健康度：由磁盘历史聚合，重启后仍可追溯。"""
+
+    history_jobs: int
+    last_status: str | None
+    last_completed_at: datetime | None
+    recent_generated: int
+    recent_cached: int
+    recent_failed: int
+    # (generated+cached)/(generated+cached+failed)；无失败样本时为 1.0
+    recent_success_rate: float
 
 
 class BackendRuntimeStatus(BaseModel):
@@ -354,6 +369,7 @@ class AdminSystemStatusResponse(BaseModel):
     backend: BackendRuntimeStatus
     remote_storage: RemoteStorageStatus
     source_zero: SourceZeroStatus
+    preheat: PreheatHealthStatus
     tasks: dict[str, TaskQueueStatus]
     metrics: dict[str, int]
     resources: ResourceStatus

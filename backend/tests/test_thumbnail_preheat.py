@@ -638,6 +638,40 @@ def test_running_snapshot_is_coerced_to_failed_on_restore(tmp_path: Path) -> Non
     assert restored.message == "服务重启，任务中断"
 
 
+def test_preheat_health_aggregates_history(tmp_path: Path) -> None:
+    """健康度从磁盘历史聚合：交付率 = (生成+缓存)/(总尝试)。"""
+    from app.services.thumbnail_preheat import collect_preheat_health
+
+    settings = Settings(media_root=str(tmp_path / "media"))
+    registry = ThumbnailPreheatRegistry()
+
+    job, _ = registry.start(sizes=(240,), kind=None, limit=0)
+    registry.mark_running(job.id, total=2)
+    registry.mark_item_processed(job.id, outcomes={240: "generated"})
+    registry.mark_item_processed(job.id, outcomes={240: "generated"})
+    registry.mark_completed(job.id)
+    persist_preheat_history(job, settings)
+
+    job2, _ = registry.start(sizes=(480,), kind=None, limit=0)
+    assert job2 is not job
+    registry.mark_running(job2.id, total=2)
+    registry.mark_item_processed(job2.id, outcomes={480: "cached"})
+    registry.mark_item_processed(job2.id, outcomes={480: "failed"})
+    registry.mark_failed(job2.id, "boom")
+    persist_preheat_history(registry.get(job2.id), settings)
+
+    health = collect_preheat_health(settings)
+
+    assert health.history_jobs == 2
+    assert health.last_status == "failed"
+    assert health.last_completed_at is not None
+    assert health.recent_generated == 2
+    assert health.recent_cached == 1
+    assert health.recent_failed == 1
+    # (2 生成 + 1 缓存) / (2 + 1 + 1 尝试) = 0.75
+    assert health.recent_success_rate == 0.75
+
+
 def test_unexpected_preheat_failure_is_retryable(tmp_path: Path, monkeypatch) -> None:
     session_factory = create_database(tmp_path)
     memory_id = UUID("00000000-0000-0000-0000-000000000011")
