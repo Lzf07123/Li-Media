@@ -83,10 +83,10 @@ def test_system_status_reports_backend_remote_and_resources(
                 256 * 1024 * 1024
             )
             assert payload["backend"]["configuration"] == {
-                "preheat_concurrency_limit": 2,
+                "preheat_concurrency_limit": 3,
                 "preheat_queue_limit": 64,
                 "preheat_wait_timeout_seconds": 2.0,
-                "derivative_concurrency_limit": 1,
+                "derivative_concurrency_limit": 2,
                 "derivative_queue_limit": 32,
                 "derivative_wait_timeout_seconds": 15.0,
                 "direct_probe_concurrency_limit": 4,

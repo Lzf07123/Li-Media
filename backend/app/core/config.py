@@ -58,10 +58,12 @@ class Settings(BaseSettings):
     direct_probe_concurrency_limit: int = Field(default=4, ge=1, le=16)
     direct_probe_queue_limit: int = Field(default=16, ge=0, le=1000)
     direct_probe_wait_timeout_seconds: float = Field(default=3.0, ge=0, le=30)
-    derivative_concurrency_limit: int = Field(default=1, ge=1, le=4)
+    # 预热 worker 以等待下载的 IO 为主、ffmpeg/缩放单线程，默认并发取 3；
+    # 派生槽位放宽到 2 兼顾访客按需派生。小机器可通过 env 调回。
+    derivative_concurrency_limit: int = Field(default=2, ge=1, le=4)
     derivative_queue_limit: int = Field(default=32, ge=0, le=1000)
     derivative_wait_timeout_seconds: float = Field(default=15.0, ge=0, le=60)
-    preheat_concurrency_limit: int = Field(default=2, ge=1, le=8)
+    preheat_concurrency_limit: int = Field(default=3, ge=1, le=8)
     preheat_queue_limit: int = Field(default=64, ge=0, le=1000)
     preheat_wait_timeout_seconds: float = Field(default=2.0, ge=0, le=30)
     preheat_auto_after_scan: bool = Field(default=True)

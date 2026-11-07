@@ -161,6 +161,18 @@ class BaiduPanClient:
         return BaiduListPage(items=items, next_start=next_start)
 
     def get_file_metadata(self, remote_id: str) -> BaiduRemoteItem:
+        metadata, _ = self._get_file_metadata_with_dlink(remote_id)
+        return metadata
+
+    def _get_file_metadata_with_dlink(
+        self,
+        remote_id: str,
+    ) -> tuple[BaiduRemoteItem, str | None]:
+        """一次 filemetas 同时取元数据与原始 dlink。
+
+        dlink 含访问凭证，只保存在返回值里供 resolve_download_url 使用，
+        绝不进持久化摘要或日志。
+        """
         try:
             fsids = json.dumps([int(remote_id)], separators=(",", ":"))
         except (TypeError, ValueError) as exc:
@@ -180,7 +192,11 @@ class BaiduPanClient:
         if not files:
             raise BaiduPanError("远程文件不存在")
 
-        return self._to_remote_item(files[0])
+        dlink = files[0].get("dlink")
+        return (
+            self._to_remote_item(files[0]),
+            str(dlink) if dlink else None,
+        )
 
     def get_thumbnail(
         self,
@@ -275,29 +291,12 @@ class BaiduPanClient:
         if cached:
             return cached
 
-        metadata = self.get_file_metadata(remote_id)
-        if not metadata.raw_metadata_summary.get("has_download_link"):
+        # 单次 filemetas 同时取元数据与 dlink：冷缓存少一半元数据往返
+        metadata, dlink = self._get_file_metadata_with_dlink(remote_id)
+        if not metadata.raw_metadata_summary.get("has_download_link") or not dlink:
             raise BaiduPanError("未获取到可用的下载地址")
 
-        # get_file_metadata keeps the raw dlink outside the persisted summary.
-        try:
-            fsids = json.dumps([int(remote_id)], separators=(",", ":"))
-        except (TypeError, ValueError) as exc:
-            raise BaiduPanError("百度网盘文件 ID 无效") from exc
-
-        payload = self._get(
-            "multimedia",
-            {
-                "method": "filemetas",
-                "fsids": fsids,
-                "dlink": "1",
-            },
-        )
-        files = payload.get("list", [])
-        if not files or not files[0].get("dlink"):
-            raise BaiduPanError("未获取到可用的下载地址")
-
-        return download_url_cache.set(remote_id, str(files[0]["dlink"]))
+        return download_url_cache.set(remote_id, dlink)
 
     def invalidate_download_url(self, remote_id: str) -> None:
         download_url_cache.invalidate(remote_id)

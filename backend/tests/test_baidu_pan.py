@@ -250,6 +250,46 @@ def test_open_stream_reuses_url_token_and_closes_context(monkeypatch):
     assert stream_contexts[-1].closed is True
 
 
+def test_resolve_download_url_uses_single_metadata_roundtrip(monkeypatch):
+    """冷缓存解析直链只发一次 filemetas：元数据与 dlink 同次取得。"""
+    settings = Settings(baidu_access_token="test-access-token")
+    client = BaiduPanClient(settings)
+    download_url_cache.invalidate("456")
+
+    calls: list[dict[str, object]] = []
+
+    def fake_get(resource: str, params: dict[str, object]):
+        calls.append(params)
+        return {
+            "errno": 0,
+            "list": [
+                {
+                    "fs_id": 456,
+                    "path": "/cloud/photo.jpg",
+                    "server_filename": "photo.jpg",
+                    "size": 16,
+                    "server_mtime": 1700000000,
+                    "isdir": 0,
+                    "category": 3,
+                    "md5": "abc",
+                    "dlink": "https://d.pcs.baidu.com/file/demo?token=1",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    try:
+        url = client.resolve_download_url("456")
+
+        assert url == "https://d.pcs.baidu.com/file/demo?token=1"
+        assert len(calls) == 1
+        assert calls[0]["method"] == "filemetas"
+        assert calls[0]["dlink"] == "1"
+    finally:
+        download_url_cache.invalidate("456")
+
+
 def test_direct_url_refreshes_stale_link_after_403(monkeypatch):
     settings = Settings(baidu_access_token="test-access-token")
     client = BaiduPanClient(settings)
