@@ -606,30 +606,35 @@ test("kind and scroll restore after closing viewer", async ({ page }) => {
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(80);
 });
 
-test("kind filter and refresh button are centered together", async ({ page }) => {
+test("search, kind filter and refresh share one toolbar row", async ({ page }) => {
   await mockMemoryRoutes(page);
   await page.goto("/");
 
   const toolbarBox = await page.locator(".filter-toolbar").boundingBox();
+  const searchBox = await page.locator(".library-search").boundingBox();
   const controlBox = await page.locator(".segmented").boundingBox();
   const refreshBox = await page
     .locator(".filter-toolbar .icon-btn")
     .boundingBox();
   expect(toolbarBox).not.toBeNull();
+  expect(searchBox).not.toBeNull();
   expect(controlBox).not.toBeNull();
   expect(refreshBox).not.toBeNull();
-  if (!toolbarBox || !controlBox || !refreshBox) {
+  if (!toolbarBox || !searchBox || !controlBox || !refreshBox) {
     return;
   }
 
-  const groupLeft = Math.min(controlBox.x, refreshBox.x);
-  const groupRight = Math.max(
-    controlBox.x + controlBox.width,
-    refreshBox.x + refreshBox.width,
+  // 搜索、筛选、换一批在同一行内（桌面），垂直中心对齐
+  expect(searchBox.y + searchBox.height / 2).toBeCloseTo(
+    controlBox.y + controlBox.height / 2,
+    0,
   );
-  const leftMargin = groupLeft - toolbarBox.x;
-  const rightMargin = toolbarBox.x + toolbarBox.width - groupRight;
-  expect(Math.abs(leftMargin - rightMargin)).toBeLessThanOrEqual(1);
+  expect(refreshBox.y + refreshBox.height / 2).toBeCloseTo(
+    controlBox.y + controlBox.height / 2,
+    0,
+  );
+  // 筛选组紧随搜索框之后（间距 ≤ 16px）
+  expect(controlBox.x - (searchBox.x + searchBox.width)).toBeLessThanOrEqual(16);
 
   const height = await page
     .locator(".segmented")
@@ -1204,4 +1209,31 @@ test("download button uses the server media stream", async ({ page }) => {
   // 下载成功后一切就绪：状态徽章隐藏，不再常驻“可用”。
   await expect(page.locator(".viewer-status")).toHaveAttribute("data-state", "ready");
   await expect(page.locator(".viewer-status")).not.toBeVisible();
+});
+
+test("card caption reveals on hover and stays decorative for screen readers", async ({
+  page,
+}) => {
+  await mockMemoryRoutes(page);
+  await page.goto("/");
+  await expect(page.locator(".masonry .post-card")).toHaveCount(1);
+
+  const card = page.locator(".masonry .post-card").first();
+  const caption = card.locator(".card-caption");
+  // 装饰层：按钮 aria-label 已含可读名
+  await expect(caption).toHaveAttribute("aria-hidden", "true");
+  await expect(caption).toContainText("湖边清晨");
+  await expect(caption).toContainText("杭州");
+
+  await expect
+    .poll(() => caption.evaluate((el) => getComputedStyle(el).opacity))
+    .toBe("0");
+  await card.hover();
+  await expect
+    .poll(() => caption.evaluate((el) => getComputedStyle(el).opacity))
+    .toBe("1");
+  await page.mouse.move(0, 0);
+  await expect
+    .poll(() => caption.evaluate((el) => getComputedStyle(el).opacity))
+    .toBe("0");
 });

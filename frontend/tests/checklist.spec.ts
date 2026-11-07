@@ -91,8 +91,10 @@ test("home public count, loading feedback and persistent footer", async ({ page 
     "已收录媒体 7",
   );
   await expect(page.getByTestId("public-count")).toContainText(
-    "公开照片 / 公开视频 4/3",
+    "已收录媒体 7",
   );
+  await expect(page.getByTestId("public-count")).toContainText("照片 4");
+  await expect(page.getByTestId("public-count")).toContainText("视频 3");
 
   const firstCard = page.locator(".masonry .post-card").first();
   await expect(firstCard.locator(".card-shimmer")).toBeVisible();
