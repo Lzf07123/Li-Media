@@ -89,6 +89,24 @@ const columnBreakpoints: ColumnBreakpoint[] = [
 // 预热到终态时，只有停在页面顶部附近的用户才自动补图刷新。
 const AUTO_REFRESH_MAX_SCROLL_Y = 120;
 
+// hero 精选的比例门槛：全出血舞台按 cover 裁切，比例差得越远裁得越多。
+// 以「可见面积占比」衡量——图像比例与舞台比例之比低于该值(裁剩 <60%)
+// 的图像不进随机池，避免竖图在宽幅舞台被裁成细条；全部不合适时回退全集。
+const HERO_FIT_MIN_VISIBLE = 0.6;
+
+/** hero 舞台当前比例（与 CSS clamp(560px, 92svh, 920px) 同口径） */
+function heroStageRatio(): number {
+  const stageHeight = Math.min(Math.max(window.innerHeight * 0.92, 560), 920);
+  return window.innerWidth / stageHeight;
+}
+
+/** 图像在 hero 舞台上按 cover 展示时的可见面积占比（0-1] */
+function heroVisibleFraction(width: number, height: number): number {
+  const imageRatio = width / height;
+  const stageRatio = heroStageRatio();
+  return Math.min(imageRatio, stageRatio) / Math.max(imageRatio, stageRatio);
+}
+
 function useCanvasColumnCount() {
   const [columnCount, setColumnCount] = useState(2);
 
@@ -456,9 +474,17 @@ export default function HomePage() {
   // 筛选都不再改动 hero——它是「这个库长什么样」的第一印象，保持稳定。
   // 捕获必须在渲染期完成：若放到 effect，列表到达时会先提交一帧
   // 「hero 消失」再提交「hero 出现」，整页内容两次大跳（CLS 预算实测 0.18）。
+  // 捕获时按舞台比例过滤随机池：只随机 cover 后仍保留 ≥60% 可见面积的
+  // 图像（比例贴合），竖图在宽幅舞台不会再被裁成细条；无合适图像时
+  // 回退全集，hero 不因比例门槛而退场。
   const [heroSource, setHeroSource] = useState<MemorySummary[] | null>(null);
   if (heroSource === null && !isLoadingInitial && canvasMemories.length > 0) {
-    setHeroSource(canvasMemories.slice(0, 5));
+    const fitting = canvasMemories.filter((memory) =>
+      !memory.width || !memory.height
+        ? true
+        : heroVisibleFraction(memory.width, memory.height) >= HERO_FIT_MIN_VISIBLE,
+    );
+    setHeroSource((fitting.length > 0 ? fitting : canvasMemories).slice(0, 5));
   }
   const heroMemories = heroSource ?? [];
 
