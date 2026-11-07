@@ -2860,10 +2860,32 @@ html {
 .segmented {
   display: inline-flex;
   gap: 4px;
+  position: relative;
   padding: 2px;
   border: 1px solid var(--limedia-border);
   border-radius: 11px;
   background: var(--limedia-surface);
+}
+
+/* 滑动激活指示器：绝对定位覆盖层，测量激活按钮偏移后用 transform/width
+   弹簧滑移；不参与文档流，宽度变化不引起外部回流。data-ready=false 时
+   关闭过渡，避免首帧从 0 飞入。 */
+.segmented-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  border-radius: 9px;
+  background: var(--limedia-primary-soft);
+  pointer-events: none;
+  transition:
+    transform var(--limedia-motion-base) var(--limedia-ease-spring),
+    width var(--limedia-motion-base) var(--limedia-ease-spring),
+    opacity var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.segmented-indicator[data-ready="false"] {
+  opacity: 0;
+  transition: none;
 }
 
 .segmented button {
@@ -2871,6 +2893,7 @@ html {
   align-items: center;
   gap: 6px;
   position: relative;
+  z-index: 1;
   min-height: 32px;
   padding: 0 10px;
   border: 0;
@@ -2903,10 +2926,15 @@ html {
   transform: scale(0.96);
 }
 
+/* 激活项底色由滑动指示器承担，文字职责保留；悬浮不再叠加方块底 */
 .segmented button[data-active="true"] {
-  background: var(--limedia-primary-soft);
+  background: transparent;
   color: var(--limedia-primary);
   font-weight: 600;
+}
+.segmented button[data-active="true"]:hover,
+.segmented button[data-active="true"]:focus-visible {
+  background: transparent;
 }
 
 .segmented-count {

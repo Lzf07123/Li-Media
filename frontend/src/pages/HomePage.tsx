@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Images, RefreshCw, Search, X } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
@@ -132,6 +141,46 @@ export default function HomePage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activeKind = kind === "photo" || kind === "video" ? kind : undefined;
   const columnCount = useCanvasColumnCount();
+
+  // 分段筛选滑动指示器：测量激活项的偏移与宽度，覆盖层用 transform/width
+  // 过渡滑过去（覆盖层不参与文档流，宽度变化不引起外部回流）。
+  // 依赖：类型切换、计数位数（按钮宽度随数字变化）、容器尺寸（换行/缩放）。
+  const segmentedRef = useRef<HTMLDivElement>(null);
+  const [segmentIndicator, setSegmentIndicator] = useState({
+    x: 0,
+    w: 0,
+    ready: false,
+  });
+  useLayoutEffect(() => {
+    const container = segmentedRef.current;
+    if (!container) {
+      return;
+    }
+
+    const measure = () => {
+      const active = container.querySelector<HTMLElement>('[data-active="true"]');
+      if (!active) {
+        setSegmentIndicator((current) =>
+          current.ready ? { ...current, ready: false } : current,
+        );
+        return;
+      }
+      setSegmentIndicator({
+        x: active.offsetLeft,
+        w: active.offsetWidth,
+        ready: true,
+      });
+    };
+
+    measure();
+    // 字体就绪会改变按钮文字宽度；首帧后补量一次
+    if (typeof document.fonts?.ready?.then === "function") {
+      void document.fonts.ready.then(measure).catch(() => {});
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [activeKind, counts.photo, counts.video]);
   const [seedState, setSeedState] = useState<RandomSeedState>(() => ({
     kind: activeKind,
     seed: createRandomSeed(),
@@ -815,7 +864,21 @@ export default function HomePage() {
           ) : null}
         </form>
         <div className="filter-toolbar-row flex items-center gap-2">
-          <div aria-label={brand.copy.kindFilterLabel} className="segmented" role="group">
+          <div
+            aria-label={brand.copy.kindFilterLabel}
+            className="segmented"
+            ref={segmentedRef}
+            role="group"
+          >
+            <span
+              aria-hidden="true"
+              className="segmented-indicator"
+              data-ready={segmentIndicator.ready ? "true" : "false"}
+              style={{
+                transform: `translateX(${segmentIndicator.x}px)`,
+                width: segmentIndicator.w,
+              }}
+            />
             <button
               aria-pressed={!activeKind}
               data-active={!activeKind ? "true" : "false"}
