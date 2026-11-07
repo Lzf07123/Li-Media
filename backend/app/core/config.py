@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     preheat_queue_limit: int = Field(default=64, ge=0, le=1000)
     preheat_wait_timeout_seconds: float = Field(default=2.0, ge=0, le=30)
     preheat_auto_after_scan: bool = Field(default=True)
+    # transient 失败冷却：RETRYABLE 文件在此窗口内不再被候选枚举选中，
+    # 防止 auto-preheat 每轮反复重下同一批坏文件（0=关闭）。
+    preheat_retry_cooldown_seconds: int = Field(default=3600, ge=0, le=604800)
     stream_global_concurrency_limit: int = Field(default=16, ge=1, le=64)
     stream_user_concurrency_limit: int = Field(default=3, ge=1, le=16)
     stream_queue_limit: int = Field(default=32, ge=0, le=1000)

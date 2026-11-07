@@ -569,6 +569,7 @@ def start_thumbnail_preheat(
         limit=payload.limit,
         concurrency=settings.preheat_concurrency_limit,
         queue_limit=settings.preheat_queue_limit,
+        include_failed=payload.include_failed,
     )
     if started:
         background_tasks.add_task(
@@ -600,13 +601,19 @@ def preview_thumbnail_preheat(
         default=["240"],
     ),
     kind: MemoryKind | None = Query(default=None),
+    include_failed: bool = Query(default=False),
     db: Session = Depends(get_db),
     _: AdminSession = Depends(require_admin_session),
 ) -> ThumbnailPreheatPreviewResponse:
     """Estimate how many memories a preheat run with this scope would touch."""
 
     selected_sizes = tuple(dict.fromkeys(int(size) for size in sizes)) or (240,)
-    total = count_preheat_candidates(db, kind=kind, sizes=selected_sizes)
+    total = count_preheat_candidates(
+        db,
+        kind=kind,
+        sizes=selected_sizes,
+        include_failed=include_failed,
+    )
     return ThumbnailPreheatPreviewResponse(total=total)
 
 

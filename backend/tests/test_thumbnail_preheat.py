@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 import time
@@ -84,9 +84,20 @@ def add_memory(
         session.add_all([memory, memory_file])
 
 
+def disable_retry_cooldown(monkeypatch) -> None:
+    """关闭 transient 冷却：口径/排序/取消类用例不测冷却行为本身。"""
+    settings = Settings(preheat_retry_cooldown_seconds=0)
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat.get_settings",
+        lambda: settings,
+    )
+
+
 def test_candidate_pairs_follow_home_order_and_skip_non_retryable(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    disable_retry_cooldown(monkeypatch)
     session_factory = create_database(tmp_path)
     add_memory(
         session_factory,
@@ -396,6 +407,191 @@ def test_download_remote_source_enforces_total_deadline(
     assert list((tmp_path / "tmp").glob("*.tmp")) == []
 
 
+def test_transient_failure_cooldown_skips_recent_failures(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """RETRYABLE 且冷却期内失败的文件不再入选；include_failed 是逃生通道。"""
+    session_factory = create_database(tmp_path)
+    recent_id = UUID("00000000-0000-0000-0000-0000000000c1")
+    old_id = UUID("00000000-0000-0000-0000-0000000000c2")
+    add_memory(
+        session_factory,
+        memory_id=recent_id,
+        title="recent transient failure",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+        thumbnail_state=RemoteThumbnailState.RETRYABLE,
+        failure_kind=DerivativeFailureKind.REMOTE_UNAVAILABLE.value,
+    )
+    add_memory(
+        session_factory,
+        memory_id=old_id,
+        title="old transient failure",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 5, 2, tzinfo=timezone.utc),
+        thumbnail_state=RemoteThumbnailState.RETRYABLE,
+        failure_kind=DerivativeFailureKind.REMOTE_UNAVAILABLE.value,
+    )
+    with session_factory.begin() as session:
+        recent_file = session.scalar(
+            select(MemoryFile).where(MemoryFile.remote_id == f"remote-{recent_id}")
+        )
+        old_file = session.scalar(
+            select(MemoryFile).where(MemoryFile.remote_id == f"remote-{old_id}")
+        )
+        assert recent_file is not None and old_file is not None
+        recent_file.updated_at = datetime.now(timezone.utc)
+        old_file.updated_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+    settings = Settings(
+        media_root=str(tmp_path),
+        preheat_retry_cooldown_seconds=3600,
+    )
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat.get_settings",
+        lambda: settings,
+    )
+
+    with session_factory() as db:
+        pairs = _candidate_pairs(db, kind=None, limit=0, sizes=(240,))
+    selected = {str(memory_id) for memory_id, _ in pairs}
+    assert str(recent_id) not in selected
+    assert str(old_id) in selected
+
+    # preview 与枚举同口径；include_failed 强制找回冷却期失败项
+    with session_factory() as db:
+        assert count_preheat_candidates(db, kind=None, sizes=(240,)) == 1
+        assert (
+            count_preheat_candidates(
+                db,
+                kind=None,
+                sizes=(240,),
+                include_failed=True,
+            )
+            == 2
+        )
+
+
+def test_registry_job_records_include_failed_flag() -> None:
+    registry = ThumbnailPreheatRegistry()
+    job, started = registry.start(kind=None, limit=0, include_failed=True)
+    assert started
+    assert job.include_failed is True
+
+
+def test_auth_failure_resets_thread_client_and_retries_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """整候选 remote_auth 失败时重置线程本地客户端并重试一次。"""
+    session_factory = create_database(tmp_path)
+    memory_id = UUID("00000000-0000-0000-0000-0000000000d1")
+    add_memory(
+        session_factory,
+        memory_id=memory_id,
+        title="auth rotation victim",
+        kind=MemoryKind.PHOTO,
+        captured_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+    )
+    settings = Settings(media_root=str(tmp_path / "media"))
+
+    class AuthFailedClient:
+        def open_stream(self, remote_id: str, *, range_header: str | None):
+            raise BaiduPanError("百度网盘访问凭证无效、过期或授权范围不足")
+
+    class RateLimitedClient:
+        def open_stream(self, remote_id: str, *, range_header: str | None):
+            raise BaiduPanError("百度网盘接口限流，请稍后重试")
+
+    clients = [AuthFailedClient(), RateLimitedClient()]
+
+    def fake_thread_client(current_settings: Settings):
+        assert clients, "重试应只发生一次"
+        return clients.pop(0)
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_preheat._thread_local_client",
+        fake_thread_client,
+    )
+
+    with session_factory() as db:
+        memory_file_id = db.scalar(select(MemoryFile.id))
+
+    result = _process_candidate(
+        session_factory,
+        memory_id=memory_id,
+        memory_file_id=memory_file_id,
+        settings=settings,
+        sizes=(240,),
+    )
+
+    assert not clients
+    assert result.failure_kind == DerivativeFailureKind.BAIDU_RATE_LIMITED.value
+    with session_factory() as db:
+        memory_file = db.scalar(select(MemoryFile))
+        assert memory_file is not None
+        assert memory_file.thumbnail_failure_kind == (
+            DerivativeFailureKind.BAIDU_RATE_LIMITED.value
+        )
+
+
+def test_download_resumes_from_range_after_stream_interruption(
+    tmp_path: Path,
+) -> None:
+    """读流中断且已有进度时按 Range 续传，不作废整个下载。"""
+    from app.services.thumbnail_preheat import _download_remote_source
+
+    settings = Settings(media_root=str(tmp_path))
+    opened_ranges: list[str | None] = []
+
+    class FlakyStream:
+        def __init__(self, chunks: list[bytes], *, fail: bool) -> None:
+            self._chunks = chunks
+            self._fail = fail
+
+        def iter_bytes(self):
+            yield from self._chunks
+            if self._fail:
+                raise OSError("connection reset by peer")
+
+        def close(self) -> None:
+            return None
+
+    class FlakyClient:
+        def invalidate_download_url(self, remote_id: str) -> None:
+            return None
+
+        def open_stream(self, remote_id: str, *, range_header: str | None):
+            opened_ranges.append(range_header)
+            if len(opened_ranges) == 1:
+                return 200, None, None, None, FlakyStream([b"hello ", b"worl"], fail=True)
+            return 206, None, None, None, FlakyStream([b"d!"], fail=False)
+
+    memory = Memory(
+        id=UUID("00000000-0000-0000-0000-0000000000e1"),
+        kind=MemoryKind.PHOTO,
+    )
+    memory_file = MemoryFile(mime_type="image/jpeg")
+    failure_sink: dict[str, str] = {}
+
+    path, written = _download_remote_source(
+        client=FlakyClient(),
+        remote_id="remote-1",
+        media_root=tmp_path,
+        memory=memory,
+        memory_file=memory_file,
+        settings=settings,
+        failure_sink=failure_sink,
+        cancel_event=None,
+    )
+
+    assert path is not None
+    assert path.read_bytes() == b"hello world!"
+    assert written == 12
+    assert opened_ranges == [None, "bytes=10-"]
+
+
 def test_unexpected_preheat_failure_is_retryable(tmp_path: Path, monkeypatch) -> None:
     session_factory = create_database(tmp_path)
     memory_id = UUID("00000000-0000-0000-0000-000000000011")
@@ -640,8 +836,12 @@ def test_preheat_preview_matches_candidate_pairs(
         app.dependency_overrides.clear()
 
 
-def test_candidate_scope_follows_public_surface(tmp_path: Path) -> None:
+def test_candidate_scope_follows_public_surface(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     """候选口径与公开展示面共用同一条件，不再各自漂移。"""
+    disable_retry_cooldown(monkeypatch)
 
     session_factory = create_database(tmp_path)
     retryable_photo_id = UUID("00000000-0000-0000-0000-000000000071")
@@ -761,6 +961,7 @@ def test_auto_preheat_after_scan_starts_home_job(
 
 
 def test_preheat_cancelled_during_enumeration(tmp_path: Path, monkeypatch) -> None:
+    disable_retry_cooldown(monkeypatch)
     session_factory = create_database(tmp_path)
     memory_id = UUID("00000000-0000-0000-0000-000000000081")
     add_memory(
@@ -776,7 +977,15 @@ def test_preheat_cancelled_during_enumeration(tmp_path: Path, monkeypatch) -> No
     with session_factory() as db:
         memory_file_id = db.scalar(select(MemoryFile.id))
 
-    def enumerate_then_cancel(db, *, kind, limit, sizes=None, derivative_version=None):
+    def enumerate_then_cancel(
+        db,
+        *,
+        kind,
+        limit,
+        sizes=None,
+        derivative_version=None,
+        include_failed=False,
+    ):
         # 模拟枚举耗时窗口内用户取消。
         job.cancel_event.set()
         return [(memory_id, memory_file_id)]

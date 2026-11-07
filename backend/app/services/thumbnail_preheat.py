@@ -7,7 +7,7 @@ import time
 import gc
 from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread, local
 from uuid import UUID, uuid4
@@ -67,6 +67,7 @@ class ThumbnailPreheatJob:
     limit: int
     concurrency: int
     queue_limit: int
+    include_failed: bool = False
     status: str = "queued"
     total: int = 0
     processed: int = 0
@@ -107,6 +108,7 @@ class ThumbnailPreheatRegistry:
         limit: int,
         concurrency: int = 1,
         queue_limit: int = 0,
+        include_failed: bool = False,
     ) -> tuple[ThumbnailPreheatJob, bool]:
         with self._lock:
             running = next(
@@ -127,6 +129,7 @@ class ThumbnailPreheatRegistry:
                 limit=limit,
                 concurrency=max(1, concurrency),
                 queue_limit=max(0, queue_limit),
+                include_failed=include_failed,
             )
             self._jobs[job.id] = job
             self._latest_id = job.id
@@ -271,12 +274,16 @@ def _candidate_statement(
     kind: MemoryKind | None,
     sizes: tuple[int, ...] | list[int] | None = None,
     derivative_version: str | None = None,
+    include_failed: bool = False,
 ):
     """Shared candidate filters for enumeration and start-preview counting.
 
     口径与公开展示面一致（public_files_condition）：预热只为公开访客会
     看到的资源做远端下载，displayable 与浏览器兼容不达标的视频不预热。
     永久失败类型仍被显式排除（其失败不可自愈，重选无意义）。
+    transient 失败冷却：RETRYABLE 且最近失败过的文件在冷却窗口内不再
+    入选，防止 auto-preheat 每轮反复重下同一批坏文件；include_failed
+    是管理端的逃生通道。
     """
 
     selected_sizes = tuple(dict.fromkeys(sizes or (HOME_PREHEAT_SIZE,)))
@@ -310,6 +317,18 @@ def _candidate_statement(
             or_(*missing_conditions),
         )
     )
+    if not include_failed:
+        cooldown_seconds = get_settings().preheat_retry_cooldown_seconds
+        if cooldown_seconds > 0:
+            cooldown_cutoff = datetime.now(timezone.utc) - timedelta(
+                seconds=cooldown_seconds
+            )
+            recently_failed = and_(
+                MemoryFile.thumbnail_state == RemoteThumbnailState.RETRYABLE,
+                MemoryFile.updated_at.is_not(None),
+                MemoryFile.updated_at >= cooldown_cutoff,
+            )
+            statement = statement.where(~recently_failed)
     if kind is not None:
         statement = statement.where(Memory.kind == kind)
     return statement
@@ -320,10 +339,15 @@ def count_preheat_candidates(
     *,
     kind: MemoryKind | None,
     sizes: tuple[int, ...] | list[int] | None = None,
+    include_failed: bool = False,
 ) -> int:
     """Count deduplicated memories a preheat run would touch, for preview UI."""
 
-    statement = _candidate_statement(kind=kind, sizes=sizes)
+    statement = _candidate_statement(
+        kind=kind,
+        sizes=sizes,
+        include_failed=include_failed,
+    )
     subquery = statement.subquery()
     return int(
         db.scalar(select(func.count(distinct(subquery.columns[0])))) or 0
@@ -337,11 +361,13 @@ def _candidate_pairs(
     limit: int,
     sizes: tuple[int, ...] | list[int] | None = None,
     derivative_version: str | None = None,
+    include_failed: bool = False,
 ) -> list[tuple[UUID, UUID]]:
     statement = _candidate_statement(
         kind=kind,
         sizes=sizes,
         derivative_version=derivative_version,
+        include_failed=include_failed,
     )
     ordered_statement = (
         statement.order_by(Memory.captured_at.desc().nulls_last())
@@ -583,51 +609,47 @@ def _download_remote_source(
         if memory.kind == MemoryKind.VIDEO
         else settings.remote_thumbnail_source_max_bytes
     )
+    # 单次下载的整体总时限：connect/read 超时之外兜底慢流，跨续传共享，
+    # 避免长期占住预热 worker 与 tmp 配额。
+    download_deadline = time.monotonic() + settings.source_download_timeout_seconds
     stream: object | None = None
     temporary_registered = False
     cleanup_path: Path | None = temporary_path
+    written_bytes = 0
+    # 断点续传：读流中断且已有进度时按 Range 续传，瞬时网络抖动不再
+    # 作废整个下载；上限 2 次，重开前失效旧直链换新签名链接。
+    resume_attempts = 0
+    max_resume_attempts = 2
 
     try:
         if not temporary_directory_has_capacity(temporary_dir):
             failure_sink.setdefault("kind", DerivativeFailureKind.DISK_QUOTA.value)
             return None, 0
 
-        # 单次下载的整体总时限：connect/read 超时之外兜底慢流，
-        # 避免长期占住预热 worker 与 tmp 配额。
-        download_deadline = time.monotonic() + settings.source_download_timeout_seconds
-
-        status_code, content_length, _, _, stream = client.open_stream(
-            remote_id,
-            range_header=None,
-        )
-        if status_code is not None and status_code >= 400:
-            failure_sink.setdefault("kind", DerivativeFailureKind.REMOTE_UNAVAILABLE.value)
-            return None, 0
-        if content_length is not None and content_length > max_source_bytes:
-            failure_sink.setdefault(
-                "kind",
-                DerivativeFailureKind.MOV_MOOV.value
-                if memory_file.mime_type == "video/quicktime"
-                else DerivativeFailureKind.SOURCE_TRUNCATED.value,
-            )
-            return None, 0
-
-        register_temporary_path(temporary_path.resolve())
-        temporary_registered = True
-        written_bytes = 0
-        with temporary_path.open("wb") as output:
-            for chunk in stream.iter_bytes():
-                if cancel_event is not None and cancel_event.is_set():
-                    failure_sink.setdefault("kind", DerivativeFailureKind.CANCELLED.value)
+        while True:
+            try:
+                status_code, content_length, _, _, stream = client.open_stream(
+                    remote_id,
+                    range_header=(
+                        f"bytes={written_bytes}-" if written_bytes else None
+                    ),
+                )
+                if status_code is not None and status_code >= 400:
+                    failure_sink.setdefault(
+                        "kind",
+                        DerivativeFailureKind.REMOTE_UNAVAILABLE.value,
+                    )
                     return None, written_bytes
-                if time.monotonic() >= download_deadline:
-                    failure_sink.setdefault("kind", DerivativeFailureKind.TIMEOUT.value)
+                if written_bytes and status_code != 206:
+                    # 续传必须命中 206：服务器忽略 Range 会把整文件重发，
+                    # 追加写会产生损坏文件。
+                    failure_sink.setdefault(
+                        "kind",
+                        DerivativeFailureKind.REMOTE_UNAVAILABLE.value,
+                    )
                     return None, written_bytes
-                if not chunk:
-                    continue
-                output.write(chunk)
-                written_bytes += len(chunk)
-                if written_bytes >= max_source_bytes:
+                remaining_budget = max_source_bytes - written_bytes
+                if content_length is not None and content_length > remaining_budget:
                     failure_sink.setdefault(
                         "kind",
                         DerivativeFailureKind.MOV_MOOV.value
@@ -636,24 +658,101 @@ def _download_remote_source(
                     )
                     return None, written_bytes
 
-        if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
-            failure_sink.setdefault("kind", DerivativeFailureKind.TEMPORARY_EMPTY.value)
-            return None, written_bytes
-        cleanup_path = None
-        return temporary_path, written_bytes
-    except BaiduPanError as exc:
-        failure_sink.setdefault("kind", classify_remote_error(exc))
-        return None, 0
-    except Exception as exc:
-        failure_sink.setdefault("kind", classify_remote_error(exc))
-        return None, 0
+                if not temporary_registered:
+                    register_temporary_path(temporary_path.resolve())
+                    temporary_registered = True
+
+                with temporary_path.open("ab" if written_bytes else "wb") as output:
+                    for chunk in stream.iter_bytes():
+                        if cancel_event is not None and cancel_event.is_set():
+                            failure_sink.setdefault(
+                                "kind", DerivativeFailureKind.CANCELLED.value
+                            )
+                            return None, written_bytes
+                        if time.monotonic() >= download_deadline:
+                            failure_sink.setdefault(
+                                "kind", DerivativeFailureKind.TIMEOUT.value
+                            )
+                            return None, written_bytes
+                        if not chunk:
+                            continue
+                        output.write(chunk)
+                        written_bytes += len(chunk)
+                        if written_bytes >= max_source_bytes:
+                            failure_sink.setdefault(
+                                "kind",
+                                DerivativeFailureKind.MOV_MOOV.value
+                                if memory_file.mime_type == "video/quicktime"
+                                else DerivativeFailureKind.SOURCE_TRUNCATED.value,
+                            )
+                            return None, written_bytes
+
+                if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
+                    failure_sink.setdefault(
+                        "kind", DerivativeFailureKind.TEMPORARY_EMPTY.value
+                    )
+                    return None, written_bytes
+                cleanup_path = None
+                return temporary_path, written_bytes
+            except BaiduPanError as exc:
+                if _should_resume_download(
+                    cancel_event=cancel_event,
+                    download_deadline=download_deadline,
+                    resume_attempts=resume_attempts,
+                    max_resume_attempts=max_resume_attempts,
+                    written_bytes=written_bytes,
+                ):
+                    resume_attempts += 1
+                    client.invalidate_download_url(remote_id)
+                    _close_stream(stream)
+                    stream = None
+                    continue
+                failure_sink.setdefault("kind", classify_remote_error(exc))
+                return None, written_bytes
+            except Exception as exc:
+                if _should_resume_download(
+                    cancel_event=cancel_event,
+                    download_deadline=download_deadline,
+                    resume_attempts=resume_attempts,
+                    max_resume_attempts=max_resume_attempts,
+                    written_bytes=written_bytes,
+                ):
+                    resume_attempts += 1
+                    client.invalidate_download_url(remote_id)
+                    _close_stream(stream)
+                    stream = None
+                    continue
+                failure_sink.setdefault("kind", classify_remote_error(exc))
+                return None, written_bytes
     finally:
-        if stream is not None and hasattr(stream, "close"):
-            stream.close()
+        _close_stream(stream)
         if cleanup_path is not None:
             cleanup_path.unlink(missing_ok=True)
         if temporary_registered:
             unregister_temporary_path(temporary_path.resolve())
+
+
+def _should_resume_download(
+    *,
+    cancel_event: Event | None,
+    download_deadline: float,
+    resume_attempts: int,
+    max_resume_attempts: int,
+    written_bytes: int,
+) -> bool:
+    """断点续传条件：已有进度、未取消、未超时、仍有续传额度。"""
+
+    return (
+        written_bytes > 0
+        and resume_attempts < max_resume_attempts
+        and (cancel_event is None or not cancel_event.is_set())
+        and time.monotonic() < download_deadline
+    )
+
+
+def _close_stream(stream: object | None) -> None:
+    if stream is not None and hasattr(stream, "close"):
+        stream.close()
 
 
 def _thread_local_client(settings: Settings) -> BaiduPanClient:
@@ -944,6 +1043,33 @@ def _mark_unexpected_cache_failure(
         return
 
 
+def _process_candidate_attempt(
+    session_factory: sessionmaker[Session],
+    *,
+    memory_id: UUID,
+    memory_file_id: UUID,
+    settings: Settings,
+    sizes: tuple[int, ...],
+    cancel_event: Event | None = None,
+    client: BaiduPanClient | None = None,
+) -> PreheatCandidateResult:
+    with task_limiter.slot(
+        TaskType.PREHEAT,
+        priority=60,
+        cancel_event=cancel_event,
+    ):
+        with session_factory() as db:
+            return _process_pair_sizes(
+                db,
+                memory_id=memory_id,
+                memory_file_id=memory_file_id,
+                settings=settings,
+                sizes=sizes,
+                cancel_event=cancel_event,
+                client=client,
+            )
+
+
 def _process_candidate(
     session_factory: sessionmaker[Session],
     *,
@@ -951,25 +1077,38 @@ def _process_candidate(
     memory_file_id: UUID,
     settings: Settings,
     sizes: tuple[int, ...],
-    cancel_event: Event,
+    cancel_event: Event | None = None,
     client: BaiduPanClient | None = None,
 ) -> PreheatCandidateResult:
     try:
-        with task_limiter.slot(
-            TaskType.PREHEAT,
-            priority=60,
+        result = _process_candidate_attempt(
+            session_factory,
+            memory_id=memory_id,
+            memory_file_id=memory_file_id,
+            settings=settings,
+            sizes=sizes,
             cancel_event=cancel_event,
+            client=client,
+        )
+
+        # token 失效自愈：线程本地客户端固化了构造时的 access_token 快照，
+        # 长预热中途 token 轮换会让该线程后续全部 remote_auth 失败。整候选
+        # 认证失败时重置线程本地客户端（新客户端构造即自动 refresh）并重试
+        # 一次；磁盘对账保证已写尺寸不重复派生。
+        if (
+            all(outcome == "failed" for outcome in result.outcomes.values())
+            and result.failure_kind == DerivativeFailureKind.REMOTE_AUTH.value
         ):
-            with session_factory() as db:
-                result = _process_pair_sizes(
-                    db,
-                    memory_id=memory_id,
-                    memory_file_id=memory_file_id,
-                    settings=settings,
-                    sizes=sizes,
-                    cancel_event=cancel_event,
-                    client=client,
-                )
+            _client_local.client = None
+            result = _process_candidate_attempt(
+                session_factory,
+                memory_id=memory_id,
+                memory_file_id=memory_file_id,
+                settings=settings,
+                sizes=sizes,
+                cancel_event=cancel_event,
+                client=None,
+            )
 
         if all(outcome == "failed" for outcome in result.outcomes.values()):
             task_metrics.record_failed(TaskType.PREHEAT)
@@ -1074,6 +1213,7 @@ def run_thumbnail_preheat(
                 kind=job.kind,
                 limit=job.limit,
                 sizes=job.sizes,
+                include_failed=job.include_failed,
             )
         registry.mark_running(job_id, total=len(pairs))
         # 枚举可能耗时（大库 × 多尺寸 NOT-EXISTS），期间用户可能已取消：

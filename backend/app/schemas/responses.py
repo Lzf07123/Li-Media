@@ -367,6 +367,8 @@ class ThumbnailPreheatRequest(BaseModel):
     )
     kind: MemoryKind | None = None
     limit: int = Field(default=0, ge=0, le=5000)
+    # 逃生通道：强制把冷却期内的近期失败文件重新纳入候选
+    include_failed: bool = False
 
 
 class ThumbnailPreheatPreviewResponse(BaseModel):
