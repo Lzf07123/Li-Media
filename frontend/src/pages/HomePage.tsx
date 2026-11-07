@@ -13,6 +13,10 @@ import {
   type MemorySummary,
   type PublicPreheatStatus,
 } from "@/lib/api";
+import {
+  writeCanvasComposition,
+  type CompositionSize,
+} from "@/lib/canvas-composition";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import MediaSkeleton from "@/components/ui/MediaSkeleton";
@@ -406,6 +410,26 @@ export default function HomePage() {
     setHeroSource(canvasMemories.slice(0, 5));
   }
   const heroMemories = heroSource ?? [];
+
+  // 骨架屏按真实宽高实时计算：优先内存中的真实 items（筛选/换批场景
+  // 直接复用上一批尺寸），数据到达后写入构图缓存供下次刷新复用。
+  const knownSizes = useMemo(
+    () =>
+      canvasMemories
+        .slice(0, 36)
+        .map((memory) =>
+          memory.width && memory.height
+            ? { width: memory.width, height: memory.height }
+            : null,
+        )
+        .filter((size): size is CompositionSize => size !== null),
+    [canvasMemories],
+  );
+  useEffect(() => {
+    if (!isLoadingInitial && canvasMemories.length > 0) {
+      writeCanvasComposition(canvasMemories);
+    }
+  }, [canvasMemories, isLoadingInitial]);
   const canvasColumns = useMemo(() => {
     const columns = Array.from({ length: columnCount }, () => [] as MemorySummary[]);
     canvasMemories.forEach((memory, index) => {
@@ -815,7 +839,7 @@ export default function HomePage() {
       {isLoadingInitial ? (
         <>
           <span className="sr-only">{brand.copy.loadingLibrary}</span>
-          <MediaSkeleton columnCount={columnCount} />
+          <MediaSkeleton columnCount={columnCount} sizes={knownSizes} />
         </>
       ) : error ? (
         <Notice className="mt-8" tone="error">
