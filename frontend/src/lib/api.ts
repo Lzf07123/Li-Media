@@ -421,6 +421,8 @@ export type ThumbnailPreheatPayload = {
   sizes: ("240" | "480" | "768" | "1280")[];
   kind?: "photo" | "video";
   limit: number;
+  /** 逃生通道：强制把冷却期内的近期失败文件重新纳入候选 */
+  include_failed?: boolean;
 };
 
 export type ThumbnailPreheatPreview = {

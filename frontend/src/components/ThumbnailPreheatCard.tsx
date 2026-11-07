@@ -16,6 +16,7 @@ type ThumbnailPreheatCardProps = {
     sizes: ("240" | "480" | "768" | "1280")[];
     kind?: "photo" | "video";
     limit: number;
+    include_failed: boolean;
   }) => Promise<void>;
 };
 
@@ -42,6 +43,7 @@ export default function ThumbnailPreheatCard({
   const [sizePreset, setSizePreset] = useState<SizePreset>("home");
   const [kind, setKind] = useState<"" | "photo" | "video">("");
   const [limitInput, setLimitInput] = useState("0");
+  const [includeFailed, setIncludeFailed] = useState(false);
   const [previewTotal, setPreviewTotal] = useState<number | null>(null);
   const limit = Math.max(0, Math.min(5000, Math.floor(Number(limitInput) || 0)));
   const isJobActive = job?.status === "queued" || job?.status === "running";
@@ -62,6 +64,7 @@ export default function ThumbnailPreheatCard({
         sizes: [...sizePresets[sizePreset]],
         kind: kind || undefined,
         limit: 0,
+        include_failed: includeFailed,
       })
         .then((preview) => {
           if (active) {
@@ -79,7 +82,7 @@ export default function ThumbnailPreheatCard({
       active = false;
       window.clearTimeout(timer);
     };
-  }, [kind, sizePreset]);
+  }, [kind, sizePreset, includeFailed]);
 
   // 运行中按已用时间与进度估算剩余；轮询每秒更新，无需本地计时。
   const etaMinutes = useMemo(() => {
@@ -136,6 +139,7 @@ export default function ThumbnailPreheatCard({
                 sizes: [...sizePresets[sizePreset]],
                 kind: kind || undefined,
                 limit,
+                include_failed: includeFailed,
               })
             }
           >
@@ -207,6 +211,19 @@ export default function ThumbnailPreheatCard({
           </span>
         ) : null}
       </p>
+
+      <label className="mt-2 flex items-start gap-2 text-xs text-muted">
+        <input
+          checked={includeFailed}
+          className="mt-0.5 size-4 shrink-0"
+          onChange={(event) => setIncludeFailed(event.target.checked)}
+          type="checkbox"
+        />
+        <span>
+          {brand.copy.adminPreheatIncludeFailed}
+          <span className="ml-1">{brand.copy.adminPreheatIncludeFailedHint}</span>
+        </span>
+      </label>
 
       {job ? (
         <div className="mt-4">

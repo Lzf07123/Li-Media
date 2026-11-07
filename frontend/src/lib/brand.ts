@@ -380,6 +380,8 @@ export const brand = {
     adminPreheatDetail: "详情 480/1280px",
     adminPreheatKind: "类型",
     adminPreheatScope: "预热范围",
+    adminPreheatIncludeFailed: "包含近期失败项",
+    adminPreheatIncludeFailedHint: "冷却期内的失败文件默认跳过，勾选后强制重试",
     adminPreheatStart: "开始预热",
     adminPreheatCancel: "取消预热",
     adminPreheatCancelling: "取消中",

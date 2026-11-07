@@ -389,7 +389,7 @@ test("admin table is visible in dark mode", async ({ page }) => {
   await page.getByRole("button", { name: "开始预热" }).click();
   await expect
     .poll(() => preheatPayload)
-    .toEqual({ sizes: ["240"], kind: "photo", limit: 0 });
+    .toEqual({ sizes: ["240"], kind: "photo", limit: 0, include_failed: false });
   await expect.poll(() => preheatRequests).toBeGreaterThan(1);
   await page.getByRole("button", { name: "刷新状态" }).click();
   await expect.poll(() => statusRequests).toBeGreaterThan(1);
