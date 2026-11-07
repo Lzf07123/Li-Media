@@ -42,6 +42,8 @@ type MediaViewerProps = {
   onPrev?: () => void;
   // 相邻回忆：空闲时预取其查看器尺寸图片，翻页即可显示。
   prefetchTargets?: MemorySummary[];
+  /** 画布内位置（1 起）：直接打开（URL 直链）不在画布内时不传、不显示计数 */
+  position?: { index: number; total: number };
 };
 
 type PlaybackSource = {
@@ -58,6 +60,7 @@ export default function MediaViewer({
   onNext,
   onPrev,
   prefetchTargets,
+  position,
 }: MediaViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -97,9 +100,12 @@ export default function MediaViewer({
   const remoteState = memory.primary_file?.remote_state;
   const thumbnailState = memory.primary_file?.thumbnail_state;
   const streamState = memory.primary_file?.stream_state;
-  const hasIndexFailure = [remoteState, thumbnailState, streamState].some(
-    (value) => value === "failed" || value === "missing" || value === "unavailable",
-  );
+  // 流只属于视频：照片的 stream_state 恒为 unavailable（无流概念），
+  // 计入失败会把所有健康照片误标为「失败」。
+  const remoteBroken = remoteState === "failed" || remoteState === "missing";
+  const thumbnailBroken = thumbnailState === "failed" || thumbnailState === "missing";
+  const streamBroken = streamState === "failed" || streamState === "unavailable";
+  const hasIndexFailure = remoteBroken || thumbnailBroken || (isVideo && streamBroken);
   const activeMediaState = selectActiveMediaState([
     { scope: "download", state: mediaState.download },
     { scope: "playback", state: mediaState.playback },
@@ -708,6 +714,15 @@ export default function MediaViewer({
           {statusText}
         </span>
       </div>
+
+      {/* 画布位置计数：视觉导航辅助（可读名已含标题），不进朗读树 */}
+      {position && position.total > 1 ? (
+        <div aria-hidden="true" className="viewer-counter tnum">
+          {brand.copy.viewerPosition
+            .replace("{index}", String(position.index))
+            .replace("{total}", String(position.total))}
+        </div>
+      ) : null}
 
       {onPrev ? (
         <button

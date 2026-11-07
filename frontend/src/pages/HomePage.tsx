@@ -971,6 +971,11 @@ export default function HomePage() {
         <Suspense fallback={null}>
           <MediaViewer
             memory={activeMemory}
+            position={
+              activeMemoryIndex >= 0
+                ? { index: activeMemoryIndex + 1, total: viewerMemories.length }
+                : undefined
+            }
             onClose={closeViewer}
             onNext={nextMemory ? () => openViewer(nextMemory.id, { replace: true }) : undefined}
             onPrev={previousMemory ? () => openViewer(previousMemory.id, { replace: true }) : undefined}

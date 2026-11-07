@@ -103,6 +103,7 @@ export const brand = {
     viewerDownloading: "下载中",
     viewerDownloadFailed: "下载失败",
     viewerRetryDownload: "重新获取下载链接",
+    viewerPosition: "{index} / {total}",
     viewerPrevious: "上一张",
     viewerNext: "下一张",
     viewerPlay: "播放视频",

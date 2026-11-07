@@ -3012,6 +3012,8 @@ html {
   -webkit-backdrop-filter: blur(28px) saturate(1.1);
   backdrop-filter: blur(28px) saturate(1.1);
   outline: none;
+  /* 入场：遮罩淡入（与 Modal 同一 200ms 档）；reduced-motion 全局收敛 */
+  animation: viewer-backdrop-in 220ms var(--limedia-ease-out) both;
 }
 
 .photo-viewer-stage {
@@ -3022,6 +3024,8 @@ html {
   place-items: center;
   touch-action: none;
   transform-origin: center;
+  /* 入场：舞台自下方轻缩淡入（transform/opacity only） */
+  animation: viewer-stage-in 300ms var(--limedia-ease-spring) both;
 }
 
 .video-viewer-shell {
@@ -3236,21 +3240,61 @@ html {
   transform: translateX(-50%) translateY(0);
 }
 
+/* 画布位置计数：左下角暗玻璃胶囊，与缩放指示同一语言（aria-hidden 纯视觉） */
+.viewer-counter {
+  position: absolute;
+  bottom: 24px;
+  left: 16px;
+  z-index: 2;
+  padding: 4px 12px;
+  border: 1px solid rgba(240, 244, 243, 0.26);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.72);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  color: rgba(240, 244, 243, 0.92);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .photo-viewer-button {
   display: grid;
   width: 44px;
   height: 44px;
   place-items: center;
-  border: 1px solid var(--limedia-border);
+  border: 1px solid rgba(240, 244, 243, 0.26);
   border-radius: 12px;
-  background: var(--limedia-surface);
-  color: var(--limedia-fg);
+  /* 暗玻璃铬件：与 hero 控件/返回顶部同一语言；0.72 透明度保证
+     亮色照片上白图标仍有 ≥3:1 非文字对比 */
+  background: rgba(13, 17, 16, 0.72);
+  color: #f0f4f3;
   cursor: pointer;
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  transition:
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    border-color var(--limedia-motion-fast) var(--limedia-ease-out),
+    transform var(--limedia-motion-base) var(--limedia-ease-spring);
 }
 
 .photo-viewer-button:hover,
 .photo-viewer-button:focus-visible {
-  background: var(--limedia-surface-2);
+  background: rgba(13, 17, 16, 0.85);
+  border-color: rgba(240, 244, 243, 0.5);
+}
+
+.photo-viewer-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.photo-viewer-button:not(:disabled):active {
+  transform: translateY(0) scale(0.95);
+}
+
+.photo-viewer-button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .photo-viewer-nav {
@@ -3527,5 +3571,25 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .infinite-canvas .post-card {
     animation: none;
+  }
+}
+
+/* 查看器入场关键帧（遮罩淡入 + 舞台缩放淡入，一次性） */
+@keyframes viewer-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes viewer-stage-in {
+  from {
+    opacity: 0;
+    transform: scale(0.965) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
