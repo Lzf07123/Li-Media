@@ -111,8 +111,6 @@ export const brand = {
     viewerNext: "下一张",
     viewerPlay: "播放视频",
     viewerPreparingPlayback: "正在获取播放链接",
-    viewerDirectLinkFailed: "短时直链不可用，可回退服务器播放",
-    viewerUseServerFallback: "回退服务器播放",
     detailDimensions: "尺寸",
     detailDuration: "时长",
     notFoundTitle: "页面不存在",

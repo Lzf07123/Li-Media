@@ -181,7 +181,7 @@
 
 ## 11. 公开站体验优化方案
 
-> 状态：待实施。以下方案不降低第 1–10 节标准；每项进入实施时先补契约/自动化用例，再改动 UI 或 API。一次任务只做一个优化项，避免回滚范围扩大。
+> 状态：已实施。O1–O6 均已落地并有自动化用例：O1 列表缓存头契约（`tests/test_public_cache_headers.py`，无会话 `public, max-age=15, stale-while-revalidate=30`、带会话不缓存）；O2 查看器 chunk 预取（`frontend/tests/viewer-prefetch.spec.ts`）；O3 预热轮询终态收敛、可见性刷新与用户视角文案（`brand.copy.preheatStatus*`）；O4 底部三态 `CanvasFooterState`；O5 统一媒体状态机（`frontend/src/lib/media-state.ts` + `media-state.spec.ts`）；O6 公开 DTO 瘦身（公开接口全部走 `MemorySummaryRead`，诊断字段仅保留在管理端 `to_memory_read`）。以下方案不降低第 1–10 节标准；每项进入实施时先补契约/自动化用例，再改动 UI 或 API。一次任务只做一个优化项，避免回滚范围扩大。
 
 ### O1：列表响应与访问链路提速
 
