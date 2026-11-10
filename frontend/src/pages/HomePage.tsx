@@ -512,11 +512,12 @@ export default function HomePage() {
     }
   }, [canvasMemories, isLoadingInitial]);
 
-  // 页眉压图配色开关：hero 在首屏时页眉切浅色（滚过阈值由 .is-scrolled 接管）
+  // 页眉压图配色开关：hero 在首屏时页眉切浅色（滚过阈值由 .is-scrolled 接管）；
+  // 搜索态收起 hero（见下），页眉回到常规配色，结果区顶到工具条。
   useEffect(() => {
-    document.body.classList.toggle("has-hero", heroMemories.length > 0);
+    document.body.classList.toggle("has-hero", heroMemories.length > 0 && !keyword);
     return () => document.body.classList.remove("has-hero");
-  }, [heroMemories.length]);
+  }, [heroMemories.length, keyword]);
   // 瀑布屏分配：最短列优先（按已知宽高比估算列高），列底基本齐平，
   // 消除轮转均分因横竖图聚集造成的大片空白；未知尺寸用 4/5 兜底。
   const canvasColumns = useMemo(
@@ -771,16 +772,22 @@ export default function HomePage() {
       : brand.pageTitleHome,
   );
 
+  // 搜索态收起 hero：结果（含空结果态）直接顶到工具条，hero 不再隔一屏；
+  // 清除搜索后按已捕获的 heroSource 原样恢复，第一印象不变。
+  const heroHidden = keyword.length > 0 || heroMemories.length === 0;
+
   return (
     <section aria-labelledby="library-title" className="page-enter hero-page">
-      <HeroFeature
-        loading={isLoadingInitial && heroMemories.length === 0}
-        memories={heroMemories}
-        onEnter={enterLibrary}
-        onOpen={openViewer}
-      />
-      {/* hero 不在时保证页面恰有一个 h1：空库/加载失败场景兜底 */}
-      {heroMemories.length === 0 ? (
+      {keyword ? null : (
+        <HeroFeature
+          loading={isLoadingInitial && heroMemories.length === 0}
+          memories={heroMemories}
+          onEnter={enterLibrary}
+          onOpen={openViewer}
+        />
+      )}
+      {/* hero 不在时保证页面恰有一个 h1：搜索态/空库/加载失败场景兜底 */}
+      {heroHidden ? (
         <BlurText
           as="h1"
           className={`page-title text-3xl sm:text-5xl font-semibold tracking-wide ${
@@ -790,7 +797,7 @@ export default function HomePage() {
           text={brand.copy.libraryTitle}
         />
       ) : null}
-      {heroMemories.length === 0 && !isLoadingInitial ? (
+      {heroHidden && !isLoadingInitial ? (
         <>
           <div aria-hidden="true" className="flow-rule mx-auto mt-4 w-16" />
           <p className="mt-3 text-center text-base text-muted">{brand.copy.libraryDescription}</p>
@@ -1070,7 +1077,8 @@ export default function HomePage() {
             ) : canvasFooterState === "end" ? (
               <>
                 <span>{brand.copy.canvasEnd}</span>
-                <span className="ml-2">
+                <span aria-hidden="true" className="mx-2 text-muted">·</span>
+                <span>
                   {brand.copy.canvasEndTotal.replace("{total}", String(total))}
                 </span>
               </>

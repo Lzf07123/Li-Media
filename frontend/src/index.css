@@ -486,28 +486,6 @@
     }
   }
 
-  /* 页眉压图（V1.5）：首屏 hero 存在且未滚过阈值时（body.has-hero 且
-     非 .is-scrolled），品牌/导航/图标切浅色浮于图面，两主题通用；
-     滚过阈值后 .is-scrolled 恢复常规同源配色。 */
-  body.has-hero .site-header:not(.is-scrolled) {
-    border-color: transparent;
-  }
-  body.has-hero .site-header:not(.is-scrolled) .brand,
-  body.has-hero .site-header:not(.is-scrolled) .site-nav a,
-  body.has-hero .site-header:not(.is-scrolled) .mobile-nav-link,
-  body.has-hero .site-header:not(.is-scrolled) .site-menu-trigger,
-  body.has-hero .site-header:not(.is-scrolled) .icon-btn {
-    color: rgba(240, 244, 243, 0.92);
-  }
-  body.has-hero .site-header:not(.is-scrolled) .site-nav a:hover,
-  body.has-hero .site-header:not(.is-scrolled) .site-nav a[aria-current="page"] {
-    color: #ffffff;
-  }
-  body.has-hero .site-header:not(.is-scrolled) .icon-btn {
-    border-color: rgba(240, 244, 243, 0.28);
-    background: rgba(13, 17, 16, 0.32);
-  }
-
   /* hero CTA 滚动目标：为沉浸式页眉预留高度 */
   .library-toolbar {
     scroll-margin-top: calc(var(--limedia-header-height) + 12px);
@@ -1863,6 +1841,30 @@
    响应式覆盖必须位于 @layer components 之外
 ============================================================= */
 
+/* 页眉压图（V1.5）：首屏 hero 存在且未滚过阈值时（body.has-hero 且
+   非 .is-scrolled），品牌/导航/图标切浅色浮于图面，两主题通用；
+   滚过阈值后 .is-scrolled 恢复常规同源配色。
+   必须无层（unlayered）：utilities 层的 text-muted/text-foreground
+   会无视选择器权重压掉 layered 规则，浅色主题页眉在图上会退回深色。 */
+body.has-hero .site-header:not(.is-scrolled) {
+  border-color: transparent;
+}
+body.has-hero .site-header:not(.is-scrolled) .brand,
+body.has-hero .site-header:not(.is-scrolled) .site-nav a,
+body.has-hero .site-header:not(.is-scrolled) .mobile-nav-link,
+body.has-hero .site-header:not(.is-scrolled) .site-menu-trigger,
+body.has-hero .site-header:not(.is-scrolled) .icon-btn {
+  color: rgba(240, 244, 243, 0.92);
+}
+body.has-hero .site-header:not(.is-scrolled) .site-nav a:hover,
+body.has-hero .site-header:not(.is-scrolled) .site-nav a[aria-current="page"] {
+  color: #ffffff;
+}
+body.has-hero .site-header:not(.is-scrolled) .icon-btn {
+  border-color: rgba(240, 244, 243, 0.28);
+  background: rgba(13, 17, 16, 0.32);
+}
+
 html {
   scroll-behavior: smooth;
   scrollbar-width: thin;
@@ -2477,17 +2479,19 @@ html {
 .post-cover {
   display: block;
   width: 100%;
-  height: auto;
-  object-fit: contain;
+  height: 100%;
+  object-fit: cover;
   background: transparent;
   /* 静态微增强：让缩略图网格更鲜活；不参与动画，无运行时成本 */
   filter: saturate(1.03);
   transition: transform var(--limedia-motion-slow) var(--limedia-ease-out);
 }
+/* 视频徽章置右上：底部条带由触屏常驻 scrim 与桌面 hover scrim 占用，
+   左下/右下角都会被渐变吞掉（卡片 DOM 中 caption 在徽章之后）。 */
 .waterfall-badge {
   position: absolute;
   right: 10px;
-  bottom: 10px;
+  top: 10px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3656,9 +3660,9 @@ html {
   position: relative;
   width: 22px;
   height: 34px;
-  border: 1px solid rgba(240, 244, 243, 0.4);
+  border: 1px solid rgba(240, 244, 243, 0.5);
   border-radius: 999px;
-  background: rgba(13, 17, 16, 0.24);
+  background: rgba(13, 17, 16, 0.36);
 }
 .hero-scroll-cue-dot {
   position: absolute;
