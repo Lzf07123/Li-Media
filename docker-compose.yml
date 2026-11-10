@@ -1,5 +1,8 @@
 services:
   backend:
+    # image 与 build 并存：本机构建会打上仓库标签；低配生产机执行
+    # docker compose pull 直接拉取远端镜像，跳过构建。
+    image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}backend:${APP_IMAGE_TAG:-latest}
     build:
       context: ./backend
       args:
@@ -123,6 +126,8 @@ services:
       retries: 5
 
   nginx:
+    # 镜像名跟随构建目录 frontend，避免与官方 nginx 镜像同名混淆。
+    image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}frontend:${APP_IMAGE_TAG:-latest}
     build:
       context: ./frontend
       args:
@@ -167,6 +172,7 @@ services:
   #   docker compose --profile dev run --rm backend-test            # 全量
   #   docker compose --profile dev run --rm backend-test pytest tests/test_x.py -q
   backend-test:
+    image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}backend-test:${APP_IMAGE_TAG:-latest}
     build:
       context: ./backend
       target: test

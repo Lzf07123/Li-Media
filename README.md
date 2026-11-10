@@ -39,6 +39,17 @@ http://localhost:8080
 HTTPS_PORT=443
 ```
 
+### 低配生产机拉取部署
+
+`backend`、`nginx` 与 `backend-test` 同时声明了 `image` 与 `build`：本机 `--build` 构建后自动打上仓库标签；低配生产机无需构建，直接拉取镜像仓库（默认 `uhub.service.ucloud.cn/li-media/`）：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+升级同样先 `pull` 再 `up -d`（重建使用新镜像的容器）；要禁止任何构建兜底，改用 `docker compose up -d --no-build`。仓库前缀与标签可在 `.env` 中通过 `APP_IMAGE_REGISTRY`、`APP_IMAGE_TAG` 覆盖，发布时建议用 git 短 SHA 固定 `APP_IMAGE_TAG`。
+
 ## 常用命令
 
 ```bash
