@@ -3293,6 +3293,45 @@ html {
   letter-spacing: 0.04em;
 }
 
+/* 滑动翻页跟手层：包裹查看器图片内容，横向拖拽时按系数位移，
+   松手回弹与翻页切换共用同一过渡；状态浮层不随位移。
+   减动效偏好下 JS 跳过跟手，此处过渡一并关闭。 */
+.viewer-swipe-track {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition: transform 180ms var(--limedia-ease-out);
+  will-change: transform;
+}
+
+.viewer-swipe-track.is-following {
+  transition: none;
+}
+
+/* 末尾自动续载提示：位置计数上方的同语言暗玻璃胶囊（role=status 可读） */
+.viewer-load-pill {
+  position: absolute;
+  bottom: 64px;
+  left: 16px;
+  z-index: 2;
+  padding: 4px 12px;
+  border: 1px solid rgba(240, 244, 243, 0.26);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.72);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  color: rgba(240, 244, 243, 0.92);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer-swipe-track {
+    transition: none;
+  }
+}
+
 .photo-viewer-button {
   display: grid;
   width: 44px;

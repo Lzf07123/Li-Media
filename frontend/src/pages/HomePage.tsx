@@ -740,6 +740,24 @@ export default function HomePage() {
     [previousMemory, nextMemory],
   );
 
+  // 查看器接近已加载末尾时自动续载：翻到画布边界前先追加下一页，
+  // 用户无需退出查看器回画布滚动；loadNextPage 内部守卫防并发与重复。
+  useEffect(() => {
+    if (!viewerId || !hasNextPage || isLoadingInitial) {
+      return;
+    }
+    if (activeMemoryIndex >= 0 && activeMemoryIndex >= viewerMemories.length - 3) {
+      loadNextPage();
+    }
+  }, [
+    activeMemoryIndex,
+    hasNextPage,
+    isLoadingInitial,
+    loadNextPage,
+    viewerId,
+    viewerMemories.length,
+  ]);
+
   useDocumentTitle(
     activeMemory
       ? brand.pageTitleViewer.replace(
@@ -1071,6 +1089,7 @@ export default function HomePage() {
                 ? { index: activeMemoryIndex + 1, total: viewerMemories.length }
                 : undefined
             }
+            isLoadingMore={isLoadingMore}
             onClose={closeViewer}
             onNext={nextMemory ? () => openViewer(nextMemory.id, { replace: true }) : undefined}
             onPrev={previousMemory ? () => openViewer(previousMemory.id, { replace: true }) : undefined}

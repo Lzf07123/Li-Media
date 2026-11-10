@@ -44,6 +44,8 @@ type MediaViewerProps = {
   prefetchTargets?: MemorySummary[];
   /** 画布内位置（1 起）：直接打开（URL 直链）不在画布内时不传、不显示计数 */
   position?: { index: number; total: number };
+  /** 画布正在追加下一页：位置计数旁提示「正在加载更多回忆」 */
+  isLoadingMore?: boolean;
 };
 
 type PlaybackSource = {
@@ -54,6 +56,12 @@ type PlaybackSource = {
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 
+// 滑动翻页：zoom<=1 时横向为主（|dx|>60 且 |dx|>2|dy|）才翻页，
+// 纵向滑动让位；拖拽期间内容按系数跟手，松手回弹或翻页。
+const SWIPE_THRESHOLD_PX = 60;
+const SWIPE_AXIS_RATIO = 2;
+const SWIPE_FOLLOW_FACTOR = 0.35;
+
 export default function MediaViewer({
   memory,
   onClose,
@@ -61,11 +69,16 @@ export default function MediaViewer({
   onPrev,
   prefetchTargets,
   position,
+  isLoadingMore = false,
 }: MediaViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const dragOrigin = useRef<{ x: number; y: number } | null>(null);
   const pinchOrigin = useRef<{ distance: number; zoom: number } | null>(null);
+  // 滑动翻页：起点 + 是否处于跟手状态（渲染为位移，pointerup 结算）
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const [swipeDx, setSwipeDx] = useState(0);
+  const [swipeFollowing, setSwipeFollowing] = useState(false);
 
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -431,8 +444,20 @@ export default function MediaViewer({
       const [first, second] = Array.from(pointers.current.values());
       pinchOrigin.current = { distance: distance(first, second), zoom };
       dragOrigin.current = null;
+      swipeStart.current = null;
+      setSwipeFollowing(false);
+      setSwipeDx(0);
     } else if (zoom > 1) {
       dragOrigin.current = { x: event.clientX - offset.x, y: event.clientY - offset.y };
+    } else {
+      // zoom<=1 单指针：记录滑动起点；鼠标需要显式捕获才能在移出舞台后
+      // 继续收到 move（触摸指针浏览器会隐式捕获）。
+      swipeStart.current = { x: event.clientX, y: event.clientY };
+      setSwipeFollowing(false);
+      setSwipeDx(0);
+      if (event.pointerType === "mouse") {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
     }
   };
 
@@ -456,6 +481,34 @@ export default function MediaViewer({
         x: event.clientX - dragOrigin.current.x,
         y: event.clientY - dragOrigin.current.y,
       });
+      return;
+    }
+
+    // 滑动跟手：横向为主时按系数平移内容；纵向为主的滑动不跟手。
+    // 减动效偏好下不做跟手位移，只在 pointerup 按阈值直接翻页。
+    if (
+      pointers.current.size === 1 &&
+      swipeStart.current &&
+      !pinchOrigin.current &&
+      !swipeFollowing
+    ) {
+      const dx = event.clientX - swipeStart.current.x;
+      const dy = event.clientY - swipeStart.current.y;
+      if (
+        Math.abs(dx) > Math.abs(dy) &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        setSwipeFollowing(true);
+        setSwipeDx(dx * SWIPE_FOLLOW_FACTOR);
+      }
+      return;
+    }
+
+    if (pointers.current.size === 1 && swipeFollowing && swipeStart.current) {
+      const dx = event.clientX - swipeStart.current.x;
+      if (Math.abs(dx) > Math.abs(event.clientY - swipeStart.current.y)) {
+        setSwipeDx(dx * SWIPE_FOLLOW_FACTOR);
+      }
     }
   };
 
@@ -466,6 +519,27 @@ export default function MediaViewer({
     }
     if (pointers.current.size === 0) {
       dragOrigin.current = null;
+    }
+
+    // 滑动结算：横向位移过阈值且纵向占比小才翻页，否则回弹。
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    setSwipeFollowing(false);
+    setSwipeDx(0);
+    if (!start) {
+      return;
+    }
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (
+      Math.abs(dx) > SWIPE_THRESHOLD_PX &&
+      Math.abs(dx) > SWIPE_AXIS_RATIO * Math.abs(dy)
+    ) {
+      if (dx < 0) {
+        onNext?.();
+      } else {
+        onPrev?.();
+      }
     }
   };
 
@@ -545,6 +619,7 @@ export default function MediaViewer({
       tabIndex={0}
     >
       {isVideo ? (
+        // 视频舞台不加滑动翻页：与点按播放/进度手势冲突，翻页走两侧按钮与键盘。
         <div
           className="photo-viewer-stage is-video"
           onClick={handleStageBackdropClick}
@@ -638,33 +713,39 @@ export default function MediaViewer({
           onPointerUp={handlePointerUp}
           onWheel={handleWheel}
         >
-          {smallSrc && !smallImageFailed ? (
-            <img
-              alt=""
-              aria-hidden="true"
-              className={`photo-viewer-placeholder ${smallImageReady ? "is-loaded" : ""}`}
-              decoding="async"
-              onError={() => {
-                setSmallImageFailed(true);
-                dispatchMediaState({ scope: "preview", type: "fail" });
-              }}
-              onLoad={() => setSmallImageReady(true)}
-              src={queuedSmallSrc ?? undefined}
-            />
-          ) : null}
-          {photoLargeSrc ? (
-            <img
-              alt={memory.title || brand.copy.detailPreviewAlt}
-              className={`photo-viewer-image ${mediaState.preview === "ready" ? "is-loaded" : ""}`}
-              draggable={false}
-              key={photoRetryKey}
-              onLoad={() => dispatchMediaState({ scope: "preview", type: "ready" })}
-              src={photoLargeSrc}
-              style={{
-                transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})`,
-              }}
-            />
-          ) : null}
+          {/* 滑动跟手层：仅包裹图片内容，状态浮层不随滑动位移 */}
+          <div
+            className={`viewer-swipe-track ${swipeFollowing ? "is-following" : ""}`}
+            style={{ transform: `translateX(${swipeDx}px)` }}
+          >
+            {smallSrc && !smallImageFailed ? (
+              <img
+                alt=""
+                aria-hidden="true"
+                className={`photo-viewer-placeholder ${smallImageReady ? "is-loaded" : ""}`}
+                decoding="async"
+                onError={() => {
+                  setSmallImageFailed(true);
+                  dispatchMediaState({ scope: "preview", type: "fail" });
+                }}
+                onLoad={() => setSmallImageReady(true)}
+                src={queuedSmallSrc ?? undefined}
+              />
+            ) : null}
+            {photoLargeSrc ? (
+              <img
+                alt={memory.title || brand.copy.detailPreviewAlt}
+                className={`photo-viewer-image ${mediaState.preview === "ready" ? "is-loaded" : ""}`}
+                draggable={false}
+                key={photoRetryKey}
+                onLoad={() => dispatchMediaState({ scope: "preview", type: "ready" })}
+                src={photoLargeSrc}
+                style={{
+                  transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})`,
+                }}
+              />
+            ) : null}
+          </div>
           {mediaState.preview === "loading" || mediaState.preview === "queued" ? (
             <p aria-live="polite" className="photo-viewer-loading">
               <span className="spinner text-primary" />
@@ -721,6 +802,12 @@ export default function MediaViewer({
           {brand.copy.viewerPosition
             .replace("{index}", String(position.index))
             .replace("{total}", String(position.total))}
+        </div>
+      ) : null}
+      {/* 末尾自动续载提示：位置计数上方浮层，画布追加期间可被读屏感知 */}
+      {isLoadingMore && position ? (
+        <div className="viewer-load-pill" role="status" aria-live="polite">
+          {brand.copy.loadingMoreLibrary}
         </div>
       ) : null}
 
