@@ -189,3 +189,18 @@ test("canvas end state separates the two phrases", async ({ page }) => {
     /已经到底了\s*·\s*当前筛选共 2 条/,
   );
 });
+
+test("mobile hero fills the viewport edge to edge", async ({ page }) => {
+  await mockHome(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/");
+  await settle(page);
+
+  const box = await page.locator(".hero-stage").boundingBox();
+  expect(box).not.toBeNull();
+  // 贴视口顶：负边距抵消 sticky 页眉的流内高度（内高 + 上下边框）
+  expect(box!.y).toBeLessThanOrEqual(1);
+  // 占满首屏：100svh = 可见视口高
+  expect(box!.height).toBeGreaterThanOrEqual(810);
+  expect(box!.width).toBe(375);
+});

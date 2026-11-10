@@ -95,11 +95,11 @@ const AUTO_REFRESH_MAX_SCROLL_Y = 120;
 const HERO_FIT_MIN_VISIBLE = 0.6;
 
 /** hero 舞台当前比例（与 CSS 同口径：桌面 clamp(560px, 92svh, 920px)，
- *  移动端 ≤768px clamp(480px, 74svh, 640px)） */
+ *  移动端 ≤768px 全屏 100svh——innerHeight 即 svh 可见视口高） */
 function heroStageRatio(): number {
   const isMobile = window.matchMedia("(max-width: 768px)").matches;
   const stageHeight = isMobile
-    ? Math.min(Math.max(window.innerHeight * 0.74, 480), 640)
+    ? window.innerHeight
     : Math.min(Math.max(window.innerHeight * 0.92, 560), 920);
   return window.innerWidth / stageHeight;
 }
@@ -480,15 +480,23 @@ export default function HomePage() {
   // 「hero 消失」再提交「hero 出现」，整页内容两次大跳（CLS 预算实测 0.18）。
   // 捕获时按舞台比例过滤随机池：只随机 cover 后仍保留 ≥60% 可见面积的
   // 图像（比例贴合），竖图在宽幅舞台不会再被裁成细条；无合适图像时
-  // 回退全集，hero 不因比例门槛而退场。
+  // （移动端全屏舞台比例更极端，常见 4:5 竖图也会低于门槛）按可见占比
+  // 降序取前 5——hero 永远选最贴合的图，不因比例门槛而退场。
   const [heroSource, setHeroSource] = useState<MemorySummary[] | null>(null);
   if (heroSource === null && !isLoadingInitial && canvasMemories.length > 0) {
-    const fitting = canvasMemories.filter((memory) =>
+    const fraction = (memory: MemorySummary) =>
       !memory.width || !memory.height
-        ? true
-        : heroVisibleFraction(memory.width, memory.height) >= HERO_FIT_MIN_VISIBLE,
-    );
-    setHeroSource((fitting.length > 0 ? fitting : canvasMemories).slice(0, 5));
+        ? 1
+        : heroVisibleFraction(memory.width, memory.height);
+    const ranked = canvasMemories.map((memory) => ({
+      memory,
+      visible: fraction(memory),
+    }));
+    const fitting = ranked.filter((item) => item.visible >= HERO_FIT_MIN_VISIBLE);
+    const pool = fitting.length > 0
+      ? fitting
+      : [...ranked].sort((a, b) => b.visible - a.visible);
+    setHeroSource(pool.slice(0, 5).map((item) => item.memory));
   }
   const heroMemories = heroSource ?? [];
 

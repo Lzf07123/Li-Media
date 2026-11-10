@@ -2079,12 +2079,13 @@ html {
 .hero-feature {
   width: 100vw;
   margin-inline: calc(50% - 50vw);
-  /* 上移到沉浸式页眉底下：顶部透明页眉浮于图面（两主题一致） */
-  margin-top: calc(-1 * var(--limedia-header-height));
+  /* 上移到沉浸式页眉底下：页眉是 sticky 流内元素，占位高度 = 内高 +
+     上下 1px 边框，负边距需一并抵消才能贴到视口顶（两主题一致） */
+  margin-top: calc(-1 * var(--limedia-header-height) - 2px);
 }
 @media (max-width: 768px) {
   .hero-feature {
-    margin-top: calc(-1 * var(--limedia-header-height-mobile));
+    margin-top: calc(-1 * var(--limedia-header-height-mobile) - 2px);
   }
 }
 /* hero 页贴住视口顶：page-shell 首子元素的 32px 上边距不适用 */
@@ -2102,17 +2103,18 @@ html {
     height: clamp(560px, 92vh, 920px);
   }
 }
-/* 移动端压低舞台：统计行与工具条在首屏底部露出，
-   给「下面还有内容」的提示；窄屏精选池比例过滤同步改口径。 */
+/* 移动端全屏精选：hero 占满整个首屏（svh 以可见视口为准，浏览器
+   工具栏收起时也不产生空隙）；窄屏精选池比例过滤同步换算口径。
+   不支持 svh 的旧浏览器回退 100vh。 */
 @media (max-width: 768px) {
   .hero-stage {
-    height: clamp(480px, 74svh, 640px);
+    height: 100svh;
   }
 }
 @supports not (height: 92svh) {
   @media (max-width: 768px) {
     .hero-stage {
-      height: clamp(480px, 74vh, 640px);
+      height: 100vh;
     }
   }
 }
