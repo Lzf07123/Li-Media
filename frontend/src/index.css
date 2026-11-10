@@ -3309,11 +3309,33 @@ html {
   transition: none;
 }
 
-/* 末尾自动续载提示：位置计数上方的同语言暗玻璃胶囊（role=status 可读） */
-.viewer-load-pill {
+/* 查看器元信息行：位置计数上方的左对齐弱化层，材质同计数；
+   长标题省略号收口，不与两侧导航按钮抢占空间。 */
+.viewer-caption {
   position: absolute;
   bottom: 64px;
   left: 16px;
+  z-index: 2;
+  max-width: min(70vw, 520px);
+  padding: 4px 12px;
+  border: 1px solid rgba(240, 244, 243, 0.26);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.72);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  color: rgba(240, 244, 243, 0.92);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* 查看器底部玻璃胶囊公共材质：续载提示与复制反馈（role=status 可读） */
+.viewer-load-pill,
+.viewer-copy-pill {
+  position: absolute;
   z-index: 2;
   padding: 4px 12px;
   border: 1px solid rgba(240, 244, 243, 0.26);
@@ -3324,6 +3346,19 @@ html {
   color: rgba(240, 244, 243, 0.92);
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+/* 末尾自动续载提示：元信息上方，画布追加期间短暂出现 */
+.viewer-load-pill {
+  bottom: 104px;
+  left: 16px;
+}
+
+/* 复制链接反馈：底部居中，与位置计数不同行不重叠 */
+.viewer-copy-pill {
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 @media (prefers-reduced-motion: reduce) {

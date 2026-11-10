@@ -43,6 +43,10 @@ function memory(id: string, index: number) {
 type MockLibraryOptions = {
   /** 第二页响应延迟：覆盖查看器「正在加载更多回忆」提示 */
   page2DelayMs?: number;
+  /** /file 响应延迟：视频播放测试中避免假缓冲先触发 error */
+  fileDelayMs?: number;
+  /** 按零起索引覆盖 memory 字段（地点、视频类型等） */
+  overrides?: Record<number, Record<string, unknown>>;
 };
 
 /**
@@ -53,11 +57,13 @@ type MockLibraryOptions = {
 async function mockLibrary(page: Page, total: number, options: MockLibraryOptions = {}) {
   const pageSize = 18;
   const requestedPages: number[] = [];
-  const itemAt = (zeroBased: number) =>
-    memory(
+  const itemAt = (zeroBased: number) => ({
+    ...memory(
       `31111111-1111-4111-8111-${String(zeroBased).padStart(12, "0")}`,
       zeroBased + 1,
-    );
+    ),
+    ...(options.overrides?.[zeroBased] ?? {}),
+  });
 
   const serveList = async (route: Route) => {
     const url = new URL(route.request().url());
@@ -106,6 +112,9 @@ async function mockLibrary(page: Page, total: number, options: MockLibraryOption
       return;
     }
     if (pathname.endsWith("/file")) {
+      if (options.fileDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.fileDelayMs));
+      }
       await route.fulfill({
         body: Buffer.from(pngBase64, "base64"),
         contentType: "image/png",
@@ -201,4 +210,66 @@ test("viewer auto-loads the next page near the loaded end and reaches library en
   }
   await expect(page.locator(".photo-viewer-nav-next")).toHaveCount(0);
   expect(requestedPagesRef().filter((value) => value === 2)).toHaveLength(1);
+});
+
+test("viewer shows title, location and captured date as caption", async ({ page }) => {
+  await mockLibrary(page, 5, {
+    overrides: { 0: { location: "杭州西湖" } },
+  });
+  await openViewerOnFirstCard(page);
+
+  await expect(page.locator(".viewer-caption")).toHaveText(
+    "memory-1 · 杭州西湖 · 2026年1月1日",
+  );
+});
+
+test("viewer hides caption when memory has no meta", async ({ page }) => {
+  await mockLibrary(page, 5, {
+    overrides: { 0: { title: "", captured_at: null } },
+  });
+  await openViewerOnFirstCard(page);
+
+  await expect(page.locator(".viewer-caption")).toHaveCount(0);
+});
+
+test("viewer copies the current viewer URL to the clipboard", async ({ page }) => {
+  await mockLibrary(page, 5);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openViewerOnFirstCard(page);
+
+  await page.getByRole("button", { name: "复制链接" }).click();
+  await expect(page.locator(".viewer-copy-pill")).toHaveText("链接已复制");
+
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboard).toContain("viewer=31111111-1111-4111-8111-000000000000");
+});
+
+test("viewer shows duration and dimensions chips while playing video", async ({ page }) => {
+  await mockLibrary(page, 5, {
+    fileDelayMs: 1000,
+    overrides: {
+      0: {
+        kind: "video",
+        title: "视频回忆",
+        duration_seconds: 195,
+        width: 1920,
+        height: 1080,
+      },
+    },
+  });
+  await openViewerOnFirstCard(page);
+
+  await page.getByRole("button", { name: "播放视频" }).click();
+  await expect(page.locator("video")).toBeVisible();
+  // 假缓冲无法真实解码，按既有模式合成 loadeddata 驱动就绪态
+  await page
+    .locator("video")
+    .evaluate((element) => element.dispatchEvent(new Event("loadeddata")));
+
+  await expect(
+    page.locator(".video-viewer-shell").getByText("3:15", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".video-viewer-shell").getByText("1920 × 1080", { exact: true }),
+  ).toBeVisible();
 });

@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Link2,
   Play,
   RefreshCw,
   TriangleAlert,
@@ -26,6 +27,7 @@ import {
   resolveTrustedMediaUrl,
   type MemorySummary,
 } from "@/lib/api";
+import { formatDate, formatDuration } from "@/lib/format";
 import { imageLoadQueue, loadQueuedImage } from "@/lib/image-load-queue";
 import { brand } from "@/lib/brand";
 import {
@@ -79,6 +81,8 @@ export default function MediaViewer({
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [swipeDx, setSwipeDx] = useState(0);
   const [swipeFollowing, setSwipeFollowing] = useState(false);
+  // 复制链接反馈：成功/失败胶囊短暂显示后自动消失（与缩放指示同一模式）
+  const [copyFeedback, setCopyFeedback] = useState<"success" | "failed" | null>(null);
 
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -107,6 +111,15 @@ export default function MediaViewer({
   const aspectRatio = memory.width && memory.height
     ? memory.width / memory.height
     : 16 / 9;
+  // 查看器元信息行：标题 · 地点 · 日期，与卡片 hover 层同一信息口径；
+  // 空段自动省略，全空不渲染。
+  const viewerCaption = [
+    memory.title || "",
+    memory.location || "",
+    formatDate(memory.captured_at) || "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const videoShellStyle = {
     "--aspect-ratio": String(aspectRatio),
   } as CSSProperties;
@@ -185,6 +198,16 @@ export default function MediaViewer({
     const timer = window.setTimeout(() => setZoomPillVisible(false), 900);
     return () => window.clearTimeout(timer);
   }, [zoom]);
+
+  // 复制反馈胶囊：短暂显示后自动消失，重复点击重置计时。
+  useEffect(() => {
+    if (!copyFeedback) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setCopyFeedback(null), 1400);
+    return () => window.clearTimeout(timer);
+  }, [copyFeedback]);
 
   useEffect(() => {
     const posterQuery = window.matchMedia("(max-width: 767px)");
@@ -583,6 +606,33 @@ export default function MediaViewer({
     }
   };
 
+  // 复制当前查看器地址（URL 已含 ?viewer=）：clipboard API 优先，
+  // 不可用或被拒时回退隐藏文本域 execCommand。
+  const handleCopyLink = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyFeedback("success");
+      return;
+    } catch {
+      // 继续走回退路径
+    }
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = url;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      setCopyFeedback(copied ? "success" : "failed");
+    } catch {
+      setCopyFeedback("failed");
+    }
+  };
+
   // 暗区点击关闭：记录指针起点，click 命中 stage 本体且位移 < 8px 才触发
   //（拖拽平移与双击缩放位移大或 target 在图片上，不会误关）
   const backdropPointer = useRef<{ x: number; y: number } | null>(null);
@@ -638,6 +688,12 @@ export default function MediaViewer({
             {playbackSource ? (
               <VideoPlayer
                 key={memory.id}
+                duration={formatDuration(memory.duration_seconds)}
+                dimensions={
+                  memory.width && memory.height
+                    ? `${memory.width} × ${memory.height}`
+                    : null
+                }
                 onBufferingChange={(isBuffering) => dispatchMediaState({
                   scope: "playback",
                   type: isBuffering ? "buffer" : "ready",
@@ -796,6 +852,10 @@ export default function MediaViewer({
         </span>
       </div>
 
+      {/* 查看器元信息：左下栈中层，标题 · 地点 · 日期（全空不渲染） */}
+      {viewerCaption ? (
+        <div className="viewer-caption">{viewerCaption}</div>
+      ) : null}
       {/* 画布位置计数：视觉导航辅助（可读名已含标题），不进朗读树 */}
       {position && position.total > 1 ? (
         <div aria-hidden="true" className="viewer-counter tnum">
@@ -804,10 +864,18 @@ export default function MediaViewer({
             .replace("{total}", String(position.total))}
         </div>
       ) : null}
-      {/* 末尾自动续载提示：位置计数上方浮层，画布追加期间可被读屏感知 */}
+      {/* 末尾自动续载提示：元信息上方浮层，画布追加期间可被读屏感知 */}
       {isLoadingMore && position ? (
         <div className="viewer-load-pill" role="status" aria-live="polite">
           {brand.copy.loadingMoreLibrary}
+        </div>
+      ) : null}
+      {/* 复制链接反馈：底部居中胶囊，短暂显示后自动消失 */}
+      {copyFeedback ? (
+        <div className="viewer-copy-pill" role="status" aria-live="polite">
+          {copyFeedback === "success"
+            ? brand.copy.viewerLinkCopied
+            : brand.copy.viewerCopyFailed}
         </div>
       ) : null}
 
@@ -869,6 +937,15 @@ export default function MediaViewer({
           ) : (
             <Download aria-hidden="true" />
           )}
+        </button>
+        <button
+          aria-label={brand.copy.viewerCopyLink}
+          className="photo-viewer-button"
+          title={brand.copy.viewerCopyLink}
+          onClick={() => void handleCopyLink()}
+          type="button"
+        >
+          <Link2 aria-hidden="true" />
         </button>
         <button
           aria-label={brand.copy.close}
