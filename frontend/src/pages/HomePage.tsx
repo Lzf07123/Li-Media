@@ -94,9 +94,13 @@ const AUTO_REFRESH_MAX_SCROLL_Y = 120;
 // 的图像不进随机池，避免竖图在宽幅舞台被裁成细条；全部不合适时回退全集。
 const HERO_FIT_MIN_VISIBLE = 0.6;
 
-/** hero 舞台当前比例（与 CSS clamp(560px, 92svh, 920px) 同口径） */
+/** hero 舞台当前比例（与 CSS 同口径：桌面 clamp(560px, 92svh, 920px)，
+ *  移动端 ≤768px clamp(480px, 74svh, 640px)） */
 function heroStageRatio(): number {
-  const stageHeight = Math.min(Math.max(window.innerHeight * 0.92, 560), 920);
+  const isMobile = window.matchMedia("(max-width: 768px)").matches;
+  const stageHeight = isMobile
+    ? Math.min(Math.max(window.innerHeight * 0.74, 480), 640)
+    : Math.min(Math.max(window.innerHeight * 0.92, 560), 920);
   return window.innerWidth / stageHeight;
 }
 

@@ -1996,7 +1996,8 @@ html {
 
 /* ========== 卡片 hover 信息层（项目级质感组件） ==========
    桌面 hover/focus 时底部渐显标题与地点·日期；触屏（hover:none）
-   不渲染视觉层，保持纯图 + 类型角标；scrim 底部最深保证白字 ≥4.5:1。 */
+   常驻单行弱化「地点 · 日期」（标题留给查看器与桌面 hover），
+   无动效；scrim 底部最深保证白字 ≥4.5:1。 */
 .card-caption {
   position: absolute;
   inset-inline: 0;
@@ -2048,6 +2049,20 @@ html {
     transform: translateY(0);
   }
 }
+/* 触屏：常驻单行弱化信息（地点 · 日期），标题不进卡片视觉层 */
+@media (hover: none) {
+  .card-caption {
+    display: flex;
+    padding: 18px 10px 8px;
+  }
+  .card-caption-title {
+    display: none;
+  }
+  .card-caption-meta {
+    font-size: 0.6875rem;
+    opacity: 0.82;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .card-caption {
     transition: none;
@@ -2083,6 +2098,20 @@ html {
 @supports not (height: 92svh) {
   .hero-stage {
     height: clamp(560px, 92vh, 920px);
+  }
+}
+/* 移动端压低舞台：统计行与工具条在首屏底部露出，
+   给「下面还有内容」的提示；窄屏精选池比例过滤同步改口径。 */
+@media (max-width: 768px) {
+  .hero-stage {
+    height: clamp(480px, 74svh, 640px);
+  }
+}
+@supports not (height: 92svh) {
+  @media (max-width: 768px) {
+    .hero-stage {
+      height: clamp(480px, 74vh, 640px);
+    }
   }
 }
 .hero-stage-media {
