@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openViewerByCardClick } from "./helpers";
+
 // 第一使用直觉契约：访客旅程断点修复的可执行验收。
 // 覆盖：筛选回顶、返回键语义、暗区点击关闭、视频时长角标、
 // 海报点播、空态内联清除、大图失败内联重试。
@@ -142,11 +144,14 @@ test("clicking the dark backdrop closes the viewer without closing on image clic
 }) => {
   await mockLibrary(page);
   await page.goto("/");
-  await page.locator(".masonry .post-card").first().click();
+  await openViewerByCardClick(page, page.locator(".masonry .post-card").first());
   await expect(page.locator(".photo-viewer")).toBeVisible();
-
-  // 点击图片本体不关闭
-  await page.mouse.click(640, 360);
+  // 点击大图元素本体而非固定坐标：mock 图是 1×1，坐标式点击在高并发
+  // 下可能早于图片挂载而落进透明滑动层（背板表面），被判定为暗区关闭
+  await expect(
+    page.locator(".photo-viewer .photo-viewer-image"),
+  ).toBeAttached({ timeout: 15_000 });
+  await page.locator(".photo-viewer .photo-viewer-image").click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
 
   // 点击图片外的暗区关闭
@@ -167,8 +172,10 @@ test("video badge surfaces the duration", async ({ page }) => {
 test("clicking the video poster starts playback", async ({ page }) => {
   await mockLibrary(page);
   await page.goto("/");
-  await page.locator(".masonry .post-card").nth(8).click();
-  await expect(page.locator(".photo-viewer")).toBeVisible();
+  await openViewerByCardClick(
+    page,
+    page.locator(".masonry .post-card").nth(8),
+  );
 
   await page.locator(".video-viewer-shell").click();
   await expect(page.locator(".photo-viewer video")).toBeVisible();

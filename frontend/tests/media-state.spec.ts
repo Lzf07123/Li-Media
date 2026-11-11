@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openViewerByCardClick } from "./helpers";
+
 const memoryId = "4b1c9f4d-8f5e-4b1a-9f0d-4a4f39c92a01";
 const pngBase64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -119,7 +121,7 @@ test("viewer uses one high-priority playback state and reports buffering", async
 
   await page.goto("/");
   await expect(page.locator(".post-card[data-preview-state='ready']")).toBeVisible();
-  await page.locator(".post-card button").click();
+  await openViewerByCardClick(page, page.locator(".post-card button"));
   await page.getByRole("button", { name: "播放视频" }).click();
   await expect(page.locator(".viewer-status")).toHaveAttribute("data-scope", "playback");
   await expect(page.locator(".viewer-status")).toHaveAttribute("data-state", "loading");
@@ -157,7 +159,7 @@ test("viewer photo preview fails and retries through the shared state", async ({
   });
 
   await page.goto("/");
-  await page.locator(".post-card button").click();
+  await openViewerByCardClick(page, page.locator(".post-card button"));
   // The large preview retries on the queue's 500ms/1s/2s/4s backoff before
   // the shared state surfaces the failure, while the already-loaded small
   // image keeps the status quiet during that window.
@@ -181,7 +183,7 @@ test("download failures use the same viewer state priority", async ({ page }) =>
   });
 
   await page.goto("/");
-  await page.locator(".post-card button").click();
+  await openViewerByCardClick(page, page.locator(".post-card button"));
   await page.locator(".photo-viewer").getByRole("button", { name: "下载" }).click();
   await expect(page.locator(".viewer-status")).toHaveAttribute("data-scope", "download");
   await expect(page.locator(".viewer-status")).toHaveAttribute("data-state", "failed");

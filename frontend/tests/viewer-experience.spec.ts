@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import { openViewerByCardClick } from "./helpers";
+
 const pngBase64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -57,6 +59,13 @@ type MockLibraryOptions = {
 async function mockLibrary(page: Page, total: number, options: MockLibraryOptions = {}) {
   const pageSize = 18;
   const requestedPages: number[] = [];
+  // 第 2 页门闩：并发负载下画布哨兵可能在查看器打开前就请求第 2 页，
+  // 「1 / 18」等断言便会被「1 / 20」打破。请求可提前到达但响应挂起，
+  // 用例在临近触发续载时放行，两种时序下断言均成立。
+  let releasePage2: () => void = () => {};
+  const page2Gate = new Promise<void>((resolve) => {
+    releasePage2 = resolve;
+  });
   const itemAt = (zeroBased: number) => ({
     ...memory(
       `31111111-1111-4111-8111-${String(zeroBased).padStart(12, "0")}`,
@@ -74,6 +83,9 @@ async function mockLibrary(page: Page, total: number, options: MockLibraryOption
       { length: Math.min(pageSize, total - start) },
       (_, offset) => itemAt(start + offset),
     );
+    if (page === 2) {
+      await page2Gate;
+    }
     if (page === 2 && options.page2DelayMs) {
       await new Promise((resolve) => setTimeout(resolve, options.page2DelayMs));
     }
@@ -130,13 +142,16 @@ async function mockLibrary(page: Page, total: number, options: MockLibraryOption
     await route.fallback();
   });
 
-  return { requestedPagesRef: () => requestedPages, itemAt };
+  return { requestedPagesRef: () => requestedPages, armPage2: releasePage2, itemAt };
 }
 
 async function openViewerOnFirstCard(page: Page) {
   await page.goto("/");
   await expect(page.locator(".masonry .post-card").first()).toBeVisible();
-  await page.locator(".masonry .post-card").first().locator("button").click();
+  await openViewerByCardClick(
+    page,
+    page.locator(".masonry .post-card").first().locator("button"),
+  );
   await expect(page.getByRole("dialog")).toBeVisible();
 }
 
@@ -182,7 +197,9 @@ test("viewer ignores vertical and sub-threshold drags", async ({ page }) => {
 });
 
 test("viewer auto-loads the next page near the loaded end and reaches library end", async ({ page }) => {
-  const { requestedPagesRef } = await mockLibrary(page, 20, { page2DelayMs: 250 });
+  const { requestedPagesRef, armPage2 } = await mockLibrary(page, 20, {
+    page2DelayMs: 250,
+  });
   await openViewerOnFirstCard(page);
 
   const counter = page.locator(".viewer-counter");
@@ -195,7 +212,9 @@ test("viewer auto-loads the next page near the loaded end and reaches library en
   }
 
   // 逼近末尾（第 16 项，索引 15 ≥ 18-3）触发自动续载：
-  // 加载提示浮现，随后计数换用新总量
+  // 加载提示浮现，随后计数换用新总量。放行门闩后，无论第 2 页请求
+  // 是此刻由续载发出还是此前被哨兵提前挂起，收口断言都成立。
+  armPage2();
   await page.keyboard.press("ArrowRight");
   await expect(page.locator(".viewer-load-pill")).toBeVisible();
   await expect(page.locator(".viewer-load-pill")).toHaveText("正在加载更多回忆");

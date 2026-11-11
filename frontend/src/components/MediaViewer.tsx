@@ -63,6 +63,10 @@ const MAX_ZOOM = 5;
 const SWIPE_THRESHOLD_PX = 60;
 const SWIPE_AXIS_RATIO = 2;
 const SWIPE_FOLLOW_FACTOR = 0.35;
+// 跟手起势阈值：超过才进入跟手并对鼠标指针 setPointerCapture。
+// pointerdown 即捕获会把子元素（失败浮层的重试按钮、图片）的 click
+// 重定向到 stage 本体，按钮点击全部失效——必须推迟到明确滑动意图后。
+const SWIPE_FOLLOW_START_PX = 8;
 
 export default function MediaViewer({
   memory,
@@ -377,11 +381,23 @@ export default function MediaViewer({
     };
   }, [prefetchTargets, posterSize]);
 
+  // 键盘导航回调经 ref 取最新值：onNext/onPrev/onClose 每次渲染都是新
+  // 闭包，若直接作为 effect 依赖，快速连续按键会落在 commit 之后、
+  // passive effect 重挂监听器之前的窗口里，命中上一帧闭包——对同一张
+  // 图重复导航（URL 不变）等于按键被吞，查看器卡在原位。
+  const keyboardNavRef = useRef({ onClose, onNext, onPrev });
+  keyboardNavRef.current = { onClose, onNext, onPrev };
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const { onClose: doClose, onNext: doNext, onPrev: doPrev } = keyboardNavRef.current;
+      const currentZoom = zoomRef.current;
+
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        doClose();
         return;
       }
 
@@ -403,21 +419,21 @@ export default function MediaViewer({
         return;
       }
 
-      if (event.key === "ArrowLeft" && onPrev && (isVideo || zoom <= 1)) {
+      if (event.key === "ArrowLeft" && doPrev && (isVideo || currentZoom <= 1)) {
         event.preventDefault();
-        onPrev();
+        doPrev();
         return;
       }
 
-      if (event.key === "ArrowRight" && onNext && (isVideo || zoom <= 1)) {
+      if (event.key === "ArrowRight" && doNext && (isVideo || currentZoom <= 1)) {
         event.preventDefault();
-        onNext();
+        doNext();
         return;
       }
 
       if (event.key.startsWith("Arrow")) {
         event.preventDefault();
-        if (zoom > 1) {
+        if (currentZoom > 1) {
           const pan = 48;
           setOffset((current) => ({
             x: current.x + (event.key === "ArrowLeft" ? pan : event.key === "ArrowRight" ? -pan : 0),
@@ -455,7 +471,7 @@ export default function MediaViewer({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clampZoom, isVideo, onClose, onNext, onPrev, resetTransform, zoom]);
+  }, [clampZoom, isVideo, resetTransform]);
 
   const distance = (a: { x: number; y: number }, b: { x: number; y: number }) => {
     return Math.hypot(a.x - b.x, a.y - b.y);
@@ -473,14 +489,10 @@ export default function MediaViewer({
     } else if (zoom > 1) {
       dragOrigin.current = { x: event.clientX - offset.x, y: event.clientY - offset.y };
     } else {
-      // zoom<=1 单指针：记录滑动起点；鼠标需要显式捕获才能在移出舞台后
-      // 继续收到 move（触摸指针浏览器会隐式捕获）。
+      // zoom<=1 单指针：记录滑动起点；捕获推迟到跟手开始（见 handlePointerMove）
       swipeStart.current = { x: event.clientX, y: event.clientY };
       setSwipeFollowing(false);
       setSwipeDx(0);
-      if (event.pointerType === "mouse") {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }
     }
   };
 
@@ -518,9 +530,15 @@ export default function MediaViewer({
       const dx = event.clientX - swipeStart.current.x;
       const dy = event.clientY - swipeStart.current.y;
       if (
+        Math.abs(dx) > SWIPE_FOLLOW_START_PX &&
         Math.abs(dx) > Math.abs(dy) &&
         !window.matchMedia("(prefers-reduced-motion: reduce)").matches
       ) {
+        // 跟手起势后才捕获：之后移出舞台仍能收到 move/up；
+        // 触摸指针浏览器已隐式捕获，无需重复。
+        if (event.pointerType === "mouse") {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }
         setSwipeFollowing(true);
         setSwipeDx(dx * SWIPE_FOLLOW_FACTOR);
       }
@@ -633,18 +651,32 @@ export default function MediaViewer({
     }
   };
 
-  // 暗区点击关闭：记录指针起点，click 命中 stage 本体且位移 < 8px 才触发
-  //（拖拽平移与双击缩放位移大或 target 在图片上，不会误关）
+  // 暗区点击关闭：click 命中 stage 本体或覆盖整块舞台的透明滑动层
+  //（真实布局里「暗区」落在滑动层上），且位移 < 8px 才触发；
+  // 图片、失败浮层按钮等其余子元素不关闭。
+  // 注意 setPointerCapture（滑动跟手）会把子元素上的 click 重定向到
+  // stage 本体，因此 pointerdown 额外记录真实落点：起落都不在背板
+  // 表面的 click 一律不算暗区点击。
   const backdropPointer = useRef<{ x: number; y: number } | null>(null);
+  const backdropTarget = useRef<EventTarget | null>(null);
+  const swipeTrackRef = useRef<HTMLDivElement>(null);
   const handleStagePointerDown = (event: React.PointerEvent) => {
     backdropPointer.current = { x: event.clientX, y: event.clientY };
+    backdropTarget.current = event.target;
   };
   const handleStageBackdropClick = (event: React.MouseEvent) => {
-    if (event.target !== event.currentTarget) {
+    const isBackdropSurface = (el: EventTarget | null) =>
+      el === event.currentTarget || el === swipeTrackRef.current;
+    if (!isBackdropSurface(event.target)) {
       return;
     }
     const start = backdropPointer.current;
+    const downTarget = backdropTarget.current;
     backdropPointer.current = null;
+    backdropTarget.current = null;
+    if (downTarget && !isBackdropSurface(downTarget)) {
+      return;
+    }
     if (!start) {
       return;
     }
@@ -656,6 +688,9 @@ export default function MediaViewer({
 
   useEffect(() => {
     setPlaybackSource(null);
+    // 照片↔视频翻页不重挂载：清掉上一张图遗留的背板判定状态
+    backdropPointer.current = null;
+    backdropTarget.current = null;
     dispatchMediaState({ type: "reset" });
   }, [memory.id]);
 
@@ -771,6 +806,7 @@ export default function MediaViewer({
         >
           {/* 滑动跟手层：仅包裹图片内容，状态浮层不随滑动位移 */}
           <div
+            ref={swipeTrackRef}
             className={`viewer-swipe-track ${swipeFollowing ? "is-following" : ""}`}
             style={{ transform: `translateX(${swipeDx}px)` }}
           >
@@ -780,6 +816,7 @@ export default function MediaViewer({
                 aria-hidden="true"
                 className={`photo-viewer-placeholder ${smallImageReady ? "is-loaded" : ""}`}
                 decoding="async"
+                draggable={false}
                 onError={() => {
                   setSmallImageFailed(true);
                   dispatchMediaState({ scope: "preview", type: "fail" });

@@ -11,6 +11,10 @@ const pngBase64 =
 
 const TOTAL_ITEMS = 12;
 
+// hero 渐进加载是三层结构：LQIP(240) 底图 + 高清(1280) 主图 + 切换时的
+// is-previous 残影。断言高清主图必须排除另两层，否则 strict mode 违约。
+const FEATURED_IMG = ".hero-feature-img:not(.is-lqip):not(.is-previous)";
+
 function memory(index: number) {
   const isVideo = index === 2 || index === 4;
   // 每条记忆给不同的真实宽高：骨架屏据此实时计算占位形状
@@ -109,7 +113,7 @@ test("hero opens with a featured real memory and editorial metadata", async ({
 
   const hero = page.getByTestId("hero-feature");
   // 主图加载 1280px 高清派生图（走共享队列）
-  const featuredImg = hero.locator(".hero-feature-img");
+  const featuredImg = hero.locator(FEATURED_IMG);
   await expect(featuredImg).toHaveAttribute("src", /size=1280/);
   await expect(featuredImg).toHaveClass(/is-ready/);
   // 元数据行：编号 01 + 精选 + 地点 · 日期；可读名在主图按钮 aria-label 上
@@ -136,7 +140,7 @@ test("hero loads the 240 LQIP first and upgrades to 1280", async ({ page }) => {
 
   const featuredImg = page
     .getByTestId("hero-feature")
-    .locator(".hero-feature-img");
+    .locator(FEATURED_IMG);
   await expect(featuredImg).toHaveAttribute("src", /size=1280/);
   expect(sizes).toContain("240");
   expect(sizes).toContain("1280");
@@ -191,7 +195,7 @@ test("clicking the featured image opens the viewer for that memory", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  await expect(page.getByTestId("hero-feature").locator(".hero-feature-img"))
+  await expect(page.getByTestId("hero-feature").locator(FEATURED_IMG))
     .toHaveClass(/is-ready/);
   await page.getByRole("button", { name: "记忆 1" }).first().click();
   await expect(page.locator(".photo-viewer")).toBeVisible();
@@ -211,13 +215,17 @@ test("up-next strip swaps the featured image without touching the viewer", async
   const tiles = hero.locator(".hero-upnext-tile");
   await expect(tiles).toHaveCount(4);
 
-  // 点击「记忆 2」小瓦：主图切换为该记忆的 1280 派生图，编号推进为 02
-  await tiles.filter({ hasText: "" }).nth(0).click();
+  // hero 池按舞台可见面积过滤（≥60%），mock 中入池的是
+  // 记忆 1/3/6/8/11（横图）；接下来条 = 池切片 [记忆3, 记忆6, 记忆8, 记忆11]
+  await expect(tiles.nth(0)).toHaveAttribute("aria-label", "记忆 3");
+
+  // 点击第 1 小瓦：主图切换为该记忆的 1280 派生图，池内编号推进为 02
+  await tiles.nth(0).click();
   await expect(tiles.nth(0)).toHaveAttribute("aria-pressed", "true");
   await expect(hero.locator(".hero-meta-index")).toHaveText("02");
-  await expect(hero.locator(".hero-feature-img")).toHaveAttribute(
+  await expect(hero.locator(FEATURED_IMG)).toHaveAttribute(
     "src",
-    /m1\/thumbnail.*size=1280/,
+    /m2\/thumbnail.*size=1280/,
   );
   await expect(page).not.toHaveURL(/viewer=/);
 });
@@ -227,7 +235,7 @@ test("hero CTA scrolls down to the library canvas", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  await expect(page.getByTestId("hero-feature").locator(".hero-feature-img"))
+  await expect(page.getByTestId("hero-feature").locator(FEATURED_IMG))
     .toHaveClass(/is-ready/);
   await page.getByRole("button", { name: "进入回忆库" }).click();
   await expect
@@ -327,11 +335,11 @@ test("ken burns is disabled under reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  await expect(page.getByTestId("hero-feature").locator(".hero-feature-img"))
+  await expect(page.getByTestId("hero-feature").locator(FEATURED_IMG))
     .toHaveClass(/is-ready/);
   const animationName = await page
     .getByTestId("hero-feature")
-    .locator(".hero-feature-img")
+    .locator(FEATURED_IMG)
     .evaluate((node) => getComputedStyle(node).animationName);
   expect(animationName).toBe("none");
 });
