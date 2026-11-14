@@ -195,6 +195,21 @@
   --limedia-motion-cinematic: 700ms;
   --limedia-ken-burns: 26s;
 
+  /* 空间画廊 · 时间回廊（V1.6 增量）：仅几何量，零新装饰色。
+     JS 相机只通过 --space-* 自定义属性写值，CSS 决定用法；
+     移动端覆盖见文件尾空间画廊分区。 */
+  --limedia-space-perspective: 1100px;
+  --limedia-space-pane-gap: 520px;
+  --limedia-space-wall-offset: clamp(180px, 38vw, 420px);
+  --limedia-space-wall-angle: 18deg;
+  --limedia-space-pane-w: clamp(300px, 34vw, 460px);
+  --limedia-space-pane-h: clamp(300px, 52svh, 560px);
+  /* 回廊是固定深底的档案馆房间（两主题一致，照片是唯一色彩来源），
+     因此配套前景色不随主题翻转 */
+  --limedia-space-stage-bg: #0d1110;
+  --limedia-space-milestone-fg: rgba(240, 244, 243, 0.55);
+  --limedia-space-note-fg: rgba(240, 244, 243, 0.72);
+
   color-scheme: light;
 }
 
@@ -3736,4 +3751,432 @@ html {
     opacity: 1;
     transform: none;
   }
+}
+
+/* ========== 空间画廊 · 时间回廊（/?view=space） ==========
+   纯 CSS 3D 零依赖：真实 DOM 相片沿 Z 轴排布（间距 --limedia-space-pane-gap），
+   相机 = 走廊根节点 translateZ(--space-camera)，JS 相机每帧只写自定义属性、
+   只更新窗口内元素的 --space-fog。铁律：只动 transform/opacity；
+   prefers-reduced-motion 或不支持 preserve-3d 时 data-flat 展开为
+   同构纵向时间线（内容一个不少）。设计方案：
+   design-system/limedia/pages/space-gallery.md */
+.space-feature {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  /* 与 hero 同口径：抵消沉浸式页眉占位，贴到视口顶 */
+  margin-top: calc(-1 * var(--limedia-header-height) - 2px);
+}
+@media (max-width: 768px) {
+  .space-feature {
+    margin-top: calc(-1 * var(--limedia-header-height-mobile) - 2px);
+  }
+}
+/* 沉浸视图（3D 模式）收尾：隐藏页脚并去掉画布底部留白，
+   让滚轮不链式滚出舞台；flat 时间线不加 body 类，页脚保留。 */
+body.has-space-stage .site-footer {
+  display: none;
+}
+body.has-space-stage .page-shell {
+  padding-bottom: 0;
+}
+.space-stage {
+  position: relative;
+  height: 100svh;
+  overflow: hidden;
+  background: var(--limedia-space-stage-bg);
+  outline: none;
+  overscroll-behavior: contain;
+  /* 舞台整体接管指针：触屏纵向拖拽即前进，浏览器不抢作页面滚动 */
+  touch-action: none;
+}
+@supports not (height: 100svh) {
+  .space-stage {
+    height: 100vh;
+  }
+}
+.space-viewport {
+  position: absolute;
+  inset: 0;
+  perspective: var(--limedia-space-perspective);
+  perspective-origin: 50% 42%;
+}
+.space-corridor {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  transform: translateZ(var(--space-camera, 0px)) rotateY(var(--space-tilt, 0deg));
+  will-change: transform;
+}
+/* 朝向符号由组件写入 --space-side（左壁 -1 / 右壁 1）；几何量在此从
+   令牌推导，令牌字符串不出现在 TS（single-source 门禁口径） */
+.space-pane,
+.space-milestone {
+  --space-x: calc(var(--limedia-space-wall-offset) * var(--space-side, -1));
+  --space-rot: calc(
+    var(--limedia-space-wall-angle) * (0 - var(--space-side, -1))
+  );
+}
+.space-pane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: var(--limedia-space-pane-w);
+  height: var(--limedia-space-pane-h);
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  /* 背板透明：contain 的 letterbox 融入近黑底，相片是悬浮的纯图瓦；
+     加载占位（.media-placeholder 表面色）独立提供未就绪时的可见面板 */
+  background: transparent;
+  cursor: pointer;
+  transform: translate(-50%, -50%)
+    translate3d(var(--space-x, 0px), var(--space-y, 0px), var(--space-z, 0px))
+    rotateY(var(--space-rot, 0deg));
+  opacity: var(--space-fog, 1);
+}
+.space-pane:focus-visible {
+  outline: 2px solid var(--limedia-ring);
+  outline-offset: -3px;
+}
+.space-pane-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* 圆角落在图像矩形本身：contain 下 pane 框的圆角裁不到图 */
+  border-radius: 10px;
+  filter: saturate(1.03);
+}
+/* pane 信息层：与 .card-caption 同语言，挂在 .space-pane 上 */
+.space-caption {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 30px 14px 12px;
+  background: linear-gradient(
+    to top,
+    rgba(15, 30, 26, 0.8),
+    rgba(15, 30, 26, 0.4) 55%,
+    rgba(15, 30, 26, 0)
+  );
+  color: #fff;
+  pointer-events: none;
+  text-align: left;
+}
+.space-caption-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.space-caption-meta {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  opacity: 0.78;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (hover: hover) and (pointer: fine) {
+  .space-caption {
+    display: flex;
+    opacity: 0;
+    transform: translateY(6px);
+    transition:
+      opacity var(--limedia-motion-fast) var(--limedia-ease-out),
+      transform var(--limedia-motion-fast) var(--limedia-ease-out);
+  }
+  .space-pane:hover .space-caption,
+  .space-pane:focus-visible .space-caption {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (hover: none) {
+  .space-caption {
+    display: flex;
+    padding: 18px 12px 10px;
+  }
+  .space-caption-title {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .space-caption {
+    transition: none;
+  }
+}
+/* 年份里程碑：衬线大字贴在当年首张相片上方的同一面墙上 */
+.space-milestone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%)
+    translate3d(
+      var(--space-x, 0px),
+      calc(var(--space-y, 0px) - var(--limedia-space-pane-h) / 2 - 64px),
+      var(--space-z, 0px)
+    )
+    rotateY(var(--space-rot, 0deg));
+  opacity: var(--space-fog, 1);
+  pointer-events: none;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  color: var(--limedia-space-milestone-fg);
+  white-space: nowrap;
+}
+/* 上下遮罩：隔离页眉压图区与 HUD 文字（AA），与 hero scrim 同源 */
+.space-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(10, 14, 13, 0.42) 0%, rgba(10, 14, 13, 0) 16%),
+    linear-gradient(
+      180deg,
+      rgba(10, 14, 13, 0) 62%,
+      rgba(10, 14, 13, 0.6) 86%,
+      rgba(10, 14, 13, 0.8) 100%
+    );
+}
+.space-hud {
+  position: absolute;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+  padding: 6px 10px;
+  border: 1px solid rgba(240, 244, 243, 0.16);
+  border-radius: 999px;
+  background: rgba(13, 17, 16, 0.66);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+  color: rgba(240, 244, 243, 0.92);
+  z-index: 3;
+}
+.space-hud .icon-btn {
+  min-width: 44px;
+  min-height: 44px;
+  color: rgba(240, 244, 243, 0.92);
+}
+.space-hud-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(240, 244, 243, 0.24);
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(240, 244, 243, 0.92);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.space-hud-exit:hover,
+.space-hud-exit:focus-visible {
+  background: rgba(240, 244, 243, 0.12);
+}
+.space-hud-position {
+  min-width: 11ch;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.space-kind-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(240, 244, 243, 0.66);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--limedia-motion-fast) var(--limedia-ease-out),
+    background-color var(--limedia-motion-fast) var(--limedia-ease-out);
+}
+.space-kind-btn:hover,
+.space-kind-btn:focus-visible {
+  color: rgba(240, 244, 243, 0.92);
+  background: rgba(240, 244, 243, 0.1);
+}
+.space-kind-btn[aria-pressed="true"] {
+  color: #0d1110;
+  background: rgba(240, 244, 243, 0.88);
+}
+.space-kind-sep {
+  width: 1px;
+  height: 24px;
+  background: rgba(240, 244, 243, 0.18);
+}
+.space-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  color: rgba(240, 244, 243, 0.6);
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity var(--limedia-motion-slow) var(--limedia-ease-out);
+  z-index: 2;
+}
+.space-hint[data-hidden="true"] {
+  opacity: 0;
+}
+.space-stage-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--limedia-space-note-fg);
+  font-size: 0.9375rem;
+  letter-spacing: 0.02em;
+}
+/* flat 时间线尾部的「已经到底了」弱化文本 */
+.space-end-note {
+  color: var(--limedia-space-note-fg);
+  font-size: 0.9375rem;
+  letter-spacing: 0.02em;
+}
+.space-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.space-stage-fallback {
+  height: 100svh;
+  background: var(--limedia-space-stage-bg);
+}
+@supports not (height: 100svh) {
+  .space-stage-fallback {
+    height: 100vh;
+  }
+}
+/* 窄屏：回廊收窄为中带单列，pane 近满宽；HUD 收紧并隐藏类型筛选 */
+@media (max-width: 768px) {
+  :root {
+    --limedia-space-wall-offset: clamp(56px, 18vw, 120px);
+    --limedia-space-pane-w: min(64vw, 280px);
+    --limedia-space-pane-h: clamp(240px, 46svh, 420px);
+  }
+  .space-hud {
+    gap: 4px;
+    padding: 4px 8px;
+  }
+  .space-kind-btn,
+  .space-kind-sep {
+    display: none;
+  }
+  .space-hud-exit {
+    padding: 0 10px;
+    font-size: 0.75rem;
+  }
+  .space-hud-position {
+    min-width: 0;
+    font-size: 0.75rem;
+  }
+  .space-hint {
+    white-space: normal;
+    text-align: center;
+    width: max-content;
+    max-width: calc(100vw - 48px);
+  }
+}
+/* ===== flat 降级：prefers-reduced-motion / 不支持 preserve-3d =====
+   同一组件树展开为纵向时间线：走廊回到文档流，里程碑变 sticky 分组头，
+   相机/雾化/HUD/遮罩全部停用（use-space-camera 卸载输入绑定与 rAF）。 */
+.space-feature:has(.space-stage[data-flat]) {
+  width: auto;
+  margin-inline: 0;
+  margin-top: 0;
+}
+.space-stage[data-flat] {
+  height: auto;
+  min-height: 100svh;
+  overflow: visible;
+  touch-action: auto;
+  overscroll-behavior: auto;
+  padding: 24px 16px 48px;
+}
+.space-stage[data-flat] .space-viewport {
+  position: static;
+  perspective: none;
+}
+.space-stage[data-flat] .space-corridor {
+  position: static;
+  width: auto;
+  height: auto;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  max-width: 640px;
+  margin-inline: auto;
+}
+.space-stage[data-flat] .space-pane {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  opacity: 1;
+  width: min(100%, var(--limedia-space-pane-w));
+  /* 时间线按真实宽高比自适应（--pane-aspect 由组件按 width/height 写入），
+     封面 cover 满瓦，不再有固定框的 letterbox 空带 */
+  height: auto;
+  aspect-ratio: var(--pane-aspect, 3 / 2);
+}
+.space-stage[data-flat] .space-pane-img {
+  object-fit: cover;
+}
+.space-stage[data-flat] .space-milestone {
+  position: sticky;
+  top: 0;
+  transform: none;
+  opacity: 1;
+  z-index: 1;
+  padding: 10px 0;
+  font-size: 1.5rem;
+  text-align: center;
+  background: var(--limedia-space-stage-bg);
+}
+.space-stage[data-flat] .space-scrim,
+.space-stage[data-flat] .space-hud,
+.space-stage[data-flat] .space-hint {
+  display: none;
 }

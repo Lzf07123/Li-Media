@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Images, RefreshCw, Search, X } from "lucide-react";
+import { Images, Orbit, RefreshCw, Search, X } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import MemoryCard from "@/components/MemoryCard";
@@ -52,6 +52,7 @@ function normalizeViewerId(raw: string | null): string | undefined {
 }
 
 const MediaViewer = lazy(() => import("@/components/MediaViewer"));
+const SpaceGallery = lazy(() => import("@/components/space/SpaceGallery"));
 
 function createRandomSeed() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -139,8 +140,17 @@ export default function HomePage() {
   const kind = searchParams.get("kind") ?? undefined;
   const viewerId = normalizeViewerId(searchParams.get("viewer"));
   const keyword = (searchParams.get("keyword") ?? "").trim();
+  // 空间画廊视图：/?view=space 切换沉浸式时间回廊，网格数据流整体让位
+  const isSpaceView = searchParams.get("view") === "space";
   const [searchInput, setSearchInput] = useState(keyword);
   const [recommendations, setRecommendations] = useState<MemorySummary[]>([]);
+  // 回廊已载条目上报：查看器在此视图下从回廊列表解析相邻内容与位置
+  const [spaceState, setSpaceState] = useState<{
+    items: MemorySummary[];
+    total: number;
+  }>({ items: [], total: 0 });
+  // 3D 沉浸态（flat 时间线不算）：驱动页眉压图配色与页脚隐藏
+  const [spaceImmersive, setSpaceImmersive] = useState(false);
   const [memories, setMemories] = useState<MemorySummary[]>([]);
   const [directMemory, setDirectMemory] = useState<MemorySummary | null>(null);
   const [viewerMissing, setViewerMissing] = useState(false);
@@ -306,8 +316,13 @@ export default function HomePage() {
   }, [activeKind, keyword, randomSeed]);
 
   useEffect(() => {
+    // 空间视图有自己的 captured_desc 数据流，网格初始加载让位；
+    // 返回网格时本 effect 随依赖重建自动恢复。
+    if (isSpaceView) {
+      return;
+    }
     void loadPage(1, "replace");
-  }, [loadPage]);
+  }, [loadPage, isSpaceView]);
 
   // 预热轮询 effect 不随筛选/种子重建，用 ref 拿到最新的 loadPage。
   const loadPageRef = useRef(loadPage);
@@ -416,8 +431,8 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (keyword) {
-      // 搜索时直接展示结果，不混入推荐内容。
+    if (keyword || isSpaceView) {
+      // 搜索时直接展示结果，不混入推荐内容；空间视图不拉推荐。
       setRecommendations([]);
       return;
     }
@@ -441,7 +456,7 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, [activeKind, keyword, randomSeed]);
+  }, [activeKind, keyword, randomSeed, isSpaceView]);
 
   const refreshRandomOrder = useCallback(() => {
     if (isLoadingInitial) {
@@ -472,7 +487,12 @@ export default function HomePage() {
           ? "end"
           : "hidden";
 
-  const viewerMemories = canvasMemories;
+  // 查看器内容序列：网格视图用画布列表；空间视图用回廊已载列表
+  // （total 用回廊全量口径，查看器位置「第 n / 总数」与相机 HUD 一致）
+  const viewerMemories = isSpaceView ? spaceState.items : canvasMemories;
+  const viewerTotal = isSpaceView
+    ? Math.max(spaceState.total, spaceState.items.length)
+    : viewerMemories.length;
 
   // 图像 hero：首屏数据一到就捕获精选集（≤5 条），之后画布换批/翻页/
   // 筛选都不再改动 hero——它是「这个库长什么样」的第一印象，保持稳定。
@@ -522,10 +542,20 @@ export default function HomePage() {
 
   // 页眉压图配色开关：hero 在首屏时页眉切浅色（滚过阈值由 .is-scrolled 接管）；
   // 搜索态收起 hero（见下），页眉回到常规配色，结果区顶到工具条。
+  // 空间画廊 3D 沉浸态同样压图（页眉悬在回廊上方），flat 时间线不压。
   useEffect(() => {
-    document.body.classList.toggle("has-hero", heroMemories.length > 0 && !keyword);
-    return () => document.body.classList.remove("has-hero");
-  }, [heroMemories.length, keyword]);
+    const immersive = isSpaceView && spaceImmersive;
+    document.body.classList.toggle(
+      "has-hero",
+      immersive || (!isSpaceView && heroMemories.length > 0 && !keyword),
+    );
+    // 沉浸态隐藏页脚并去掉画布底部留白，滚轮不链式滚出舞台（CSS 联动）
+    document.body.classList.toggle("has-space-stage", immersive);
+    return () => {
+      document.body.classList.remove("has-hero");
+      document.body.classList.remove("has-space-stage");
+    };
+  }, [heroMemories.length, keyword, isSpaceView, spaceImmersive]);
   // 瀑布屏分配：最短列优先（按已知宽高比估算列高），列底基本齐平，
   // 消除轮转均分因横竖图聚集造成的大片空白；未知尺寸用 4/5 兜底。
   const canvasColumns = useMemo(
@@ -598,6 +628,30 @@ export default function HomePage() {
       });
     });
   }, [isLoadingInitial, pathname]);
+
+  // 从空间画廊返回网格时恢复进入前的滚动位置（进入时已由滚动监听存档）
+  const wasSpaceViewRef = useRef(false);
+  useEffect(() => {
+    if (isSpaceView) {
+      wasSpaceViewRef.current = true;
+      return;
+    }
+    if (!wasSpaceViewRef.current || isLoadingInitial) {
+      return;
+    }
+    wasSpaceViewRef.current = false;
+    const previousScroll = Number(
+      window.sessionStorage.getItem(SCROLL_STORAGE_KEY) ?? "0",
+    );
+    if (!Number.isFinite(previousScroll) || previousScroll <= 0 || pathname !== "/") {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ behavior: "auto", top: previousScroll });
+      });
+    });
+  }, [isSpaceView, isLoadingInitial, pathname]);
 
   useEffect(() => {
     if (isLoadingInitial || canvasMemories.length === 0) {
@@ -695,6 +749,27 @@ export default function HomePage() {
     }
   };
 
+  // 空间画廊进出：view 参数驱动（URL 可深链分享），网格数据流原地让位
+  const enterSpace = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.set("view", "space");
+    updateParams(next);
+  }, [searchParams, updateParams]);
+
+  const exitSpace = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("view");
+    updateParams(next);
+  }, [searchParams, updateParams]);
+
+  const handleSpaceItemsChange = useCallback((items: MemorySummary[], total: number) => {
+    setSpaceState({ items, total });
+  }, []);
+
+  const handleSpaceImmersiveChange = useCallback((immersive: boolean) => {
+    setSpaceImmersive(immersive);
+  }, []);
+
   const openViewer = useCallback(
     (memoryId: string, options?: { replace?: boolean }) => {
       const next = new URLSearchParams(searchParams);
@@ -779,6 +854,60 @@ export default function HomePage() {
         )
       : brand.pageTitleHome,
   );
+
+  // URL 驱动查看器：两个视图共用（覆盖层不卸载底视图，回廊相机位置得以保留）
+  const viewerNode = activeMemory ? (
+    <Suspense fallback={null}>
+      <MediaViewer
+        memory={activeMemory}
+        position={
+          activeMemoryIndex >= 0
+            ? { index: activeMemoryIndex + 1, total: viewerTotal }
+            : undefined
+        }
+        isLoadingMore={isLoadingMore}
+        onClose={closeViewer}
+        onNext={nextMemory ? () => openViewer(nextMemory.id, { replace: true }) : undefined}
+        onPrev={previousMemory ? () => openViewer(previousMemory.id, { replace: true }) : undefined}
+        prefetchTargets={viewerNeighbors}
+      />
+    </Suspense>
+  ) : null;
+  const viewerMissingNode = viewerMissing ? (
+    <Notice className="mt-8" tone="error">
+      {brand.copy.notFoundText}
+    </Notice>
+  ) : null;
+
+  // 空间画廊视图：hero/工具条/瀑布流整体让位，回廊即舞台。
+  // 提前返回放在全部 hooks 之后，hook 调用顺序与视图无关。
+  if (isSpaceView) {
+    return (
+      <section aria-labelledby="library-title" className="page-enter hero-page">
+        <h1 className="sr-only" id="library-title">
+          {brand.copy.libraryTitle}
+        </h1>
+        <Suspense
+          fallback={
+            <div aria-hidden="true" className="space-feature">
+              <div className="space-stage-fallback" />
+            </div>
+          }
+        >
+          <SpaceGallery
+            kind={activeKind}
+            onExitSpace={exitSpace}
+            onImmersiveChange={handleSpaceImmersiveChange}
+            onItemsChange={handleSpaceItemsChange}
+            onKindChange={changeKind}
+            onOpenViewer={openViewer}
+          />
+        </Suspense>
+        {viewerMissingNode}
+        {viewerNode}
+      </section>
+    );
+  }
 
   // 搜索态收起 hero：结果（含空结果态）直接顶到工具条，hero 不再隔一屏；
   // 清除搜索后按已捕获的 heroSource 原样恢复，第一印象不变。
@@ -932,7 +1061,7 @@ export default function HomePage() {
             </Button>
           ) : null}
         </form>
-        <div className="filter-toolbar-row flex items-center gap-2">
+        <div className="filter-toolbar-row flex flex-wrap items-center gap-2">
           <div
             aria-label={brand.copy.kindFilterLabel}
             className="segmented"
@@ -984,6 +1113,16 @@ export default function HomePage() {
             variant="secondary"
           >
             <RefreshCw aria-hidden="true" className={`size-5 ${isLoadingInitial ? "animate-spin" : ""}`} />
+          </Button>
+          <Button
+            aria-label={brand.copy.space.toggle}
+            onClick={enterSpace}
+            title={brand.copy.space.toggle}
+            variant="secondary"
+          >
+            <Orbit aria-hidden="true" className="size-5" />
+            {/* 窄屏收成纯图标：筛选条一行放不下图标+文字（横向溢出回归） */}
+            <span className="hidden sm:inline">{brand.copy.space.toggle}</span>
           </Button>
         </div>
       </div>
@@ -1095,28 +1234,8 @@ export default function HomePage() {
         </section>
       )}
 
-      {viewerMissing ? (
-        <Notice className="mt-8" tone="error">
-          {brand.copy.notFoundText}
-        </Notice>
-      ) : null}
-      {activeMemory ? (
-        <Suspense fallback={null}>
-          <MediaViewer
-            memory={activeMemory}
-            position={
-              activeMemoryIndex >= 0
-                ? { index: activeMemoryIndex + 1, total: viewerMemories.length }
-                : undefined
-            }
-            isLoadingMore={isLoadingMore}
-            onClose={closeViewer}
-            onNext={nextMemory ? () => openViewer(nextMemory.id, { replace: true }) : undefined}
-            onPrev={previousMemory ? () => openViewer(previousMemory.id, { replace: true }) : undefined}
-            prefetchTargets={viewerNeighbors}
-          />
-        </Suspense>
-      ) : null}
+      {viewerMissingNode}
+      {viewerNode}
     </section>
   );
 }

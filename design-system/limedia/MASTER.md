@@ -1,13 +1,17 @@
 # Li&Media Master
 
-> 版本：V1.5 ｜ 日期：2026-11-07 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
-> 相关：[BRAND.md](BRAND.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
+> 版本：V1.6 ｜ 日期：2026-11-14 ｜ 状态：实现快照。与代码冲突时以代码为准，并回写本文档。
+> 相关：[BRAND.md](BRAND.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts` · [pages/space-gallery.md](pages/space-gallery.md)
+>
+> V1.6 变更（2026-11-14，空间画廊 · 时间回廊）：新增 `/?view=space` 沉浸视图
+> （纯 CSS 3D 零依赖，设计与实现口径见 `pages/space-gallery.md`）；新增
+> `--limedia-space-*` 几何令牌与 `SpaceGallery` 组件族；网格视图行为不变。
 
 ## 技术栈与路由
 
 - React 19 + TypeScript + Vite 7 + Tailwind CSS 4 + React Router 7 + lucide-react。
-- 路由：`/`（回忆库和 `?viewer=<memoryId>` 查看器）、`/memories/:memoryId`（兼容重定向到查看器）、`/admin`（后台）、`*`（404）。
-- API：`/api/v1/memories`、`/api/v1/memories/recommend`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/memories/:id/stream`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。公开列表与推荐只返回 **240px 派生图就绪**的内容（未预热不做占位兜底，直接不出现）；详情/直链/流不受此过滤，查看器直链仍可达。
+- 路由：`/`（回忆库和 `?viewer=<memoryId>` 查看器）、`/?view=space`（空间画廊 · 时间回廊，`?viewer=` 查看器在其上可用）、`/memories/:memoryId`（兼容重定向到查看器）、`/admin`（后台）、`*`（404）。
+- API：`/api/v1/memories`、`/api/v1/memories/recommend`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/memories/:id/stream`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。公开列表与推荐只返回 **240px 派生图就绪**的内容（未预热不做占位兜底，直接不出现）；详情/直链/流不受此过滤，查看器直链仍可达。空间画廊用 `sort=captured_desc` 单向分页，从最新端向过去推进。
 
 ## 令牌快照
 
@@ -15,6 +19,7 @@
 - 前缀：`--limedia-*`；主题：`:root` 浅色（次要）、`.dark` 深色（主打，近黑 `#0D1110` 底）；无存储偏好时默认深色。
 - 语义层：background / surface / surface-2 / foreground / muted / border / primary / secondary / success / warning / destructive / ring / 六组 accent。
 - 辅助层：`--limedia-shadow-*`、`--limedia-ease-*`、`--limedia-motion-*`（含 `motion-cinematic` 与 `ken-burns`）、`--limedia-glass-*`、`--limedia-flow-gradient`。V1.5 起移除 `--limedia-aurora-*` 与 `--limedia-tech-*`（氛围层收敛为静态胶片颗粒）。
+- 空间画廊层（V1.6）：`--limedia-space-perspective/pane-gap/wall-offset/wall-angle/pane-w/pane-h` 仅几何量（≤768px 有窄屏覆盖），`--limedia-space-stage-bg/milestone-fg/note-fg` 为回廊固定深底（两主题一致）配套前景色；JS 相机只写 `--space-camera/--space-tilt/--space-fog` 自定义属性。
 - 展示排版：`--font-display` 系统衬线栈（New York / Songti SC / Georgia），`--text-hero` 系 clamp 字号生成 `text-hero` utility；元数据行 tnum + 大写字距。
 - Tailwind 组件只引用 `bg-primary`、`text-muted`、`border-border`、`.card` 等语义类；不硬编码颜色值。
 - 深色带文字软底使用 `--limedia-*-soft-solid` 与 `--limedia-*-soft-fg`。
@@ -26,7 +31,7 @@
 | 交互控件 | `Button`、`IconButton`、`Input`、`TextArea`、`DropdownMenu`、`Pagination` |
 | 反馈 | `Badge`、`StatusBadge`、`FileStatusBadge`、`Notice`、`Toast`、`Modal`、`ProgressBar`、`EmptyState`、`MediaSkeleton`、`SearchSkeleton`、`StatusDot` |
 | 氛围 | `AmbientBackground`（静态胶片颗粒 + 单枚极淡光晕，V1.5 起无极光/科技层）、`BlurText`、`FlowRule`（CSS 类） |
-| 内容组件 | `MemoryCard`（无边框纯图瓦 + 底部渐变说明层，占位按 `memory.width/height` 实时计算）、`HeroFeature`（电影感单幅首屏：全出血精选图 1280/768 派生图走共享队列、极慢 Ken Burns、双层渐变遮罩、衬线巨字标题压图、「接下来」条切换主图、捕获 ≤5 条后稳定、窄屏露 3 枚、空库退场）、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
+| 内容组件 | `MemoryCard`（无边框纯图瓦 + 底部渐变说明层，占位按 `memory.width/height` 实时计算）、`HeroFeature`（电影感单幅首屏：全出血精选图 1280/768 派生图走共享队列、极慢 Ken Burns、双层渐变遮罩、衬线巨字标题压图、「接下来」条切换主图、捕获 ≤5 条后稳定、窄屏露 3 枚、空库退场）、`SpaceGallery`（V1.6 空间画廊：`/?view=space` 惰性加载；时间回廊 = 纯 CSS 3D 双壁走廊 + 相机根节点单变量 translateZ，窗口化挂载 ±5 档、雾化按档距、年份衬线里程碑、贴底玻璃 HUD、滚轮/拖拽/键盘三输入 + 400ms 闲置吸附；`SpacePane` 纯图瓦 240 起步、落定 ±2 档升 480、视频不自动播放；`use-space-camera` 单 rAF 弹簧相机；`prefers-reduced-motion`/不支持 `preserve-3d` 时 `data-flat` 展开为同构纵向时间线）、`MediaViewer`、`VideoPlayer`、`AdminLoginCard` |
 | 骨架 | `MediaSkeleton`（数据驱动：按真实图像宽高逐条实时计算 `aspect-ratio`，尺寸解析链 = 内存 items → `limedia-canvas-composition` 构图缓存 → 多样比例兜底；与真实画布同构零位移）、`HeroFeature` 内结构镜像骨架（非一整块均色） |
 | 外壳 | `SiteHeader`（沉浸式 V1.7：`.site-header`/`.site-header-inner`/`.is-scrolled`）、`SiteFooter`（模板 V1.5：`mt-auto` 贴底 56px）、`BackToTop`、`Breadcrumb` |
 
@@ -34,7 +39,7 @@
 
 | 页面 | 关键状态 |
 | --- | --- |
-| `HomePage` | 电影感单幅 hero（图像先行：全出血精选图 + 衬线巨字标题压图 + 元数据行 + CTA +「接下来」条切换主图；首屏捕获 ≤5 条后保持稳定，换批/筛选/翻页不影响；窄屏露 3 枚；空库退场并渲染兜底 h1）、类型导航、编辑部风统计行、居中紧凑筛选条、推荐置顶且与列表去重、无限分段加载、数据驱动媒体骨架（按真实宽高）、加载失败、空库（预热未到终态时显示「回忆预览正在准备」）、画布仅展示 240px 预热就绪内容（卡片固定请求 240px）、预热到终态且用户在顶部附近时自动补图刷新一次、「已收录媒体」为可展示口径（与画布一致）、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复、hero 存在时页眉压图浅色配色（`.has-hero` + `data-on-hero`） |
+| `HomePage` | 电影感单幅 hero（图像先行：全出血精选图 + 衬线巨字标题压图 + 元数据行 + CTA +「接下来」条切换主图；首屏捕获 ≤5 条后保持稳定，换批/筛选/翻页不影响；窄屏露 3 枚；空库退场并渲染兜底 h1）、类型导航、编辑部风统计行、居中紧凑筛选条（含「空间画廊」切换钮，窄屏收纯图标 + 行可换行）、推荐置顶且与列表去重、无限分段加载、数据驱动媒体骨架（按真实宽高）、加载失败、空库（预热未到终态时显示「回忆预览正在准备」）、画布仅展示 240px 预热就绪内容（卡片固定请求 240px）、预热到终态且用户在顶部附近时自动补图刷新一次、「已收录媒体」为可展示口径（与画布一致）、真实封面瀑布流、URL 驱动查看器、旧链接兼容、滚动恢复（含空间画廊返回网格恢复）、hero 存在时页眉压图浅色配色（`.has-hero` + `data-on-hero`）、`?view=space` 提前返回渲染空间画廊（网格数据流让位、回廊条目上报供查看器解析相邻与位置、3D 沉浸态联动页眉压图与页脚隐藏 `body.has-space-stage`） |
 | `AdminPage` | 登录态、分区工作台、自适应搜索筛选、当前范围/选中记录操作分离、状态徽章、浏览器兼容、批量进度、发布、下架、删除确认、远程扫描、确认式本地清理 |
 | `NotFoundPage` | 空态图标、返回首页 |
 
@@ -46,6 +51,7 @@
 - 公开内容使用 `.masonry`：1600 六列、1280 五列、1024 四列、768 三列、640 两列；画布保留版心两侧留白。
 - 桌面导航在 769px 显示；768px 及以下显示外露首页和二级菜单，菜单项与图标按钮均为 44px 热区。
 - 360px 隐藏品牌文字，仅保留品牌图标；所有主视图不允许横向溢出。
+- 空间画廊（V1.6）：3D 回廊舞台 100svh 全出血贴顶（与 hero 同口径负边距）、`touch-action: none` 接管纵向拖拽；沉浸态 `body.has-space-stage` 隐藏页脚并去掉 `page-shell` 底部留白防滚轮链式滚出；≤768px 走廊收窄（wall-offset/pane-w/pane-h 窄屏覆盖）且 HUD 隐藏类型筛选；flat 时间线按真实宽高比 cover 满瓦、里程碑变 sticky 分组头、页脚保留。
 - 响应式覆盖放在 `@layer components` 之外，避免 utilities 覆盖。
 - 全站使用 `AmbientBackground` 静态胶片颗粒氛围层（无动画，不参与 reduced-motion 分支）；表格、正文和媒体内容保持前景层优先。
 

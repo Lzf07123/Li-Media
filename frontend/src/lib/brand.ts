@@ -500,6 +500,18 @@ export const brand = {
     noDescription: "暂无描述。",
     retryPreview: "重试预览",
     bytes: "字节",
+    // 空间画廊（时间回廊）：/?view=space 沉浸视图的界面文案。
+    // 设计方案见 design-system/limedia/pages/space-gallery.md。
+    space: {
+      toggle: "空间画廊",
+      toggleActive: "返回网格",
+      stageLabel: "时间回廊",
+      hint: "滚动或拖拽，沿时间回望",
+      position: "{year} 年 · 第 {index} / {total} 张",
+      prev: "上一张（较新）",
+      next: "下一张（较早）",
+      empty: "还没有可以漫步的回忆。",
+    },
   },
   nav: [
     { label: "首页", href: "/" },
