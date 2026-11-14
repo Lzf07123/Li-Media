@@ -22,6 +22,7 @@ export type SpaceCameraOptions = {
   onSettled: (index: number | null) => void;
 };
 
+
 // —— 相机调参（帧率无关：系数按 dt 归一） ——
 /** 滚轮增益：一格 ≈ 半个档位偏多，跟手感优先 */
 const WHEEL_FACTOR = 3.0;
@@ -41,8 +42,6 @@ const IDLE_SNAP_DELAY_MS = 300;
 const INERTIA_LOOKAHEAD_MS = 180;
 /** 拖拽起势阈值：低于此距离视为轻点，不捕获指针 */
 const DRAG_THRESHOLD_PX = 6;
-/** 拖拽后短暂抑制 pane 点击，避免松手误开查看器 */
-const CLICK_SUPPRESS_MS = 320;
 /** 指针视差摆幅上限（deg）；走廊根节点 rotateY */
 const MAX_TILT_DEG = 1.2;
 /** 雾化曲线：档距 ≤1.5 全清晰，到 5 档衰减至 FOG_MIN */
@@ -71,7 +70,6 @@ type SpaceCameraState = {
   dragStartPosition: number;
   dragSamples: DragSample[];
   lastInputAt: number;
-  dragEndAt: number;
   lastEmittedIndex: number;
   settledEmitted: boolean;
   frameHandle: number;
@@ -124,7 +122,6 @@ export function useSpaceCamera({
     dragStartPosition: 0,
     dragSamples: [],
     lastInputAt: 0,
-    dragEndAt: 0,
     lastEmittedIndex: -1,
     settledEmitted: false,
     frameHandle: 0,
@@ -183,14 +180,6 @@ export function useSpaceCamera({
     },
     [goToIndex, indexOfPosition],
   );
-
-  const suppressClick = useCallback((): boolean => {
-    const state = stateRef.current;
-    return (
-      state.dragDistance > DRAG_THRESHOLD_PX &&
-      performance.now() - state.dragEndAt < CLICK_SUPPRESS_MS
-    );
-  }, []);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -394,7 +383,6 @@ export function useSpaceCamera({
         return;
       }
       state.dragging = false;
-      state.dragEndAt = performance.now();
       try {
         stage.releasePointerCapture(event.pointerId);
       } catch {
@@ -419,7 +407,7 @@ export function useSpaceCamera({
       const projected =
         state.position + state.velocity * (INERTIA_LOOKAHEAD_MS / 16.667);
       state.target = snapOfIndex(indexOfPosition(projected));
-      state.lastInputAt = state.dragEndAt;
+      state.lastInputAt = performance.now();
     };
 
     const onPointerEnter = (event: PointerEvent) => {
@@ -516,5 +504,5 @@ export function useSpaceCamera({
     goToIndex,
   ]);
 
-  return { goToIndex, stepBy, suppressClick };
+  return { goToIndex, stepBy };
 }

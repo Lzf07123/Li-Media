@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
   type FocusEvent,
+  type SyntheticEvent,
 } from "react";
 
 import { brand } from "@/lib/brand";
@@ -280,6 +281,26 @@ function SpaceGallery({
     }
   }, []);
 
+  // 查看器打开走 pointerup 命中判定而非 click：滑动后相机仍在缓慢归位，
+  // pointerdown 与 pointerup 的命中目标会漂移，click 只落在二者公共祖先
+  // （走廊/舞台）上导致 pane 收不到。抬手指一刻的命中元素才是用户要的。
+  // 拖拽场景因指针捕获把 pointerup 重定向到舞台，closest 找不到 pane，
+  // 天然不会误开。键盘 Enter/Space 走 click（detail === 0）兜底。
+  const openPaneFromEvent = useCallback(
+    (event: SyntheticEvent) => {
+      const pane = (event.target as HTMLElement).closest("[data-space-index]");
+      if (!pane) {
+        return;
+      }
+      const index = Number(pane.getAttribute("data-space-index"));
+      const memory = items[index];
+      if (memory) {
+        onOpenViewer(memory.id);
+      }
+    },
+    [items, onOpenViewer],
+  );
+
   // —— 渲染清单：3D 挂载窗口 = 焦点 ± 缓冲 ∪ 焦点 pane（键盘保有）；
   // flat 时间线全量挂载，交给原生 lazy loading 与尾哨兵续载 ——
   const renderList = useMemo(() => {
@@ -354,12 +375,19 @@ function SpaceGallery({
       <div
         className="space-stage"
         data-flat={flat ? "true" : undefined}
+        onClick={(event) => {
+          // 键盘激活 button 的 click 无指针序号（detail === 0）
+          if (event.detail === 0) {
+            openPaneFromEvent(event);
+          }
+        }}
         onKeyDown={(event) => {
           if (NAVIGATION_KEYS.has(event.key)) {
             setHintHidden(true);
           }
         }}
         onPointerDown={() => setHintHidden(true)}
+        onPointerUp={openPaneFromEvent}
         onWheel={() => setHintHidden(true)}
         ref={stageRef}
         tabIndex={-1}
@@ -410,9 +438,7 @@ function SpaceGallery({
                       fogTargetsRef={fogTargetsRef}
                       index={index}
                       memory={memory}
-                      onOpen={onOpenViewer}
                       side={side}
-                      suppressClick={camera.suppressClick}
                       windowed={!flat}
                       worldZ={worldZ}
                     />

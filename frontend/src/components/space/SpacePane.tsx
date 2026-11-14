@@ -30,9 +30,6 @@ type SpacePaneProps = {
   /** true = 3D 窗口模式（走共享队列）；false = flat 时间线（原生 lazy） */
   windowed: boolean;
   fogTargetsRef: RefObject<Map<HTMLElement, number>>;
-  onOpen: (memoryId: string) => void;
-  /** 拖拽松手后的点击抑制（use-space-camera 提供） */
-  suppressClick: () => boolean;
 };
 
 function SpacePane({
@@ -43,8 +40,6 @@ function SpacePane({
   enhanced,
   windowed,
   fogTargetsRef,
-  onOpen,
-  suppressClick,
 }: SpacePaneProps) {
   const [loaded240, setLoaded240] = useState<string | null>(null);
   const [loaded480, setLoaded480] = useState<string | null>(null);
@@ -125,12 +120,6 @@ function SpacePane({
     [fogTargetsRef, worldZ],
   );
 
-  const handleClick = useCallback(() => {
-    if (!suppressClick()) {
-      onOpen(memory.id);
-    }
-  }, [onOpen, memory.id, suppressClick]);
-
   const shownSrc = windowed ? loaded240 : url240;
   const ready = windowed
     ? loaded240 !== null
@@ -160,7 +149,6 @@ function SpacePane({
       aria-label={accessibleName}
       className="space-pane"
       data-space-index={index}
-      onClick={handleClick}
       ref={registerElement}
       style={
         {
