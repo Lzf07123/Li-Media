@@ -29,6 +29,8 @@ type SpacePaneProps = {
   enhanced: boolean;
   /** true = 3D 窗口模式（走共享队列）；false = flat 时间线（原生 lazy） */
   windowed: boolean;
+  /** 几何拾取的悬停态（3D 下 pane 不参与 DOM 命中，由舞台代理写入） */
+  dataHovered?: "true";
   fogTargetsRef: RefObject<Map<HTMLElement, number>>;
 };
 
@@ -39,6 +41,7 @@ function SpacePane({
   side,
   enhanced,
   windowed,
+  dataHovered,
   fogTargetsRef,
 }: SpacePaneProps) {
   const [loaded240, setLoaded240] = useState<string | null>(null);
@@ -148,6 +151,7 @@ function SpacePane({
     <button
       aria-label={accessibleName}
       className="space-pane"
+      data-hovered={dataHovered}
       data-space-index={index}
       ref={registerElement}
       style={

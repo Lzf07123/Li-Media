@@ -33,6 +33,39 @@
 
 @import "tailwindcss";
 
+/* 空间画廊几何令牌注册：未注册的自定义属性 computed 值不解析 clamp/覆盖，
+   JS 相机拾取需要读取计算后的像素值——注册后 getComputedStyle 可得精确 px */
+@property --limedia-space-perspective {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1100px;
+}
+@property --limedia-space-pane-gap {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 460px;
+}
+@property --limedia-space-wall-offset {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 420px;
+}
+@property --limedia-space-wall-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 18deg;
+}
+@property --limedia-space-pane-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 500px;
+}
+@property --limedia-space-pane-h {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 680px;
+}
+
 /* 基于 class 的深色模式（html.dark） */
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -200,9 +233,11 @@
      移动端覆盖见文件尾空间画廊分区。 */
   --limedia-space-perspective: 1100px;
   --limedia-space-pane-gap: 460px;
-  --limedia-space-wall-offset: clamp(200px, 34vw, 380px);
+  /* 近景 pane 投影不得越过中央缝（深处小图的完整投影带）：内缘
+     (offset - 半宽) × 焦点缩放 ≈ ±145px，深处 pane 投影带可完整点击 */
+  --limedia-space-wall-offset: clamp(220px, 36vw, 420px);
   --limedia-space-wall-angle: 18deg;
-  --limedia-space-pane-w: clamp(340px, 38vw, 540px);
+  --limedia-space-pane-w: clamp(320px, 36vw, 500px);
   --limedia-space-pane-h: clamp(340px, 62svh, 680px);
   /* 回廊是固定深底的档案馆房间（两主题一致，照片是唯一色彩来源），
      因此配套前景色不随主题翻转 */
@@ -3788,6 +3823,7 @@ body.has-space-stage .page-shell {
   overscroll-behavior: contain;
   /* 舞台整体接管指针：触屏纵向拖拽即前进，浏览器不抢作页面滚动 */
   touch-action: none;
+  cursor: pointer;
 }
 @supports not (height: 100svh) {
   .space-stage {
@@ -3825,16 +3861,23 @@ body.has-space-stage .page-shell {
   left: 0;
   top: 0;
   display: block;
+  /* 盒贴合图像比例（--pane-aspect 由组件按 width/height 写入）：
+     letterbox 不存在，命中与所见一致。极端比例由 min/max 高度夹持，
+     夹断后 contain 的少量 letterbox 融入近黑底 */
   width: var(--limedia-space-pane-w);
-  height: var(--limedia-space-pane-h);
+  height: auto;
+  aspect-ratio: var(--pane-aspect, 3 / 2);
+  max-height: var(--limedia-space-pane-h);
+  min-height: calc(var(--limedia-space-pane-h) * 0.55);
   padding: 0;
   border: 0;
   border-radius: 12px;
   overflow: hidden;
-  /* 背板透明：contain 的 letterbox 融入近黑底，相片是悬浮的纯图瓦；
-     加载占位（.media-placeholder 表面色）独立提供未就绪时的可见面板 */
   background: transparent;
   cursor: pointer;
+  /* 注意：preserve-3d 场景下 pointer-events:none 会把整棵子树剪出 hit-test
+     （子元素 auto 也不豁免，Chromium 3D 合成路径行为）——pane 必须保持
+     auto；点击判定由舞台的几何拾取（pickPaneAt）接管，与 DOM 命中解耦 */
   transform: translate(-50%, -50%)
     translate3d(var(--space-x, 0px), var(--space-y, 0px), var(--space-z, 0px))
     rotateY(var(--space-rot, 0deg));
@@ -3849,8 +3892,7 @@ body.has-space-stage .page-shell {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  /* 圆角落在图像矩形本身：contain 下 pane 框的圆角裁不到图 */
+  object-fit: cover;
   border-radius: 10px;
   filter: saturate(1.03);
   /* 可点暗示：与画布 post-cover 的 hover 缩放同一语言 */
@@ -3920,18 +3962,25 @@ body.has-space-stage .page-shell {
     transition: none;
   }
 }
-/* 可点反馈：hover/键盘聚焦时雾化提亮 + 图像轻缩放；按压回收。
+/* 可点反馈：几何拾取的悬停态/键盘聚焦时雾化提亮 + 图像轻缩放。
+   3D 下 pane 不参与 DOM 命中，悬停态由舞台拾取经 data-hovered 写入；
+   flat 时间线 pane 可命中，:hover 原生生效。
    opacity 用 !important 压过雾化的内联直写值。 */
+.space-pane[data-hovered="true"],
 .space-pane:hover,
 .space-pane:focus-visible {
   opacity: 1 !important;
 }
+.space-pane[data-hovered="true"] .space-pane-img,
 .space-pane:hover .space-pane-img,
 .space-pane:focus-visible .space-pane-img {
   transform: scale(1.03);
 }
 .space-pane:active .space-pane-img {
   transform: scale(0.99);
+}
+.space-pane .waterfall-badge {
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .space-pane-img {
@@ -4177,10 +4226,6 @@ body.has-space-stage .page-shell {
   /* 覆盖雾化 JS 写入的内联 opacity */
   opacity: 1 !important;
   width: min(100%, var(--limedia-space-pane-w));
-  /* 时间线按真实宽高比自适应（--pane-aspect 由组件按 width/height 写入），
-     封面 cover 满瓦，不再有固定框的 letterbox 空带 */
-  height: auto;
-  aspect-ratio: var(--pane-aspect, 3 / 2);
 }
 .space-stage[data-flat] .space-pane-img {
   object-fit: cover;

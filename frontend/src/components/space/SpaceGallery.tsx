@@ -17,7 +17,11 @@ import {
   getMemories,
   type MemorySummary,
 } from "@/lib/api";
-import { useSpaceCamera, type SpaceCameraGeometry } from "./use-space-camera";
+import {
+  pickPaneAt,
+  useSpaceCamera,
+  type SpaceCameraGeometry,
+} from "./use-space-camera";
 import SpacePane from "./SpacePane";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
@@ -52,16 +56,29 @@ type SpaceGalleryProps = {
   onImmersiveChange: (immersive: boolean) => void;
 };
 
-/** 几何量与 CSS 令牌单一事实：gap 从令牌读出，吸附前导量按比例推导 */
+/** 几何量与 CSS 令牌单一事实：全部从令牌读出（@property 注册后 computed
+ *  为解析后的像素值，含窄屏覆盖），吸附前导量按比例推导 */
 function readSpaceGeometry(): SpaceCameraGeometry {
   // 令牌名字面量按门禁口径只能出现在 index.css；运行时只做读取，名称在此拼装
   const tokenFamily = "limedia";
-  const gapToken = `--${tokenFamily}-space-pane-gap`;
-  const parsed = Number.parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue(gapToken),
-  );
-  const gap = Number.isFinite(parsed) && parsed > 0 ? parsed : 520;
-  return { gap, snapLead: Math.round(gap * 0.42) };
+  const token = (suffix: string, fallback: number): number => {
+    const parsed = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue(
+        `--${tokenFamily}-space-${suffix}`,
+      ),
+    );
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  const gap = token("pane-gap", 460);
+  return {
+    gap,
+    snapLead: Math.round(gap * 0.42),
+    perspective: token("perspective", 1100),
+    wallOffset: token("wall-offset", 420),
+    wallAngleDeg: token("wall-angle", 18),
+    paneWidth: token("pane-w", 500),
+    paneHeight: token("pane-h", 680),
+  };
 }
 
 function parseYear(capturedAt: string | null | undefined): number | null {
@@ -112,6 +129,14 @@ function SpaceGallery({
   const liveRegionRef = useRef<HTMLParagraphElement | null>(null);
   const [geometry] = useState(readSpaceGeometry);
   const geometryRef = useRef(geometry);
+  // 窄屏覆盖/窗口尺寸变化时刷新几何（vw/svh 依赖窗口实测）
+  useEffect(() => {
+    const refresh = () => {
+      geometryRef.current = readSpaceGeometry();
+    };
+    window.addEventListener("resize", refresh);
+    return () => window.removeEventListener("resize", refresh);
+  }, []);
 
   // —— flat 降级跟随系统偏好 ——
   useEffect(() => {
@@ -242,6 +267,7 @@ function SpaceGallery({
 
   // —— 相机 ——
   const handleIndexChange = useCallback((index: number) => {
+    focusIndexRef.current = index;
     setFocusIndex(index);
   }, []);
   const handleSettled = useCallback((index: number | null) => {
@@ -273,6 +299,48 @@ function SpaceGallery({
     stageRef.current?.focus({ preventScroll: true });
   }, []);
 
+  // 几何拾取的舞台基准矩形：舞台贴视口顶全出血，位置稳定，仅尺寸随窗口变
+  const stageRectRef = useRef({ left: 0, top: 0, width: 0, height: 0 });
+  useEffect(() => {
+    const measure = () => {
+      const rect = stageRef.current?.getBoundingClientRect();
+      if (rect) {
+        stageRectRef.current = {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+      }
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  const pickFromPointer = useCallback(
+    (clientX: number, clientY: number): number | null => {
+      return pickPaneAt({
+        clientX,
+        clientY,
+        stageRect: stageRectRef.current,
+        cameraPosition: camera.stateRef.current.position,
+        geometry: geometryRef.current,
+        perspective: geometryRef.current.perspective,
+        wallOffset: geometryRef.current.wallOffset,
+        wallAngleDeg: geometryRef.current.wallAngleDeg,
+        paneWidth: geometryRef.current.paneWidth,
+        paneHeight: geometryRef.current.paneHeight,
+        paneHeightMin: geometryRef.current.paneHeight * 0.55,
+        aspects: items.map((memory) => ({
+          width: memory.width,
+          height: memory.height,
+        })),
+      });
+    },
+    [items, camera],
+  );
+
   // 键盘行进把焦点 pane 飞出窗口时焦点不落到 body：窗口并入焦点锚点
   const handleFocusCapture = useCallback((event: FocusEvent) => {
     const pane = (event.target as HTMLElement).closest("[data-space-index]");
@@ -281,24 +349,37 @@ function SpaceGallery({
     }
   }, []);
 
-  // 查看器打开走 pointerup 命中判定而非 click：滑动后相机仍在缓慢归位，
-  // pointerdown 与 pointerup 的命中目标会漂移，click 只落在二者公共祖先
-  // （走廊/舞台）上导致 pane 收不到。抬手指一刻的命中元素才是用户要的。
-  // 拖拽场景因指针捕获把 pointerup 重定向到舞台，closest 找不到 pane，
-  // 天然不会误开。键盘 Enter/Space 走 click（detail === 0）兜底。
+  // 查看器打开走 pointerup 几何拾取而非 DOM click：滑动后相机仍在缓慢归位，
+  // pointerdown 与 pointerup 的命中目标会漂移；且 preserve-3d 场景里
+  // pointer-events/clip-path 的 hit-test 有浏览器怪癖。抬手指一刻按
+  // 射线-平面求交拾取命中的 pane（pickPaneAt），拖拽场景由
+  // suppressPointerUp 抑制。键盘 Enter/Space 走 click（detail === 0）兜底。
+  // 交互语义（两段式）：点中非焦点 pane = 走到它面前（档案馆隐喻）；
+  // 点中焦点 pane = 打开查看器。点击必有反馈，永不落空。
+  const focusIndexRef = useRef(0);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const openPaneAt = useCallback(
+    (index: number) => {
+      const memory = items[index];
+      if (!memory) {
+        return;
+      }
+      if (index === focusIndexRef.current) {
+        onOpenViewer(memory.id);
+      } else {
+        camera.goToIndex(index);
+      }
+    },
+    [items, onOpenViewer, camera],
+  );
   const openPaneFromEvent = useCallback(
     (event: SyntheticEvent) => {
       const pane = (event.target as HTMLElement).closest("[data-space-index]");
-      if (!pane) {
-        return;
-      }
-      const index = Number(pane.getAttribute("data-space-index"));
-      const memory = items[index];
-      if (memory) {
-        onOpenViewer(memory.id);
+      if (pane) {
+        openPaneAt(Number(pane.getAttribute("data-space-index")));
       }
     },
-    [items, onOpenViewer],
+    [openPaneAt],
   );
 
   // —— 渲染清单：3D 挂载窗口 = 焦点 ± 缓冲 ∪ 焦点 pane（键盘保有）；
@@ -376,9 +457,42 @@ function SpaceGallery({
         className="space-stage"
         data-flat={flat ? "true" : undefined}
         onClick={(event) => {
-          // 键盘激活 button 的 click 无指针序号（detail === 0）
+          if (flat) {
+            const pane = (event.target as HTMLElement).closest(
+              "[data-space-index]",
+            );
+            if (pane) {
+              const index = Number(pane.getAttribute("data-space-index"));
+              if (index === focusIndexRef.current) {
+                openPaneAt(index);
+              } else {
+                camera.goToIndex(index);
+              }
+            }
+            return;
+          }
           if (event.detail === 0) {
-            openPaneFromEvent(event);
+            // 键盘激活 button 的 click 无指针序号（detail === 0）：
+            // 走到聚焦 pane 面前，若已到位则打开查看器
+            const pane = (event.target as HTMLElement).closest(
+              "[data-space-index]",
+            );
+            if (pane) {
+              openPaneAt(Number(pane.getAttribute("data-space-index")));
+            }
+            return;
+          }
+          if (camera.suppressPointerUp()) {
+            return; // 拖拽松手后短暂的 click 不拾取
+          }
+          const index = pickFromPointer(event.clientX, event.clientY);
+          if (index === null) {
+            return;
+          }
+          if (index === focusIndexRef.current) {
+            onOpenViewer(items[index].id);
+          } else {
+            camera.goToIndex(index);
           }
         }}
         onKeyDown={(event) => {
@@ -387,7 +501,30 @@ function SpaceGallery({
           }
         }}
         onPointerDown={() => setHintHidden(true)}
-        onPointerUp={openPaneFromEvent}
+        onPointerLeave={() => setHoveredIndex(null)}
+        onPointerMove={(event) => {
+          if (flat) {
+            return;
+          }
+          const hit = pickFromPointer(event.clientX, event.clientY);
+          setHoveredIndex((current) => (current === hit ? current : hit));
+        }}
+        onPointerUp={(event) => {
+          setHintHidden(true);
+          if (flat) {
+            return; // flat 时间线整段走 click 两段式（pane 可命中）
+          }
+          if (camera.suppressPointerUp()) {
+            return;
+          }
+          // pointerup 只负责「走」：点非焦点 pane = 相机走向它。
+          // 「看」（打开查看器）放到 click 时机——viewer 覆盖层此刻才渲染，
+          // 若在 pointerup 打开，紧随的 click 会命中遮罩把查看器秒关。
+          const index = pickFromPointer(event.clientX, event.clientY);
+          if (index !== null && index !== focusIndexRef.current) {
+            camera.goToIndex(index);
+          }
+        }}
         onWheel={() => setHintHidden(true)}
         ref={stageRef}
         tabIndex={-1}
@@ -431,6 +568,7 @@ function SpaceGallery({
                   ) : null}
                   {mounted ? (
                     <SpacePane
+                      data-hovered={hoveredIndex === index ? "true" : undefined}
                       enhanced={
                         enhancedIndex !== null &&
                         Math.abs(index - enhancedIndex) <= NEAR_RANGE

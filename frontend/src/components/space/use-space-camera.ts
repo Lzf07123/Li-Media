@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 
-/** 回廊几何参数：间距与吸附前导量（px），由 SpaceGallery 从 CSS 令牌读出 */
+/** 回廊几何参数：由 SpaceGallery 从 CSS 令牌读出（@property 注册后的计算值），
+ *  相机运动与几何拾取共用同一事实 */
 export type SpaceCameraGeometry = {
   gap: number;
   snapLead: number;
+  perspective: number;
+  wallOffset: number;
+  wallAngleDeg: number;
+  paneWidth: number;
+  paneHeight: number;
 };
 
 export type SpaceCameraOptions = {
@@ -42,8 +48,11 @@ const IDLE_SNAP_DELAY_MS = 300;
 const INERTIA_LOOKAHEAD_MS = 180;
 /** 拖拽起势阈值：低于此距离视为轻点，不捕获指针 */
 const DRAG_THRESHOLD_PX = 6;
-/** 指针视差摆幅上限（deg）；走廊根节点 rotateY */
-const MAX_TILT_DEG = 1.2;
+/** 拖拽后短暂抑制拾取，避免松手位置的指针事件误命中 pane */
+const CLICK_SUPPRESS_MS = 320;
+/** 滚轮手势方向判定：横向分量占优（触控板左右轻扫）时不参与推进 */
+const WHEEL_HORIZONTAL_RATIO = 1;
+/** 指针视差已移除：回廊只允许前后（Z 轴）运动，无左右摆动 */
 /** 雾化曲线：档距 ≤1.5 全清晰，到 5 档衰减至 FOG_MIN */
 const FOG_NEAR = 1.5;
 const FOG_FAR = 5;
@@ -59,8 +68,6 @@ type SpaceCameraState = {
   position: number;
   velocity: number;
   target: number;
-  tilt: number;
-  tiltTarget: number;
   initialized: boolean;
   dragging: boolean;
   dragPointerId: number;
@@ -70,14 +77,13 @@ type SpaceCameraState = {
   dragStartPosition: number;
   dragSamples: DragSample[];
   lastInputAt: number;
+  dragEndAt: number;
   lastEmittedIndex: number;
   settledEmitted: boolean;
   frameHandle: number;
   running: boolean;
   lastFrameTime: number;
   lastFogValues: WeakMap<Element, number>;
-  hoverCapable: boolean;
-  hoverRect: { left: number; width: number } | null;
 };
 
 /**
@@ -111,8 +117,6 @@ export function useSpaceCamera({
     position: 0,
     velocity: 0,
     target: 0,
-    tilt: 0,
-    tiltTarget: 0,
     initialized: false,
     dragging: false,
     dragPointerId: -1,
@@ -122,14 +126,13 @@ export function useSpaceCamera({
     dragStartPosition: 0,
     dragSamples: [],
     lastInputAt: 0,
+    dragEndAt: 0,
     lastEmittedIndex: -1,
     settledEmitted: false,
     frameHandle: 0,
     running: false,
     lastFrameTime: 0,
     lastFogValues: new WeakMap(),
-    hoverCapable: false,
-    hoverRect: null,
   });
 
   const clampPosition = useCallback(
@@ -188,8 +191,6 @@ export function useSpaceCamera({
     }
 
     const state = stateRef.current;
-    state.hoverCapable =
-      window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
     const frame = (time: number) => {
       state.frameHandle = 0;
@@ -206,7 +207,9 @@ export function useSpaceCamera({
       state.target = clampPosition(state.target);
 
       if (!state.dragging) {
+        // 指针按住期间不闲置吸附：冻结帧不能在瞄准时被悄悄挪走
         const idle =
+          state.dragPointerId === -1 &&
           time - state.lastInputAt > IDLE_SNAP_DELAY_MS &&
           Math.abs(state.velocity) < 0.05;
         if (idle) {
@@ -236,14 +239,12 @@ export function useSpaceCamera({
         }
       }
 
-      state.tilt +=
-        (state.tiltTarget - state.tilt) * Math.min(1, 0.08 * step);
-
       // 相机 transform 直写：写自定义属性会触发走廊整棵子树的样式重算，
-      // 直写 transform 只更新自身合成层——每帧丝滑度的关键路径
+      // 直写 transform 只更新自身合成层——每帧丝滑度的关键路径。
+      // 只沿 Z 轴推进，无左右摆动
       const corridor = corridorRef.current;
       if (corridor) {
-        corridor.style.transform = `translateZ(${state.position.toFixed(2)}px) rotateY(${state.tilt.toFixed(3)}deg)`;
+        corridor.style.transform = `translateZ(${state.position.toFixed(2)}px)`;
       }
 
       fogTargetsRef.current.forEach((worldZ, element) => {
@@ -308,7 +309,11 @@ export function useSpaceCamera({
 
     // 滚轮 passive 监听、不 preventDefault：沉浸模式页面本身无滚动
     // （页脚隐藏 + page-shell 零底 padding），无需担心链式滚动。
+    // 横向分量占优的手势（触控板左右轻扫）不参与推进——回廊只有前后。
     const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY) * WHEEL_HORIZONTAL_RATIO) {
+        return;
+      }
       state.target = clampPosition(
         state.target + event.deltaY * WHEEL_FACTOR,
       );
@@ -326,19 +331,14 @@ export function useSpaceCamera({
       state.dragStartPosition = state.position;
       state.dragSamples = [{ time: event.timeStamp, position: state.position }];
       state.velocity = 0;
+      // 行进中按下即冻结相机：滑动中点小图先停帧再命中，指哪停哪；
+      // 若随后拖拽越阈值，相机从冻结位置继续跟手
+      state.target = state.position;
       state.lastInputAt = event.timeStamp;
     };
 
     const onPointerMove = (event: PointerEvent) => {
       if (state.dragPointerId !== event.pointerId) {
-        // 指针视差：仅 hover 设备，横移时整个走廊轻微转向视线
-        if (state.hoverCapable && !state.dragging) {
-          const rect = state.hoverRect;
-          if (rect && rect.width > 0) {
-            const normX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            state.tiltTarget = normX * -MAX_TILT_DEG;
-          }
-        }
         return;
       }
       const distance = Math.hypot(
@@ -378,11 +378,11 @@ export function useSpaceCamera({
         return;
       }
       state.dragPointerId = -1;
-      state.tiltTarget = 0;
       if (!state.dragging) {
         return;
       }
       state.dragging = false;
+      state.dragEndAt = performance.now();
       try {
         stage.releasePointerCapture(event.pointerId);
       } catch {
@@ -408,18 +408,6 @@ export function useSpaceCamera({
         state.position + state.velocity * (INERTIA_LOOKAHEAD_MS / 16.667);
       state.target = snapOfIndex(indexOfPosition(projected));
       state.lastInputAt = performance.now();
-    };
-
-    const onPointerEnter = (event: PointerEvent) => {
-      if (!state.hoverCapable || !event.isPrimary) {
-        return;
-      }
-      const rect = stage.getBoundingClientRect();
-      state.hoverRect = { left: rect.left, width: rect.width };
-    };
-    const onPointerLeave = () => {
-      state.tiltTarget = 0;
-      state.hoverRect = null;
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -473,8 +461,6 @@ export function useSpaceCamera({
     stage.addEventListener("pointermove", onPointerMove);
     stage.addEventListener("pointerup", onPointerUpOrCancel);
     stage.addEventListener("pointercancel", onPointerUpOrCancel);
-    stage.addEventListener("pointerenter", onPointerEnter);
-    stage.addEventListener("pointerleave", onPointerLeave);
     stage.addEventListener("keydown", onKeyDown);
     document.addEventListener("visibilitychange", onVisibilityChange);
     start();
@@ -486,8 +472,6 @@ export function useSpaceCamera({
       stage.removeEventListener("pointermove", onPointerMove);
       stage.removeEventListener("pointerup", onPointerUpOrCancel);
       stage.removeEventListener("pointercancel", onPointerUpOrCancel);
-      stage.removeEventListener("pointerenter", onPointerEnter);
-      stage.removeEventListener("pointerleave", onPointerLeave);
       stage.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
@@ -504,5 +488,75 @@ export function useSpaceCamera({
     goToIndex,
   ]);
 
-  return { goToIndex, stepBy };
+  // 拖拽后的 pointerup 会被指针捕获重定向到舞台，几何拾取会按松手位置
+  // 命中 pane——短暂抑制，防止拖拽松手误触
+  const suppressPointerUp = useCallback((): boolean => {
+    const state = stateRef.current;
+    return (
+      state.dragDistance > DRAG_THRESHOLD_PX &&
+      performance.now() - state.dragEndAt < CLICK_SUPPRESS_MS
+    );
+  }, []);
+
+  return { goToIndex, stepBy, stateRef, suppressPointerUp };
+}
+
+/**
+ * 几何拾取：把指针屏幕坐标逆投影到每个 pane 的倾斜平面上，返回命中的
+ * pane 档位（最近者优先）——绕开 preserve-3d 场景里 DOM hit-test 的
+ * 全部怪癖（pointer-events 祖先剪枝、clip-path 失效等），纯数学判定。
+ */
+export function pickPaneAt(options: {
+  clientX: number;
+  clientY: number;
+  stageRect: { left: number; top: number; width: number; height: number };
+  cameraPosition: number;
+  geometry: SpaceCameraGeometry;
+  perspective: number;
+  wallOffset: number;
+  wallAngleDeg: number;
+  paneWidth: number;
+  paneHeight: number;
+  paneHeightMin: number;
+  aspects: Array<{ width: number | null; height: number | null }>;
+}): number | null {
+  const d = options.perspective;
+  const originX = options.stageRect.width / 2;
+  const originY = options.stageRect.height * 0.42;
+  const px = options.clientX - options.stageRect.left - originX;
+  const py = options.clientY - options.stageRect.top - originY;
+  // 走廊原点（top 50%）相对透视原点（42%）的垂直偏移：pane 摆放的世界
+  // y 中心不是 0，而是在 origin 下方这段距离——命中判定必须扣除
+  const centerY = options.stageRect.height * 0.08;
+  const rad = (options.wallAngleDeg * Math.PI) / 180;
+  const cosT = Math.cos(rad);
+  const sinT = Math.sin(rad);
+  for (let index = 0; index < options.aspects.length; index += 1) {
+    const memory = options.aspects[index];
+    const zc = -(index + 1) * options.geometry.gap + options.cameraPosition;
+    if (zc >= 0) {
+      continue; // 已掠过：相机平面之后（视觉飞出/淡出），不参与拾取
+    }
+    const aspect =
+      memory.width && memory.height ? memory.width / memory.height : 1.5;
+    const width = options.paneWidth;
+    const height = Math.min(
+      options.paneHeight,
+      Math.max(options.paneHeightMin, options.paneWidth / aspect),
+    );
+    const side = index % 2 === 0 ? -1 : 1;
+    const xc = side * options.wallOffset;
+    // 射线 O=(0,0,d) → S=(px,py,0) 与 pane 平面（过 C=(xc,centerY,zc)、
+    // 方向 (cosT,0,sinT)）求交：u = pane 局部水平坐标，v = 局部垂直坐标
+    const denom = cosT + (px * sinT) / d;
+    if (Math.abs(denom) < 1e-6) {
+      continue;
+    }
+    const u = ((px * (d - zc)) / d - xc) / denom;
+    const v = (py * (d - zc - u * sinT)) / d - centerY;
+    if (Math.abs(u) <= width / 2 && Math.abs(v) <= height / 2) {
+      return index; // 从最近到最远，第一个命中的即所见 pane
+    }
+  }
+  return null;
 }

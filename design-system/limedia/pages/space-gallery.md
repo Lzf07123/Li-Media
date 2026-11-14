@@ -4,6 +4,13 @@
 > 相关：[BRAND.md](../BRAND.md) · [MASTER.md](../MASTER.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
 > 决策记录：空间形态=时间回廊；技术路线=纯 CSS 3D 零依赖；入口=首页 `?view=space` 视图切换（用户已确认，2026-11-14）。
 >
+> **V1.3 交互修复与拾取重构**（2026-11-14，回应线上反馈「滑动后/滑动中点小图打不开查看器」「只允许前后滑动」）：
+> - **几何拾取替代 DOM hit-test**：preserve-3d 场景下 pointer-events:none 祖先会连子元素 auto 一并剪出命中（Chromium 3D 合成路径行为，实测连排），clip-path 贴合方案同样失效——点击/悬停改为舞台级 `pickPaneAt` 射线-倾斜平面求交（纯数学，与渲染怪癖解耦），pane 保持 pointer-events:auto 不动 hit-test
+> - **两段式交互**：点非焦点 pane = 相机走到它面前（档案馆「走近看」隐喻，深处小图可见区域被近景遮挡极窄，直接开查看器既难命中又易误开）；点焦点 pane = 一步打开查看器；键盘 Enter 同语义
+> - **「看」放在 click 时机**：pointerup 打开查看器会被紧随的 click 命中新渲染的 viewer 遮罩秒关——pointerup 只负责「走」，click 时 viewer 未渲染、事件落舞台、拾取后打开即稳定
+> - **方向限制**：移除指针视差（左右摆动源）；滚轮忽略横向分量占优的手势（触控板左右轻扫不推进）
+> - **pane 盒贴合图像比例**（aspect-ratio + min/max 高度夹持）：letterbox 从布局上消失，命中与所见一致；corner case 极端比例的少量 letterbox 融入底色
+>
 > **V1.2 手感与构图调优**（2026-11-14，回应线上反馈「不够丝滑、留空太多」）：
 > - 相机每帧**直写**走廊 transform 与窗口内元素 opacity（原自定义属性写法会触发整棵子树样式重算）；flat 降级以 `!important` 覆盖内联值
 > - 运动学更跟手：刚度 0.085→0.12、阻尼 0.82→0.85、滚轮增益 2.4→3.0、限速 90→130 px/帧、闲置吸附 400→300ms
