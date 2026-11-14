@@ -30,6 +30,11 @@ const DRAG_FACTOR = 1.15;
 /** spring 刚度/阻尼：刚度偏高让输入更贴手，阻尼保持临界过冲内 */
 const STIFFNESS = 0.12;
 const DAMPING = 0.85;
+/** 闲置吸附分级：滑行距离超过 0.35 档时改用慢系数优雅归位，
+ *  消除「停一下→突然加速」的顿挫感 */
+const SNAP_STIFFNESS = 0.045;
+const SNAP_DAMPING = 0.9;
+const SNAP_SOFT_RATIO = 0.35;
 /** 无输入 300ms 后吸附最近档位 */
 const IDLE_SNAP_DELAY_MS = 300;
 /** 松手惯性投影时长（ms） */
@@ -212,15 +217,22 @@ export function useSpaceCamera({
       state.target = clampPosition(state.target);
 
       if (!state.dragging) {
-        if (
+        const idle =
           time - state.lastInputAt > IDLE_SNAP_DELAY_MS &&
-          Math.abs(state.velocity) < 0.05
-        ) {
+          Math.abs(state.velocity) < 0.05;
+        if (idle) {
           state.target = snapOfIndex(indexOfPosition(state.target));
         }
+        // 吸附分级：闲置归位且滑行距离远时放慢弹簧——顺滑远滑入，
+        // 近距与跟手输入保持正常刚度
+        const soft =
+          idle &&
+          Math.abs(state.target - state.position) > gap * SNAP_SOFT_RATIO;
         state.velocity +=
-          (state.target - state.position) * STIFFNESS * step;
-        state.velocity *= Math.pow(DAMPING, step);
+          (state.target - state.position) *
+          (soft ? SNAP_STIFFNESS : STIFFNESS) *
+          step;
+        state.velocity *= Math.pow(soft ? SNAP_DAMPING : DAMPING, step);
         state.velocity = Math.max(
           -MAX_VELOCITY,
           Math.min(MAX_VELOCITY, state.velocity),

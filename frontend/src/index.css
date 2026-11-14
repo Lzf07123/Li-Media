@@ -3853,6 +3853,8 @@ body.has-space-stage .page-shell {
   /* 圆角落在图像矩形本身：contain 下 pane 框的圆角裁不到图 */
   border-radius: 10px;
   filter: saturate(1.03);
+  /* 可点暗示：与画布 post-cover 的 hover 缩放同一语言 */
+  transition: transform var(--limedia-motion-slow) var(--limedia-ease-out);
 }
 /* pane 信息层：与 .card-caption 同语言，挂在 .space-pane 上 */
 .space-caption {
@@ -3915,6 +3917,24 @@ body.has-space-stage .page-shell {
 }
 @media (prefers-reduced-motion: reduce) {
   .space-caption {
+    transition: none;
+  }
+}
+/* 可点反馈：hover/键盘聚焦时雾化提亮 + 图像轻缩放；按压回收。
+   opacity 用 !important 压过雾化的内联直写值。 */
+.space-pane:hover,
+.space-pane:focus-visible {
+  opacity: 1 !important;
+}
+.space-pane:hover .space-pane-img,
+.space-pane:focus-visible .space-pane-img {
+  transform: scale(1.03);
+}
+.space-pane:active .space-pane-img {
+  transform: scale(0.99);
+}
+@media (prefers-reduced-motion: reduce) {
+  .space-pane-img {
     transition: none;
   }
 }

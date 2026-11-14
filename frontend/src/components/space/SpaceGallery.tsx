@@ -246,6 +246,16 @@ function SpaceGallery({
   const handleSettled = useCallback((index: number | null) => {
     setSettledIndex(index);
   }, []);
+  // 480 升档错峰：落定后 120ms 再升档，避免解码挤占吸附末帧
+  const [enhancedIndex, setEnhancedIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (settledIndex === null) {
+      setEnhancedIndex(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setEnhancedIndex(settledIndex), 120);
+    return () => window.clearTimeout(timer);
+  }, [settledIndex]);
   const camera = useSpaceCamera({
     stageRef,
     corridorRef,
@@ -394,8 +404,8 @@ function SpaceGallery({
                   {mounted ? (
                     <SpacePane
                       enhanced={
-                        settledIndex !== null &&
-                        Math.abs(index - settledIndex) <= NEAR_RANGE
+                        enhancedIndex !== null &&
+                        Math.abs(index - enhancedIndex) <= NEAR_RANGE
                       }
                       fogTargetsRef={fogTargetsRef}
                       index={index}
