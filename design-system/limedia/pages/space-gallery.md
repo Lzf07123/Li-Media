@@ -4,6 +4,11 @@
 > 相关：[BRAND.md](../BRAND.md) · [MASTER.md](../MASTER.md) · `frontend/src/index.css` · `frontend/src/lib/brand.ts`
 > 决策记录：空间形态=时间回廊；技术路线=纯 CSS 3D 零依赖；入口=首页 `?view=space` 视图切换（用户已确认，2026-11-14）。
 >
+> **V1.2 手感与构图调优**（2026-11-14，回应线上反馈「不够丝滑、留空太多」）：
+> - 相机每帧**直写**走廊 transform 与窗口内元素 opacity（原自定义属性写法会触发整棵子树样式重算）；flat 降级以 `!important` 覆盖内联值
+> - 运动学更跟手：刚度 0.085→0.12、阻尼 0.82→0.85、滚轮增益 2.4→3.0、限速 90→130 px/帧、闲置吸附 400→300ms
+> - 构图减留白：瓦片放大（宽 ≤460→540、高 ≤560→680）、双壁收拢（≤420→380px）、档距收紧（520→460px）；窄屏同步放大（74vw 中带）
+>
 > **V1.1 实现偏差记录**（以代码为准）：
 > - pane 背板为透明，`contain` 的 letterbox 融入回廊深底，图像矩形自带 10px 圆角——「无边框纯图瓦」在 3D 下的落地形态；加载占位（表面色面板）独立提供未就绪可见性。
 > - flat 时间线不再用固定框：按 `--pane-aspect`（组件由 `width/height` 写入）自适应高度、封面 `cover` 满瓦，无 letterbox 空带。
@@ -60,9 +65,9 @@
 | 舞台 | `height: 100svh` 全出血（`@supports not` 回退 100vh），`overflow: hidden` | 与移动端 hero 全屏化语言一致 |
 | 透视 | `perspective: 1100px`，`perspective-origin: 50% 42%` | 视线略高于地平线的档案室俯仰感 |
 | 走廊 | `.space-corridor`，`transform-style: preserve-3d`，唯一持 `will-change: transform` | 相机推进 = 根节点 `translateZ` 单变量，panes 不动 |
-| 相片间距 | `--limedia-space-pane-gap: 520px`（Z 轴） | 焦点 pane 落在 z≈-1100px（约 1× perspective，透视最自然） |
-| 双壁 | 左右偏移 `--limedia-space-wall-offset: clamp(180px, 38vw, 420px)`，`rotateY(∓18deg)` 朝内 | 中间 1/3 走廊净空；移动端单壁退化为中带单列 |
-| 相片瓦 | 无边框纯图瓦（与 `MemoryCard` 语言一致），基准宽 `clamp(300px, 34vw, 460px)`，高 `clamp(300px, 52svh, 560px)`，内部 `contain` | 档案馆不裁历史——竖图 letterbox 融入近黑底，不使用 cover 裁切 |
+| 相片间距 | `--limedia-space-pane-gap: 460px`（Z 轴） | V1.2 收紧档距；焦点 pane 落在 z≈-190px（snapLead = gap×0.42） |
+| 双壁 | 左右偏移 `--limedia-space-wall-offset: clamp(200px, 34vw, 380px)`，`rotateY(∓18deg)` 朝内 | V1.2 收拢双壁减中央留白；移动端退化中带单列 |
+| 相片瓦 | 无边框纯图瓦（与 `MemoryCard` 语言一致），基准宽 `clamp(340px, 38vw, 540px)`，高 `clamp(340px, 62svh, 680px)`，内部 `contain` | V1.2 放大瓦片填充竖向留白；档案馆不裁历史——竖图 letterbox 融入近黑底 |
 | 视频瓦 | 不自动播放：静止缩略 + 右下角时长徽章（复用 hero 元数据语言） | 播放只发生在 `MediaViewer` 内 |
 | 雾化 | 每帧仅对窗口内 panes 按 `opacity = clamp(1 - (档距-1.5)/3.5, 0.06, 1)` 写值 | CSS 无逐像素雾，用逐 pane 距离透明度近似；远端 pane 由透视自然缩小 |
 | 远端 scrim | 舞台上下各一层 bg 同源线性渐变（无新色令牌） | 隔离页眉与操作栏文字，保 AA |
@@ -74,7 +79,7 @@
 | --- | --- |
 | 滚轮 | `deltaY → targetZ` 累积，临界阻尼 spring 插值；`passive` 监听 + rAF 合帧 |
 | 拖拽（桌面/触屏统一 Pointer Events） | 起势阈值 6px 才 `setPointerCapture`（沿用 ecc240b 的「捕获推迟到跟手起势」经验）；纵向拖拽 = 前进/后退 |
-| 松手 | 无输入 400ms 后 spring 吸附最近 pane 中心（对齐即「翻到那一页」） |
+| 松手 | 无输入 300ms 后 spring 吸附最近 pane 中心（对齐即「翻到那一页」） |
 | 键盘 | `↑/↓` 前进后退一档；`PageUp/PageDown` 三档；`Home/End` 首尾；`Enter` 打开焦点 pane 的查看器；`Tab` 在窗口内 roving tabindex，焦点 pane 时相机 spring 到位（focus-not-obscured） |
 | 触屏 | 纵向 swipe 同拖拽 + 惯性吸附；`touch-action: pan-y` + `overscroll-behavior: contain`（舞台固定高、页面无滚动，不与系统手势冲突） |
 | 点击 pane | `history.push ?viewer=<id>`——URL 驱动查看器原样复用，返回即回廊且相机不丢 |
@@ -132,14 +137,14 @@
 
 ```css
 --limedia-space-perspective: 1100px;
---limedia-space-pane-gap: 520px;
---limedia-space-wall-offset: clamp(180px, 38vw, 420px);
+--limedia-space-pane-gap: 460px;
+--limedia-space-wall-offset: clamp(200px, 34vw, 380px);
 --limedia-space-wall-angle: 18deg;
---limedia-space-pane-w: clamp(300px, 34vw, 460px);
---limedia-space-pane-h: clamp(300px, 52svh, 560px);
---limedia-space-fog-near: 1.5;   /* 档距单位 */
---limedia-space-fog-far: 5;
+--limedia-space-pane-w: clamp(340px, 38vw, 540px);
+--limedia-space-pane-h: clamp(340px, 62svh, 680px);
 ```
+
+雾化曲线（`FOG_NEAR 1.5 / FOG_FAR 5 / FOG_MIN 0.06`，档距单位）是相机算法参数，与运动学常量一起落在 `use-space-camera.ts`，不进 CSS 令牌。
 
 **`frontend/src/lib/brand.ts` 新增 `space` 段（导航不动）：**
 

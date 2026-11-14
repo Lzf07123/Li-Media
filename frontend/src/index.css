@@ -199,11 +199,11 @@
      JS 相机只通过 --space-* 自定义属性写值，CSS 决定用法；
      移动端覆盖见文件尾空间画廊分区。 */
   --limedia-space-perspective: 1100px;
-  --limedia-space-pane-gap: 520px;
-  --limedia-space-wall-offset: clamp(180px, 38vw, 420px);
+  --limedia-space-pane-gap: 460px;
+  --limedia-space-wall-offset: clamp(200px, 34vw, 380px);
   --limedia-space-wall-angle: 18deg;
-  --limedia-space-pane-w: clamp(300px, 34vw, 460px);
-  --limedia-space-pane-h: clamp(300px, 52svh, 560px);
+  --limedia-space-pane-w: clamp(340px, 38vw, 540px);
+  --limedia-space-pane-h: clamp(340px, 62svh, 680px);
   /* 回廊是固定深底的档案馆房间（两主题一致，照片是唯一色彩来源），
      因此配套前景色不随主题翻转 */
   --limedia-space-stage-bg: #0d1110;
@@ -3755,11 +3755,11 @@ html {
 
 /* ========== 空间画廊 · 时间回廊（/?view=space） ==========
    纯 CSS 3D 零依赖：真实 DOM 相片沿 Z 轴排布（间距 --limedia-space-pane-gap），
-   相机 = 走廊根节点 translateZ(--space-camera)，JS 相机每帧只写自定义属性、
-   只更新窗口内元素的 --space-fog。铁律：只动 transform/opacity；
-   prefers-reduced-motion 或不支持 preserve-3d 时 data-flat 展开为
-   同构纵向时间线（内容一个不少）。设计方案：
-   design-system/limedia/pages/space-gallery.md */
+   相机 = 走廊根节点 translateZ，由 use-space-camera 每帧直写 transform、
+   窗口内元素直写 opacity（flat 降级以 !important 覆盖内联值）。
+   铁律：只动 transform/opacity；prefers-reduced-motion 或不支持
+   preserve-3d 时 data-flat 展开为同构纵向时间线（内容一个不少）。
+   设计方案：design-system/limedia/pages/space-gallery.md */
 .space-feature {
   width: 100vw;
   margin-inline: calc(50% - 50vw);
@@ -3807,7 +3807,8 @@ body.has-space-stage .page-shell {
   width: 0;
   height: 0;
   transform-style: preserve-3d;
-  transform: translateZ(var(--space-camera, 0px)) rotateY(var(--space-tilt, 0deg));
+  /* 相机 transform 由 use-space-camera 每帧直写（免自定义属性引发的
+     子树样式重算）；flat 降级以 !important 覆盖内联值 */
   will-change: transform;
 }
 /* 朝向符号由组件写入 --space-side（左壁 -1 / 右壁 1）；几何量在此从
@@ -3837,7 +3838,6 @@ body.has-space-stage .page-shell {
   transform: translate(-50%, -50%)
     translate3d(var(--space-x, 0px), var(--space-y, 0px), var(--space-z, 0px))
     rotateY(var(--space-rot, 0deg));
-  opacity: var(--space-fog, 1);
 }
 .space-pane:focus-visible {
   outline: 2px solid var(--limedia-ring);
@@ -3930,7 +3930,6 @@ body.has-space-stage .page-shell {
       var(--space-z, 0px)
     )
     rotateY(var(--space-rot, 0deg));
-  opacity: var(--space-fog, 1);
   pointer-events: none;
   font-family: var(--font-display);
   font-size: clamp(2rem, 5vw, 3.5rem);
@@ -4090,9 +4089,9 @@ body.has-space-stage .page-shell {
 /* 窄屏：回廊收窄为中带单列，pane 近满宽；HUD 收紧并隐藏类型筛选 */
 @media (max-width: 768px) {
   :root {
-    --limedia-space-wall-offset: clamp(56px, 18vw, 120px);
-    --limedia-space-pane-w: min(64vw, 280px);
-    --limedia-space-pane-h: clamp(240px, 46svh, 420px);
+    --limedia-space-wall-offset: clamp(40px, 12vw, 80px);
+    --limedia-space-pane-w: min(74vw, 340px);
+    --limedia-space-pane-h: clamp(300px, 56svh, 480px);
   }
   .space-hud {
     gap: 4px;
@@ -4141,7 +4140,8 @@ body.has-space-stage .page-shell {
   position: static;
   width: auto;
   height: auto;
-  transform: none;
+  /* 覆盖相机 JS 写入的内联 transform（直写模式需 !important） */
+  transform: none !important;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4153,8 +4153,9 @@ body.has-space-stage .page-shell {
   position: relative;
   left: auto;
   top: auto;
-  transform: none;
-  opacity: 1;
+  transform: none !important;
+  /* 覆盖雾化 JS 写入的内联 opacity */
+  opacity: 1 !important;
   width: min(100%, var(--limedia-space-pane-w));
   /* 时间线按真实宽高比自适应（--pane-aspect 由组件按 width/height 写入），
      封面 cover 满瓦，不再有固定框的 letterbox 空带 */
@@ -4167,8 +4168,8 @@ body.has-space-stage .page-shell {
 .space-stage[data-flat] .space-milestone {
   position: sticky;
   top: 0;
-  transform: none;
-  opacity: 1;
+  transform: none !important;
+  opacity: 1 !important;
   z-index: 1;
   padding: 10px 0;
   font-size: 1.5rem;

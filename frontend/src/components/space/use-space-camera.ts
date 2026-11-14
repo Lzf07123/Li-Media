@@ -23,15 +23,15 @@ export type SpaceCameraOptions = {
 };
 
 // —— 相机调参（帧率无关：系数按 dt 归一） ——
-/** 滚轮一格 ≈ 半个档位的推进量 */
-const WHEEL_FACTOR = 2.4;
+/** 滚轮增益：一格 ≈ 半个档位偏多，跟手感优先 */
+const WHEEL_FACTOR = 3.0;
 /** 拖拽 1px = 相机 1.15px（上拖为前进） */
 const DRAG_FACTOR = 1.15;
-/** spring 刚度/阻尼（临界阻尼手感，输入可随时打断） */
-const STIFFNESS = 0.085;
-const DAMPING = 0.82;
-/** 无输入 400ms 后吸附最近档位 */
-const IDLE_SNAP_DELAY_MS = 400;
+/** spring 刚度/阻尼：刚度偏高让输入更贴手，阻尼保持临界过冲内 */
+const STIFFNESS = 0.12;
+const DAMPING = 0.85;
+/** 无输入 300ms 后吸附最近档位 */
+const IDLE_SNAP_DELAY_MS = 300;
 /** 松手惯性投影时长（ms） */
 const INERTIA_LOOKAHEAD_MS = 180;
 /** 拖拽起势阈值：低于此距离视为轻点，不捕获指针 */
@@ -46,8 +46,8 @@ const FOG_FAR = 5;
 const FOG_MIN = 0.06;
 /** 已掠过相片（相机平面之后）的淡出距离 px */
 const PASS_FADE_PX = 600;
-/** 单帧速度上限 px，防惯性甩飞 */
-const MAX_VELOCITY = 90;
+/** 单帧速度上限 px，长距飞行不拖沓且防惯性甩飞 */
+const MAX_VELOCITY = 130;
 
 type DragSample = { time: number; position: number };
 
@@ -80,8 +80,8 @@ type SpaceCameraState = {
 /**
  * 时间回廊相机：单一 rAF 循环驱动的弹簧状态机。
  * 输入（滚轮/指针拖拽/键盘）只改写 target，位置经 spring 追赶；
- * 每帧输出 = 走廊根节点 --space-camera/--space-tilt 两个自定义属性
- * + 窗口内元素的 --space-fog。铁律：只动 transform/opacity。
+ * 每帧输出 = 走廊根节点 transform 直写 + 窗口内元素 opacity 直写
+ * （直写避免自定义属性引发的子树样式重算）。铁律：只动 transform/opacity。
  */
 export function useSpaceCamera({
   stageRef,
@@ -238,16 +238,11 @@ export function useSpaceCamera({
       state.tilt +=
         (state.tiltTarget - state.tilt) * Math.min(1, 0.08 * step);
 
+      // 相机 transform 直写：写自定义属性会触发走廊整棵子树的样式重算，
+      // 直写 transform 只更新自身合成层——每帧丝滑度的关键路径
       const corridor = corridorRef.current;
       if (corridor) {
-        corridor.style.setProperty(
-          "--space-camera",
-          `${state.position.toFixed(2)}px`,
-        );
-        corridor.style.setProperty(
-          "--space-tilt",
-          `${state.tilt.toFixed(3)}deg`,
-        );
+        corridor.style.transform = `translateZ(${state.position.toFixed(2)}px) rotateY(${state.tilt.toFixed(3)}deg)`;
       }
 
       fogTargetsRef.current.forEach((worldZ, element) => {
@@ -268,7 +263,7 @@ export function useSpaceCamera({
         const previous = state.lastFogValues.get(element);
         if (previous === undefined || Math.abs(previous - fog) > 0.02) {
           state.lastFogValues.set(element, fog);
-          element.style.setProperty("--space-fog", fog.toFixed(3));
+          element.style.opacity = fog.toFixed(3);
         }
       });
 
