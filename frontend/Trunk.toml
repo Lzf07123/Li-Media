@@ -1,0 +1,14 @@
+# Trunk 构建配置:SPA(CSR)产物,替代 Vite。
+[build]
+target = "index.html"
+dist = "dist"
+
+[serve]
+port = 5173
+addresses = ["127.0.0.1"]
+
+# 开发代理 /api → Go 后端(与原 vite.config.ts 对齐)
+[[proxy]]
+rewrite = "/api/v1|^/api"
+backend = "http://127.0.0.1:8000"
+no_system_proxy = true

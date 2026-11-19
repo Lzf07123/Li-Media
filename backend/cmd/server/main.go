@@ -18,6 +18,8 @@ import (
 
 	"limedia/backend/internal/api"
 	"limedia/backend/internal/config"
+	"limedia/backend/internal/repo"
+	"limedia/backend/internal/services"
 	"limedia/backend/internal/db"
 )
 
@@ -59,8 +61,21 @@ func main() {
 		logger.Warn("redis 连接失败(健康检查将 503)", "error", err)
 	}
 
+	governor := services.NewTaskGovernor(settings)
+	services.ChildPeakRecorder = governor.Metrics.RecordChildPeakKbytes
+	inFlight := services.NewInFlightRegistry(governor.Metrics)
+	services.DownloadURLCache = services.NewDownloadUrlCache(settings.BaiduDownloadURLTTLSec, settings.BaiduDownloadURLCacheSize)
+
+	memories := api.NewMemoriesHandler(
+		settings, pool,
+		&repo.MemoryQuery{Pool: pool, DerivativeVersion: settings.MediaDerivativeVersion},
+		governor,
+		&services.DerivativeTasks{Settings: settings, Governor: governor, InFlight: inFlight},
+	)
+
 	handler := (&api.Router{
-		Health: &api.HealthHandler{Pool: pool, Redis: redisClient},
+		Health:   &api.HealthHandler{Pool: pool, Redis: redisClient},
+		Memories: memories,
 	}).Handler()
 	httpServer := &http.Server{
 		Addr:              ":8000",

@@ -2,12 +2,11 @@ package api
 
 import "net/http"
 
-// Router 装配 /api/v1 下全部路由。M1 仅 health;memories 与 admin
-// 由后续里程碑注册(MemoriesHandler / AdminHandler 挂到同一结构)。
+// Router 装配 /api/v1 下全部路由。Admin 由 M4 后半接入。
 type Router struct {
-	Health  *HealthHandler
-	Memories http.Handler // M4 接入
-	Admin    http.Handler // M4 接入
+	Health   *HealthHandler
+	Memories *MemoriesHandler
+	Admin    http.Handler
 }
 
 func (rt *Router) Handler() http.Handler {
@@ -18,11 +17,8 @@ func (rt *Router) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/healthz", rt.Health.Healthz)
 	mux.HandleFunc("GET /api/v1/readyz", rt.Health.Readyz)
 
-	// 占位:子路由注册后由各自 ServeHTTP 处理前缀。
 	if rt.Memories != nil {
-		mux.Handle("GET /api/v1/memories", rt.Memories)
-		mux.Handle("GET /api/v1/memories/", rt.Memories)
-		mux.Handle("POST /api/v1/memories", rt.Memories)
+		rt.Memories.Register(mux)
 	}
 	if rt.Admin != nil {
 		mux.Handle("/api/v1/admin", rt.Admin)

@@ -101,14 +101,15 @@ func (q *MemoryQuery) ListPublic(ctx context.Context, opts ListOptions) (*ListRe
 	}
 
 	pb := &sqlBuilder{version: q.DerivativeVersion}
-	publicWhere := publicWhere(pb, ListOptions{Kind: opts.Kind})
+	// public_counts 是全站口径:不带 kind/keyword 过滤(对齐 Python 版)。
+	publicWhereAll := publicWhere(pb, ListOptions{})
 	publicTotal := 0
 	if err := q.Pool.QueryRow(ctx,
-		`SELECT count(*) FROM memories m WHERE `+publicWhere, pb.args...,
+		`SELECT count(*) FROM memories m WHERE `+publicWhereAll, pb.args...,
 	).Scan(&publicTotal); err != nil {
 		return nil, fmt.Errorf("统计公开计数失败: %w", err)
 	}
-	publicPhoto, err := q.countByKind(ctx, publicWhere, argsOf(pb), models.MemoryKindPhoto)
+	publicPhoto, err := q.countByKind(ctx, publicWhereAll, argsOf(pb), models.MemoryKindPhoto)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +259,49 @@ func shuffleIDs(ids []uuid.UUID, seed string) {
 	_, _ = h.Write([]byte(seed))
 	rng := rand.New(rand.NewSource(int64(h.Sum64())))
 	rng.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+}
+
+// ListRecommend 随机推荐(home 派生门槛),对齐 recommend_memories。
+func (q *MemoryQuery) ListRecommend(ctx context.Context, kind string, limit int) ([]*models.Memory, error) {
+	b := &sqlBuilder{version: q.DerivativeVersion}
+	where := publicWhere(b, ListOptions{
+		Kind:                  kind,
+		RequireHomeDerivative: true,
+	})
+
+	rows, err := q.Pool.Query(ctx,
+		`SELECT `+memoryColumns+` FROM memories m WHERE `+where+
+			` ORDER BY random() LIMIT `+itoa(limit),
+		b.args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询推荐失败: %w", err)
+	}
+	memories, err := collectMemories(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) == 0 {
+		return []*models.Memory{}, nil
+	}
+	return q.attachFiles(ctx, memories)
+}
+
+// PublicCounts 全站公开计数(public-counts 口径,无 home 门槛)。
+func (q *MemoryQuery) PublicCounts(ctx context.Context) (total, photo int, err error) {
+	b := &sqlBuilder{version: q.DerivativeVersion}
+	where := publicWhere(b, ListOptions{})
+
+	if err = q.Pool.QueryRow(ctx,
+		`SELECT count(*) FROM memories m WHERE `+where, b.args...,
+	).Scan(&total); err != nil {
+		return 0, 0, fmt.Errorf("统计公开计数失败: %w", err)
+	}
+	photo, err = q.countByKind(ctx, where, argsOf(b), models.MemoryKindPhoto)
+	if err != nil {
+		return 0, 0, err
+	}
+	return total, photo, nil
 }
 
 // GetByID 主键查询并组装文件。找不到返回 (nil, nil)。

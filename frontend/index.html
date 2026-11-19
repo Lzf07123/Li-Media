@@ -9,10 +9,23 @@
     <meta name="description" content="基于百度网盘存储的公开回忆库。" />
     <meta name="theme-color" content="#25786d" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0d1110" media="(prefers-color-scheme: dark)" />
+    <link data-trunk rel="css" href="/src/index.css" />
   </head>
   <body class="bg-background text-foreground">
     <div id="root"></div>
-    <script type="module" src="/src/theme-init.ts"></script>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- 首帧防闪烁:主题初始化必须在 WASM 加载前完成(原 theme-init.ts)。 -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("limedia-theme");
+          var prefersDark =
+            window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var theme = stored || (prefersDark ? "dark" : "light");
+          document.documentElement.dataset.theme = theme;
+        } catch (e) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
   </body>
 </html>
