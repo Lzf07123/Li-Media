@@ -15,6 +15,10 @@ import (
 	"limedia/backend/internal/services"
 )
 
+type scannerRow interface {
+	Scan(dest ...any) error
+}
+
 type ioReader interface {
 	Read(p []byte) (int, error)
 }

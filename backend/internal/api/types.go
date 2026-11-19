@@ -39,26 +39,13 @@ func apiTimeString(t *time.Time) *string {
 
 // ---- 计数结构 ----
 
-type MemoryCounts struct {
-	Photo int `json:"photo"`
-	Video int `json:"video"`
-}
-
-type DisplayHealthCounts struct {
-	Displayable int `json:"displayable"`
-	Excluded    int `json:"excluded"`
-}
-
-type BrowserCompatibilityCounts struct {
-	Supported   int `json:"supported"`
-	Unsupported int `json:"unsupported"`
-	Unknown     int `json:"unknown"`
-}
-
-type MemoryStatusCounts struct {
-	Published   int `json:"published"`
-	Unpublished int `json:"unpublished"`
-}
+// 计数结构复用 repo 的契约定义(字段与 json tag 逐字一致)。
+type (
+	MemoryCounts                = repo.MemoryCounts
+	DisplayHealthCounts         = repo.DisplayHealthCounts
+	BrowserCompatibilityCounts  = repo.BrowserCompatibilityCounts
+	MemoryStatusCounts          = repo.MemoryStatusCounts
+)
 
 // ---- 公开摘要(对齐 schemas/memory.py MemorySummaryRead)----
 
@@ -171,4 +158,68 @@ type MemoryDirectLinkResponse struct {
 	ExpiresAt *string `json:"expires_at"`
 	MimeType  string  `json:"mime_type"`
 	SizeBytes *int64  `json:"size_bytes"`
+}
+
+// ---- 后台详情(对齐 schemas/memory.py MemoryRead/MemoryFileRead)----
+
+type MemoryFileRead struct {
+	ID                            string  `json:"id"`
+	Source                        string  `json:"source"`
+	RemoteID                      *string `json:"remote_id"`
+	RemotePath                    string  `json:"remote_path"`
+	ParentPath                    string  `json:"parent_path"`
+	Filename                      string  `json:"filename"`
+	Extension                     *string `json:"extension"`
+	RemoteMD5                     *string `json:"remote_md5"`
+	MimeType                      string  `json:"mime_type"`
+	SizeBytes                     *int64  `json:"size_bytes"`
+	ModifiedAt                    *string `json:"modified_at"`
+	Status                        string  `json:"status"`
+	RemoteState                   string  `json:"remote_state"`
+	ThumbnailState                string  `json:"thumbnail_state"`
+	ThumbnailFailureKind          *string `json:"thumbnail_failure_kind"`
+	StreamState                   string  `json:"stream_state"`
+	BrowserCompatibility          string  `json:"browser_compatibility"`
+	BrowserFormatSummary          any     `json:"browser_format_summary"`
+	BrowserCompatibilityError     *string `json:"browser_compatibility_error"`
+	BrowserCompatibilityCheckedAt *string `json:"browser_compatibility_checked_at"`
+	LastSyncedAt                  *string `json:"last_synced_at"`
+	SyncError                     *string `json:"sync_error"`
+}
+
+type MemoryRead struct {
+	ID                 string          `json:"id"`
+	Title              string          `json:"title"`
+	Description        string          `json:"description"`
+	Kind               string          `json:"kind"`
+	Status             string          `json:"status"`
+	MediaDisplayState  string          `json:"media_display_state"`
+	PublicDisplayState string          `json:"public_display_state"`
+	CapturedAt         *string         `json:"captured_at"`
+	Location           *string         `json:"location"`
+	ThumbnailPath      *string         `json:"thumbnail_path"`
+	DurationSeconds    *int            `json:"duration_seconds"`
+	Width              *int            `json:"width"`
+	Height             *int            `json:"height"`
+	PrimaryFile        *MemoryFileRead `json:"primary_file"`
+	CreatedAt          *string         `json:"created_at"`
+	UpdatedAt          *string         `json:"updated_at"`
+	FileURL            string          `json:"file_url"`
+	ThumbnailURL       *string         `json:"thumbnail_url"`
+}
+
+// AdminMemoryListResponse 对齐 responses.AdminMemoryListResponse。
+type AdminMemoryListResponse struct {
+	Items                 []*MemoryRead               `json:"items"`
+	Total                 int                         `json:"total"`
+	DisplayCounts         DisplayHealthCounts         `json:"display_counts"`
+	FilteredDisplayCounts DisplayHealthCounts         `json:"filtered_display_counts"`
+	GlobalCounts          MemoryCounts                `json:"global_counts"`
+	StatusCounts          MemoryStatusCounts          `json:"status_counts"`
+	FilteredStatusCounts  MemoryStatusCounts          `json:"filtered_status_counts"`
+	BrowserCounts         BrowserCompatibilityCounts  `json:"browser_counts"`
+	FilteredBrowserCounts BrowserCompatibilityCounts  `json:"filtered_browser_counts"`
+	Page                  int                         `json:"page"`
+	PageSize              int                         `json:"page_size"`
+	Counts                MemoryCounts                `json:"counts"`
 }

@@ -73,9 +73,21 @@ func main() {
 		&services.DerivativeTasks{Settings: settings, Governor: governor, InFlight: inFlight},
 	)
 
+	admin := &api.AdminHandler{
+		Settings:    settings,
+		Pool:        pool,
+		Query:       memories.Query,
+		Governor:    governor,
+		Sessions:    &services.AdminSessions{Pool: pool},
+		Limiter:     services.NewAdminLoginRateLimiter(settings.AdminLoginMaxAttempts, settings.AdminLoginBaseDelaySec, settings.AdminLoginMaxDelaySec),
+		Baidu:       &services.BaiduPanClientFactory{Settings: settings},
+		Derivatives: memories.Derivatives,
+	}
+
 	handler := (&api.Router{
 		Health:   &api.HealthHandler{Pool: pool, Redis: redisClient},
 		Memories: memories,
+		Admin:    admin,
 	}).Handler()
 	httpServer := &http.Server{
 		Addr:              ":8000",

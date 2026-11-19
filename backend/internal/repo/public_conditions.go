@@ -12,6 +12,9 @@ type SQLCond struct {
 // NewSQLCond 新建谓词构建器。
 func NewSQLCond() *SQLCond { return &SQLCond{b: &sqlBuilder{}} }
 
+// NewAdminSQLCond 同 NewSQLCond(语义别名,admin 过滤链使用)。
+func NewAdminSQLCond() *SQLCond { return NewSQLCond() }
+
 // Placeholder 登记参数并返回 $N 占位符。
 func (c *SQLCond) Placeholder(v any) string { return c.b.placeholder(v) }
 

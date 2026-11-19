@@ -8,9 +8,11 @@
 //
 // 占位符纪律:全部条件统一经同一个 SQLCond 分配 $N 编号(filter 条件与
 // count_* 追加条件共用一个 builder),避免多 builder 编号错位。
-package services
+package repo
 
 import (
+	"github.com/google/uuid"
+	"time"
 	"context"
 	"fmt"
 	"strings"
@@ -18,8 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"limedia/backend/internal/models"
-	"limedia/backend/internal/repo"
-)
+	)
 
 // ---- 计数契约结构(json 字段名与序对齐 schemas/responses.py) ----
 
@@ -68,24 +69,24 @@ type AdminMemoryFilter struct {
 
 // AdminBaseWhere 基础口径:memory join 文件且文件来自 baidupan
 // (对齐 base_remote_statement 的 join + where,去重由计数/取数端处理)。
-func AdminBaseWhere(b *repo.SQLCond) string {
-	return "f.source = " + b.Placeholder("baidupan")
+func AdminBaseWhere(b *sqlBuilder) string {
+	return "f.source = " + b.placeholder("baidupan")
 }
 
 // AdminFilterWhere 追加后台过滤条件(kind/status/keyword/display/compatibility)。
 // 条件作用于 (m, f) join 别名,与 Python 的 statement.where 链等价。
-func AdminFilterWhere(b *repo.SQLCond, filter AdminMemoryFilter) string {
+func AdminFilterWhere(b *sqlBuilder, filter AdminMemoryFilter) string {
 	conds := []string{AdminBaseWhere(b)}
 
 	if filter.Kind != nil {
-		conds = append(conds, "m.kind = "+b.Placeholder(*filter.Kind))
+		conds = append(conds, "m.kind = "+b.placeholder(*filter.Kind))
 	}
 	if filter.Status != nil {
-		conds = append(conds, "m.status = "+b.Placeholder(*filter.Status))
+		conds = append(conds, "m.status = "+b.placeholder(*filter.Status))
 	}
 	if filter.Keyword != "" {
-		pattern := "%" + repo.EscapeLike(filter.Keyword) + "%"
-		p := b.Placeholder(pattern)
+		pattern := "%" + EscapeLike(filter.Keyword) + "%"
+		p := b.placeholder(pattern)
 		conds = append(conds,
 			"(m.title ILIKE "+p+" ESCAPE '\\'"+
 				" OR m.description ILIKE "+p+" ESCAPE '\\'"+
@@ -93,24 +94,24 @@ func AdminFilterWhere(b *repo.SQLCond, filter AdminMemoryFilter) string {
 	}
 	switch filter.Display {
 	case "displayable":
-		conds = append(conds, b.DisplayableFilesCondition())
+		conds = append(conds, b.displayableFilesCondition())
 	case "excluded":
-		conds = append(conds, "NOT "+b.DisplayableFilesCondition())
+		conds = append(conds, "NOT "+b.displayableFilesCondition())
 	}
 
 	if filter.Compatibility != "" && filter.Compatibility != "all" {
 		conds = append(conds,
-			"(m.kind = "+b.Placeholder(models.MemoryKindVideo)+
-				" AND f.browser_compatibility = "+b.Placeholder(models.BrowserCompatibilityState(filter.Compatibility))+")")
+			"(m.kind = "+b.placeholder(models.MemoryKindVideo)+
+				" AND f.browser_compatibility = "+b.placeholder(models.BrowserCompatibilityState(filter.Compatibility))+")")
 	}
 	return strings.Join(conds, " AND ")
 }
 
 // adminCountStatementFn 计数:extra 条件由内部构建器生成(占位编号延续 filter)。
-func adminCountStatementFn(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, extraFn func(b *repo.SQLCond) (string, []any)) (int, error) {
-	b := repo.NewSQLCond()
+func adminCountStatementFn(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, extraFn func(b *sqlBuilder) (string, []any)) (int, error) {
+	b := newAdminCond()
 	where := AdminFilterWhere(b, filter)
-	args := b.Args()
+	args := argsOf(b)
 	if extraFn != nil {
 		condition, extraArgs := extraFn(b)
 		if condition != "" {
@@ -135,14 +136,14 @@ func adminCountStatement(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	filter AdminMemoryFilter,
-	extra func(b *repo.SQLCond) string,
+	extra func(b *sqlBuilder) string,
 ) (int, error) {
-	b := repo.NewSQLCond()
+	b := newAdminCond()
 	where := AdminFilterWhere(b, filter)
 	if extra != nil {
 		where += " AND " + extra(b)
 	}
-	args := b.Args()
+	args := argsOf(b)
 	sql := "SELECT count(*) FROM (SELECT DISTINCT m.id FROM memories m" +
 		" JOIN memory_files f ON f.memory_id = m.id WHERE " + where + ") sub"
 	count := 0
@@ -159,22 +160,22 @@ func CountAdminMemories(ctx context.Context, pool *pgxpool.Pool, filter AdminMem
 
 // CountAdminKind 对齐 count_kind。
 func CountAdminKind(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, kind models.MemoryKind) (int, error) {
-	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
-		return "m.kind = " + b.Placeholder(kind)
+	return adminCountStatement(ctx, pool, filter, func(b *sqlBuilder) string {
+		return "m.kind = " + b.placeholder(kind)
 	})
 }
 
 // CountAdminStatus 对齐 count_status。
 func CountAdminStatus(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, status models.MemoryStatus) (int, error) {
-	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
-		return "m.status = " + b.Placeholder(status)
+	return adminCountStatement(ctx, pool, filter, func(b *sqlBuilder) string {
+		return "m.status = " + b.placeholder(status)
 	})
 }
 
 // CountAdminDisplayable 对齐 count_displayable:displayable 真伪二选一。
 func CountAdminDisplayable(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, displayable bool) (int, error) {
-	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
-		condition := b.DisplayableFilesCondition()
+	return adminCountStatement(ctx, pool, filter, func(b *sqlBuilder) string {
+		condition := b.displayableFilesCondition()
 		if !displayable {
 			condition = "NOT " + condition
 		}
@@ -184,9 +185,9 @@ func CountAdminDisplayable(ctx context.Context, pool *pgxpool.Pool, filter Admin
 
 // CountAdminBrowserState 对齐 count_browser_state:video 且指定兼容状态。
 func CountAdminBrowserState(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, state models.BrowserCompatibilityState) (int, error) {
-	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
-		return "m.kind = " + b.Placeholder(models.MemoryKindVideo) +
-			" AND f.browser_compatibility = " + b.Placeholder(state)
+	return adminCountStatement(ctx, pool, filter, func(b *sqlBuilder) string {
+		return "m.kind = " + b.placeholder(models.MemoryKindVideo) +
+			" AND f.browser_compatibility = " + b.placeholder(state)
 	})
 }
 
@@ -241,4 +242,40 @@ func CollectAdminCounts(ctx context.Context, pool *pgxpool.Pool, filter AdminMem
 			Unknown:     videoTotal - supported - unsupported,
 		},
 	}, nil
+}
+
+// newAdminCond 计数/过滤谓词的构建器入口(包内直用 sqlBuilder)。
+func newAdminCond() *sqlBuilder { return &sqlBuilder{version: ""} }
+
+// AdminFilterWhereArgs 导出包装:返回过滤 WHERE 片段与参数(api 层组装用)。
+func AdminFilterWhereArgs(filter AdminMemoryFilter) (string, []any) {
+	b := newAdminCond()
+	return AdminFilterWhere(b, filter), argsOf(b)
+}
+
+// CollectFilteredIDs 按过滤口径收集去重 memory id(批量任务候选,
+// 对齐 admin.py batch-status 的 statement 全量取数)。
+func CollectFilteredIDs(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter) ([]uuid.UUID, error) {
+	cond, args := AdminFilterWhereArgs(filter)
+	rows, err := pool.Query(ctx,
+		`SELECT DISTINCT m.id, m.created_at FROM memories m
+		 JOIN memory_files f ON f.memory_id = m.id
+		 WHERE `+cond+`
+		 ORDER BY m.created_at DESC, m.id DESC`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("批量候选查询失败: %w", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		var createdAt time.Time
+		if err := rows.Scan(&id, &createdAt); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

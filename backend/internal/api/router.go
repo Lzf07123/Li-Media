@@ -6,7 +6,7 @@ import "net/http"
 type Router struct {
 	Health   *HealthHandler
 	Memories *MemoriesHandler
-	Admin    http.Handler
+	Admin    *AdminHandler
 }
 
 func (rt *Router) Handler() http.Handler {
@@ -21,8 +21,7 @@ func (rt *Router) Handler() http.Handler {
 		rt.Memories.Register(mux)
 	}
 	if rt.Admin != nil {
-		mux.Handle("/api/v1/admin", rt.Admin)
-		mux.Handle("/api/v1/admin/", rt.Admin)
+		rt.Admin.Register(mux)
 	}
 
 	// FastAPI 对未匹配路径返回 {"detail": "Not Found"}。

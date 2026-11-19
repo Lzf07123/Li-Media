@@ -1,8 +1,8 @@
 package services
 
 import (
-	"context"
 	"fmt"
+	"context"
 	"net/url"
 	"os"
 	"testing"
@@ -69,6 +69,9 @@ func replaceDatabaseURL(base, database string) (string, error) {
 // #1 photo 双文件 ready+派生;#2 photo 缩略图失败但 legacy path;
 // #3 video supported+派生;#4 video unsupported+派生;
 // #5 photo draft;#6 photo published remote unverified。
+
+var _ = models.MemoryKindPhoto // 保持 models 引用
+
 func seedAdminMatrix(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	const version = "20260906-ratio-v1"
@@ -103,5 +106,3 @@ func seedAdminMatrix(t *testing.T, pool *pgxpool.Pool) {
 		}
 	}
 }
-
-var _ = models.MemoryKindPhoto // 保持 models 引用
