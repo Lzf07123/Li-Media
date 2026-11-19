@@ -5,6 +5,9 @@
 // 「过滤条件结构体 + 参数化 WHERE 片段 + 显式 SQL」。计数口径保持逐条
 // 一致:所有计数都作用在 `SELECT DISTINCT m.id` 的 memory 去重集合上
 // (md5 去重会把多条文件挂到同一 memory,必须按 memory 计数)。
+//
+// 占位符纪律:全部条件统一经同一个 SQLCond 分配 $N 编号(filter 条件与
+// count_* 追加条件共用一个 builder),避免多 builder 编号错位。
 package services
 
 import (
@@ -47,17 +50,17 @@ type MemoryStatusCounts struct {
 
 // AdminMemoryCounts 对齐 collect_counts 返回的字典结构。
 type AdminMemoryCounts struct {
-	Total         int                         `json:"total"`
-	Counts        MemoryCounts                `json:"counts"`
-	StatusCounts  MemoryStatusCounts          `json:"status_counts"`
-	DisplayCounts DisplayHealthCounts         `json:"display_counts"`
-	BrowserCounts BrowserCompatibilityCounts  `json:"browser_counts"`
+	Total         int                        `json:"total"`
+	Counts        MemoryCounts               `json:"counts"`
+	StatusCounts  MemoryStatusCounts         `json:"status_counts"`
+	DisplayCounts DisplayHealthCounts        `json:"display_counts"`
+	BrowserCounts BrowserCompatibilityCounts `json:"browser_counts"`
 }
 
 // AdminMemoryFilter 后台列表过滤参数,对齐 add_admin_filters 关键字。
 type AdminMemoryFilter struct {
-	Kind          *models.MemoryKind  // None=不过滤
-	Status        *models.MemoryStatus // None=不过滤
+	Kind          *models.MemoryKind   // nil=不过滤
+	Status        *models.MemoryStatus // nil=不过滤
 	Keyword       string               // 空串=不过滤
 	Display       string               // all|displayable|excluded(默认 all)
 	Compatibility string               // all|supported|unsupported|unknown(默认 all)
@@ -84,8 +87,8 @@ func AdminFilterWhere(b *repo.SQLCond, filter AdminMemoryFilter) string {
 		pattern := "%" + repo.EscapeLike(filter.Keyword) + "%"
 		p := b.Placeholder(pattern)
 		conds = append(conds,
-			"(m.title ILIKE "+p+" ESCAPE '\\'" +
-				" OR m.description ILIKE "+p+" ESCAPE '\\'" +
+			"(m.title ILIKE "+p+" ESCAPE '\\'"+
+				" OR m.description ILIKE "+p+" ESCAPE '\\'"+
 				" OR m.location ILIKE "+p+" ESCAPE '\\')")
 	}
 	switch filter.Display {
@@ -103,17 +106,43 @@ func AdminFilterWhere(b *repo.SQLCond, filter AdminMemoryFilter) string {
 	return strings.Join(conds, " AND ")
 }
 
-// adminCountStatement 计数:子查询去重 memory 后计数
-// (对齐 select(func.count()).select_from(statement.subquery()))。
-// extra 在基础过滤后追加(对齐 count_kind 等的 where 追加)。
-func adminCountStatement(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, extra string, extraArgs ...any) (int, error) {
+// adminCountStatementFn 计数:extra 条件由内部构建器生成(占位编号延续 filter)。
+func adminCountStatementFn(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, extraFn func(b *repo.SQLCond) (string, []any)) (int, error) {
 	b := repo.NewSQLCond()
 	where := AdminFilterWhere(b, filter)
 	args := b.Args()
-	if extra != "" {
-		where += " AND " + extra
-		args = append(args, extraArgs...)
+	if extraFn != nil {
+		condition, extraArgs := extraFn(b)
+		if condition != "" {
+			where += " AND " + condition
+			args = append(args, extraArgs...)
+		}
 	}
+	sql := "SELECT count(*) FROM (SELECT DISTINCT m.id FROM memories m" +
+		" JOIN memory_files f ON f.memory_id = m.id WHERE " + where + ") sub"
+	count := 0
+	if err := pool.QueryRow(ctx, sql, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("后台计数查询失败: %w", err)
+	}
+	return count, nil
+}
+
+// adminCountStatement 计数:子查询去重 memory 后计数
+// (对齐 select(func.count()).select_from(statement.subquery()))。
+// extra 在基础过滤后追加,统一经 SQLCond 分配占位符
+// (对齐 count_kind 等函数的 statement.where 追加)。
+func adminCountStatement(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	filter AdminMemoryFilter,
+	extra func(b *repo.SQLCond) string,
+) (int, error) {
+	b := repo.NewSQLCond()
+	where := AdminFilterWhere(b, filter)
+	if extra != nil {
+		where += " AND " + extra(b)
+	}
+	args := b.Args()
 	sql := "SELECT count(*) FROM (SELECT DISTINCT m.id FROM memories m" +
 		" JOIN memory_files f ON f.memory_id = m.id WHERE " + where + ") sub"
 	count := 0
@@ -125,34 +154,40 @@ func adminCountStatement(ctx context.Context, pool *pgxpool.Pool, filter AdminMe
 
 // CountAdminMemories 对齐 count_statement:按过滤口径的总数。
 func CountAdminMemories(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter) (int, error) {
-	return adminCountStatement(ctx, pool, filter, "")
+	return adminCountStatement(ctx, pool, filter, nil)
 }
 
 // CountAdminKind 对齐 count_kind。
 func CountAdminKind(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, kind models.MemoryKind) (int, error) {
-	return adminCountStatement(ctx, pool, filter, "m.kind = $%d", kind)
+	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
+		return "m.kind = " + b.Placeholder(kind)
+	})
 }
 
 // CountAdminStatus 对齐 count_status。
 func CountAdminStatus(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, status models.MemoryStatus) (int, error) {
-	return adminCountStatement(ctx, pool, filter, "m.status = $%d", status)
+	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
+		return "m.status = " + b.Placeholder(status)
+	})
 }
 
 // CountAdminDisplayable 对齐 count_displayable:displayable 真伪二选一。
 func CountAdminDisplayable(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, displayable bool) (int, error) {
-	b := repo.NewSQLCond()
-	condition := b.DisplayableFilesCondition()
-	if !displayable {
-		condition = "NOT " + condition
-	}
-	return adminCountStatement(ctx, pool, filter, condition, b.Args()...)
+	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
+		condition := b.DisplayableFilesCondition()
+		if !displayable {
+			condition = "NOT " + condition
+		}
+		return condition
+	})
 }
 
 // CountAdminBrowserState 对齐 count_browser_state:video 且指定兼容状态。
 func CountAdminBrowserState(ctx context.Context, pool *pgxpool.Pool, filter AdminMemoryFilter, state models.BrowserCompatibilityState) (int, error) {
-	return adminCountStatement(ctx, pool, filter,
-		"m.kind = $%d AND f.browser_compatibility = $%d",
-		models.MemoryKindVideo, state)
+	return adminCountStatement(ctx, pool, filter, func(b *repo.SQLCond) string {
+		return "m.kind = " + b.Placeholder(models.MemoryKindVideo) +
+			" AND f.browser_compatibility = " + b.Placeholder(state)
+	})
 }
 
 // CollectAdminCounts 对齐 collect_counts:一次聚合全部仪表盘计数。
