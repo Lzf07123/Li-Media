@@ -1,32 +1,25 @@
-ARG IMAGE_REGISTRY=docker.mirrors.ustc.edu.cn/library/
+# Go 版后端:静态编译单二进制 + alpine 运行镜像(视频派生仍需 ffmpeg)。
+# ARG 默认值与 compose 的 IMAGE_REGISTRY 透传对齐;国内网络构建时
+# 由 build-arg 覆盖(如 docker.m.daocloud.io/library/)。
+ARG IMAGE_REGISTRY=docker.m.daocloud.io/library/
+ARG GO_IMAGE=golang:1.23-alpine
+ARG RUN_IMAGE=alpine:3.20
 
-FROM ${IMAGE_REGISTRY}python:3.12-slim AS runtime
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-ARG APT_MIRROR=http://mirrors.ustc.edu.cn
-ARG PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/simple
-ENV PIP_INDEX_URL=$PIP_INDEX_URL
-
-RUN sed -i "s|http://deb.debian.org|${APT_MIRROR}|g; s|http://security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY pyproject.toml ./
+FROM ${GO_IMAGE} AS build
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=$GOPROXY CGO_ENABLED=0
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN pip install --no-cache-dir .
+RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
+FROM ${IMAGE_REGISTRY}alpine:3.20 AS runtime
+ARG APT_MIRROR=""
+# alpine apk 源可按需切换(默认官方源;USTC 不可达时用 dl-cdn.alpinelinux.org)
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s|https://dl-cdn.alpinelinux.org|${APT_MIRROR}|g" /etc/apk/repositories; fi \
+    && apk add --no-cache ffmpeg ca-certificates tzdata
+WORKDIR /app
+COPY --from=build /out/server /usr/local/bin/server
 EXPOSE 8000
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-# 测试镜像：在 runtime 之上补 pytest（pyproject dev extra），供
-# `docker compose --profile dev run --rm backend-test` 在容器内跑测试。
-# compose/nginx 契约测试依赖仓库根清单，在镜像内按既有 skipif 跳过。
-FROM runtime AS test
-
-RUN pip install --no-cache-dir .[dev]
+CMD ["server"]

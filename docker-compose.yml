@@ -6,9 +6,9 @@ services:
     build:
       context: ./backend
       args:
-        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
-        APT_MIRROR: ${APT_MIRROR:-http://mirrors.ustc.edu.cn}
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.ustc.edu.cn/pypi/simple}
+        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}
+        GO_IMAGE: ${GO_IMAGE:-golang:1.23-alpine}
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -23,9 +23,9 @@ services:
       NGINX_CACHE_ROOT: /app/data/nginx_cache
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
       BACKEND_MEMORY_LIMIT_BYTES: ${BACKEND_MEMORY_LIMIT_BYTES:-268435456}
-    # --proxy-headers：限流键与审计 IP 使用 nginx 传入的客户端真实 IP
-    # （X-Forwarded-For），否则所有访客共享同一个代理源 IP。
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"
+    # 迁移内嵌于 Go 二进制(启动即自动推进到最新);X-Forwarded-For 由
+    # nginx 传入,限流键与审计 IP 直接读取该头。
+    command: sh -c "server"
     mem_limit: 256m
     cpus: 1.0
     pids_limit: 64
@@ -47,9 +47,9 @@ services:
     healthcheck:
       test:
         - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/healthz')"
+        - wget
+        - -qO-
+        - http://localhost:8000/api/v1/healthz
       interval: 30s
       timeout: 5s
       retries: 3
@@ -131,10 +131,9 @@ services:
     build:
       context: ./frontend
       args:
-        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
-        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://npmreg.mirrors.ustc.edu.cn/}
-        NPM_FALLBACK_REGISTRY: ${NPM_FALLBACK_REGISTRY:-https://registry.npmmirror.com/}
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}
+        RUST_IMAGE: ${RUST_IMAGE:-rust:1-slim}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.27-alpine}
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:80"
