@@ -12,6 +12,8 @@ func WriteJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if payload == nil {
+		// FastAPI 对 None 响应输出字面量 null(契约样本 30)。
+		_, _ = w.Write([]byte("null"))
 		return
 	}
 	if err := json.NewEncoder(w).Encode(payload); err != nil {

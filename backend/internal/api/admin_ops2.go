@@ -45,9 +45,13 @@ func trimSuffix(s, suffix string) string {
 	return s
 }
 
-// TasksMetrics 任务限流与指标快照。
+// TasksMetrics 三键结构:tasks 队列快照 + metrics 计数 + resources(契约样本 24)。
 func (h *AdminHandler) TasksMetrics(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, http.StatusOK, h.Governor.Metrics.Snapshot())
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"tasks":     h.Governor.Stats(),
+		"metrics":   h.Governor.Metrics.Snapshot(),
+		"resources": services.CollectResourceMetrics(h.Settings.MediaRoot, &h.Settings.BackendMemoryLimitBytes, &h.Settings.RemoteThumbnailDiskQuotaBytes, &h.Settings.RemoteThumbnailMaxTempFiles, h.Settings.NginxCacheRoot),
+	})
 }
 
 func (h *AdminHandler) latestScanTask(ctx context.Context) (*models.RemoteScanTask, error) {
@@ -309,11 +313,11 @@ func (h *AdminHandler) PreheatStart(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusAccepted, toPreheatJobPayload(job))
 }
 
-// PreheatLatest 最近一次预热任务(无则 404,契约样本 30)。
+// PreheatLatest 最近一次预热任务(无则 200+null,契约样本 30)。
 func (h *AdminHandler) PreheatLatest(w http.ResponseWriter, r *http.Request) {
 	job := services.DefaultThumbnailPreheatRegistry.GetLatest()
 	if job == nil {
-		ErrorDetail(w, http.StatusNotFound, "not preheated")
+		WriteJSON(w, http.StatusOK, nil)
 		return
 	}
 	WriteJSON(w, http.StatusOK, toPreheatJobPayload(job))
@@ -395,7 +399,7 @@ func (h *AdminHandler) CompatProbeStart(w http.ResponseWriter, r *http.Request) 
 
 	job := &models.AdminBackgroundJob{
 		ID:             uuid.New(),
-		Action:         "browser_probe_batch",
+		Action:         "browser_compatibility_probe",
 		Status:         "queued",
 		FilterSnapshot: []byte(`{"limit": ` + strconv.Itoa(limit) + `}`),
 		ResourceIDs:    []byte(`[]`),

@@ -61,6 +61,8 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/thumbnails/preheat/{id}/cancel", auth(h.PreheatCancel))
 	mux.HandleFunc("POST /api/v1/admin/remote-entries/{id}/retry", auth(h.RetryRemoteEntry))
 	mux.HandleFunc("POST /api/v1/admin/browser-compatibility/probe", auth(h.CompatProbeStart))
+	mux.HandleFunc("GET /api/v1/admin/browser-compatibility/probe/latest", auth(h.CompatProbeLatest))
+	mux.HandleFunc("POST /api/v1/admin/browser-compatibility/probe/{id}/cancel", auth(h.CompatProbeCancel))
 	mux.HandleFunc("GET /api/v1/admin/browser-compatibility/latest", auth(h.CompatProbeLatest))
 	mux.HandleFunc("POST /api/v1/admin/browser-compatibility/{id}/cancel", auth(h.CompatProbeCancel))
 }
