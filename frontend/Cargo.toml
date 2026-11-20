@@ -22,8 +22,13 @@ web-sys = { version = "0.3", features = [
     "Url", "ScrollToOptions", "ScrollBehavior", "AbortController",
     "HtmlDetailsElement", "HtmlInputElement", "HtmlVideoElement", "HtmlCanvasElement",
     "IntersectionObserver", "IntersectionObserverInit", "IntersectionObserverEntry",
+    "HtmlDivElement", "HtmlButtonElement", "HtmlTextAreaElement", "HtmlFormElement",
+    "DomTokenList", "CssStyleDeclaration", "DomRect", "NodeList",
+    "ScrollIntoViewOptions", "ScrollLogicalPosition", "AddEventListenerOptions",
+    "MediaQueryListEvent", "ResizeObserver", "ResizeObserverEntry",
 ] }
 console_error_panic_hook = "0.1"
+send_wrapper = "0.6"
 
 [profile.release]
 opt-level = "z"

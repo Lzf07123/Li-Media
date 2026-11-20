@@ -1,7 +1,7 @@
 // API 类型:对齐 lib/api.ts 中的后端响应结构(serde 命名 snake_case 直通)。
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct MemoryCounts {
     #[serde(default)]
     pub photo: u32,
@@ -9,7 +9,7 @@ pub struct MemoryCounts {
     pub video: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MemoryCardFile {
     pub id: String,
     pub filename: String,
@@ -19,7 +19,7 @@ pub struct MemoryCardFile {
     pub browser_compatibility: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MemorySummary {
     pub id: String,
     pub title: String,
@@ -59,7 +59,7 @@ fn default_excluded() -> String {
     "excluded".to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MemorySummaryListResponse {
     pub items: Vec<MemorySummary>,
     pub total: u32,
@@ -69,14 +69,14 @@ pub struct MemorySummaryListResponse {
     pub public_counts: MemoryCounts,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PublicMediaCounts {
     pub total: u32,
     pub photo: u32,
     pub video: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PublicPreheatStatusResponse {
     pub status: String,
     pub processed: u32,

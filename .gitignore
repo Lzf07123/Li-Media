@@ -39,3 +39,8 @@ data/
 baidu_token.json
 *.key
 *.pem
+
+# Rust/Leptos 构建产物
+frontend/target/
+frontend/dist/
+**/target/

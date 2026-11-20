@@ -272,9 +272,17 @@ pub async fn get_public_counts() -> Result<PublicMediaCounts, ApiError> {
 }
 
 pub async fn get_preheat_status() -> Result<PublicPreheatStatusResponse, ApiError> {
-    get("/memories/public/preheat-status").await
+    get("/memories/preheat-status").await
+}
+
+pub async fn get_memory_recommendations(limit: u32, kind: Option<&str>) -> Result<Vec<MemorySummary>, ApiError> {
+    let mut path = format!("/memories/recommend?limit={}", limit);
+    if let Some(kind) = kind {
+        path.push_str(&format!("&kind={}", js_sys::encode_uri_component(kind)));
+    }
+    get(&path).await
 }
 
 pub async fn get_memory_by_id(id: &str) -> Result<MemorySummary, ApiError> {
-    get(&format!("/memories/{}", id)).await
+    get(&format!("/memories/{}", js_sys::encode_uri_component(id))).await
 }

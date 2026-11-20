@@ -3,6 +3,7 @@ mod api;
 mod app;
 mod brand;
 mod components;
+mod lib;
 mod pages;
 
 use leptos::mount::mount_to_body;
