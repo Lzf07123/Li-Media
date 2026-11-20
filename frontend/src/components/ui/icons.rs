@@ -144,3 +144,119 @@ pub fn icon_orbit(class: &'static str) -> impl IntoView {
         },
     )
 }
+
+/// lucide "download"。
+pub fn icon_download(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <path d="M12 15V3" />
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="m7 10 5 5 5-5" />
+        },
+    )
+}
+
+/// lucide "link-2"。
+pub fn icon_link_2(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <path d="M9 17H7A5 5 0 0 1 7 7h2" />
+            <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
+            <line x1="8" x2="16" y1="12" y2="12" />
+        },
+    )
+}
+
+/// lucide "triangle-alert"。
+pub fn icon_triangle_alert(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+        },
+    )
+}
+
+/// lucide "clock"。
+pub fn icon_clock(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <path d="M12 6v6l4 2" />
+            <circle cx="12" cy="12" r="10" />
+        },
+    )
+}
+
+/// lucide "ratio"。
+pub fn icon_ratio(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <rect x="6" y="2" width="12" height="20" rx="2" />
+            <rect x="2" y="6" width="20" height="12" rx="2" />
+        },
+    )
+}
+
+/// lucide "chevron-down"。
+pub fn icon_chevron_down(class: &'static str) -> impl IntoView {
+    icon_svg(class, view! { <path d="m6 9 6 6 6-6" /> })
+}
+
+/// lucide "chevron-up"。
+pub fn icon_chevron_up(class: &'static str) -> impl IntoView {
+    icon_svg(class, view! { <path d="m18 15-6-6-6 6" /> })
+}
+
+/// lucide "layout-grid"。
+pub fn icon_layout_grid(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+        },
+    )
+}
+
+/// lucide "circle-check"。
+pub fn icon_circle_check(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <circle cx="12" cy="12" r="10" />
+            <path d="m9 12 2 2 4-4" />
+        },
+    )
+}
+
+/// lucide "circle-alert"。
+pub fn icon_circle_alert(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" x2="12" y1="8" y2="12" />
+            <line x1="12" x2="12.01" y1="16" y2="16" />
+        },
+    )
+}
+
+/// lucide "file-question"。
+pub fn icon_file_question(class: &'static str) -> impl IntoView {
+    icon_svg(
+        class,
+        view! {
+            <path d="M12 17h.01" />
+            <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
+            <path d="M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3" />
+        },
+    )
+}

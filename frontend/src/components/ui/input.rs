@@ -4,7 +4,7 @@ use leptos::prelude::*;
 #[component]
 pub fn Input(
     #[prop(into)] id: String,
-    label: ChildrenFn,
+    #[prop(optional, into)] label_text: Option<String>,
     #[prop(optional, into)] class: Option<String>,
     #[prop(optional, into)] input_type: Option<String>,
     #[prop(optional, into)] value: Option<String>,
@@ -15,7 +15,7 @@ pub fn Input(
 ) -> impl IntoView {
     view! {
         <label class="flex flex-col gap-2 text-sm" for={id.clone()}>
-            {label()}
+            {label_text.clone().map(|text| view! { <span>{text}</span> })}
             <input
                 class={format!("input min-h-11 {}", class.unwrap_or_default())}
                 id={id.clone()}
@@ -41,7 +41,7 @@ pub fn Input(
 #[component]
 pub fn TextArea(
     #[prop(into)] id: String,
-    label: ChildrenFn,
+    #[prop(optional, into)] label_text: Option<String>,
     #[prop(optional, into)] class: Option<String>,
     #[prop(optional, into)] value: Option<String>,
     #[prop(optional, into)] placeholder: Option<String>,
@@ -50,7 +50,7 @@ pub fn TextArea(
 ) -> impl IntoView {
     view! {
         <label class="flex flex-col gap-2 text-sm" for={id.clone()}>
-            {label()}
+            {label_text.clone().map(|text| view! { <span>{text}</span> })}
             <textarea
                 class={format!("input min-h-28 {}", class.unwrap_or_default())}
                 id={id.clone()}

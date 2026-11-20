@@ -1,4 +1,5 @@
 // API 层:对齐原 lib/api.ts 的 fetch 封装与 URL 安全校验。
+pub mod admin;
 pub mod types;
 
 use serde::de::DeserializeOwned;
@@ -182,7 +183,8 @@ async fn raw_request(
 
     let status = response.status();
     if status == 204 {
-        return Ok((status, None));
+        // 204 无 body:统一返回 null 值,serde () 反序列化成功。
+        return Ok((status, Some(JsValue::NULL)));
     }
     if !response.ok() {
         return Err(ApiError {
@@ -285,4 +287,19 @@ pub async fn get_memory_recommendations(limit: u32, kind: Option<&str>) -> Resul
 
 pub async fn get_memory_by_id(id: &str) -> Result<MemorySummary, ApiError> {
     get(&format!("/memories/{}", js_sys::encode_uri_component(id))).await
+}
+
+/// 百度 OAuth 回调上报(对齐 completeBaiduAuthorization)。
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct BaiduCallbackResponse {
+    pub authorized: bool,
+    pub expires_at: Option<String>,
+}
+
+pub async fn complete_baidu_authorization(
+    code: &str,
+    state: &str,
+) -> Result<BaiduCallbackResponse, ApiError> {
+    let body = serde_json::json!({ "code": code, "state": state }).to_string();
+    post("/admin/baidu/callback", body).await
 }

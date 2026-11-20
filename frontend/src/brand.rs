@@ -14,9 +14,7 @@ impl Brand {
     pub const COPYRIGHT_HOLDER: &str = "黎智锋";
     pub const ICP: &str = "";
     pub const PUBLIC_SECURITY_FILING: &str = "";
-    /// 页脚外链(原 footerLinks 数组)。
     pub const FOOTER_LINKS: [(&str, &str); 0] = [];
-    /// 顶部导航(原 nav 数组)。
     pub const NAV: [(&str, &str); 3] = [("首页", "/"), ("照片", "/?kind=photo"), ("视频", "/?kind=video")];
 }
 
@@ -280,6 +278,32 @@ pub mod copy {
     pub const ADMIN_STATUS_REFRESH: &str = "刷新状态";
     pub const ADMIN_STATUS_REFRESHING: &str = "刷新中";
     pub const ADMIN_STATUS_REFRESH_FAILED: &str = "状态刷新失败";
+    pub const ADMIN_STATUS_APP: &str = "应用版本";
+    pub const ADMIN_STATUS_DATABASE: &str = "数据库";
+    pub const ADMIN_STATUS_REDIS: &str = "Redis";
+    pub const ADMIN_STATUS_SOURCE_ZERO: &str = "源文件审计";
+    pub const ADMIN_STATUS_COMPLIANT: &str = "合规";
+    pub const ADMIN_STATUS_NON_COMPLIANT: &str = "不合规";
+    pub const ADMIN_STATUS_EMPTY: &str = "状态尚未采集，点击刷新获取。";
+    pub const ADMIN_FILTER_KIND_LABEL: &str = "内容类型";
+    pub const ADMIN_FILTER_KIND_ALL: &str = "全部类型";
+    pub const ADMIN_FILTER_KIND_PHOTO: &str = "照片";
+    pub const ADMIN_FILTER_KIND_VIDEO: &str = "视频";
+    pub const ADMIN_FILTER_STATUS_LABEL: &str = "状态";
+    pub const ADMIN_FILTER_STATUS_ALL: &str = "全部状态";
+    pub const ADMIN_FILTER_STATUS_PUBLISHED: &str = "已发布";
+    pub const ADMIN_FILTER_STATUS_HIDDEN: &str = "已下线";
+    pub const ADMIN_FILTER_STATUS_DRAFT: &str = "草稿";
+    pub const ADMIN_GLOBAL_PHOTO_SUFFIX: &str = "张照片";
+    pub const ADMIN_GLOBAL_VIDEO_SUFFIX: &str = "个视频";
+    pub const ADMIN_LIST_EMPTY: &str = "当前筛选下没有回忆。";
+    pub const ADMIN_PREHEAT_KIND_LABEL: &str = "预热类型";
+    pub const ADMIN_PREHEAT_KIND_ALL: &str = "全部类型";
+    pub const ADMIN_PREHEAT_KIND_PHOTO: &str = "照片";
+    pub const ADMIN_PREHEAT_KIND_VIDEO: &str = "视频";
+    pub const ADMIN_SYNC_DISCOVERED_PREFIX: &str = "发现";
+    pub const ADMIN_SYNC_MATCHED_PREFIX: &str = "匹配";
+    pub const ADMIN_SEARCH_PLACEHOLDER: &str = "搜索标题、描述或地点";
     pub const ADMIN_STATUS_GENERATED_AT: &str = "采集时间";
     pub const ADMIN_BACKEND_TITLE: &str = "后端栈";
     pub const ADMIN_BACKEND_API: &str = "API";
@@ -532,4 +556,3 @@ pub mod assets {
     pub const FAVICON_SPEC: &str = "透明底 SVG，最小显示 16px，周围净空不少于图标边长的 1/4。";
     pub const LOGO_SPEC: &str = "透明底 512x512 WebP，最小显示 32px，周围净空不少于图标边长的 1/4。";
 }
-

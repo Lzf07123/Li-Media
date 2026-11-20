@@ -23,6 +23,8 @@ web-sys = { version = "0.3", features = [
     "HtmlDetailsElement", "HtmlInputElement", "HtmlVideoElement", "HtmlCanvasElement",
     "IntersectionObserver", "IntersectionObserverInit", "IntersectionObserverEntry",
     "HtmlDivElement", "HtmlButtonElement", "HtmlTextAreaElement", "HtmlFormElement",
+    "PointerEvent", "WheelEvent", "MediaError", "HtmlMediaElement", "Clipboard",
+    "FocusOptions",
     "DomTokenList", "CssStyleDeclaration", "DomRect", "NodeList",
     "ScrollIntoViewOptions", "ScrollLogicalPosition", "AddEventListenerOptions",
     "MediaQueryListEvent", "ResizeObserver", "ResizeObserverEntry",

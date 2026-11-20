@@ -160,6 +160,7 @@ pub fn reduce_media_lifecycle(
     state.clone().with_scope(scope, next)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ActiveMediaState {
     pub scope: MediaScope,
     pub state: MediaLifecycleState,

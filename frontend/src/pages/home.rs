@@ -15,7 +15,9 @@ use crate::api;
 use crate::api::types::{MemorySummary, PublicPreheatStatusResponse};
 use crate::brand::{copy, Brand};
 use crate::components::hero_feature::HeroFeature;
+use crate::components::media_viewer::{MediaViewer, ViewerPosition};
 use crate::components::memory_card::MemoryCard;
+use crate::components::space::space_gallery::SpaceGallery;
 use crate::components::ui::blur_text::{BlurText, BlurTextTag};
 use crate::components::ui::button::{Button, ButtonVariant};
 use crate::components::ui::empty_state::EmptyState;
@@ -79,12 +81,8 @@ impl CanvasFooterState {
     }
 }
 
-/// 查看器画布内位置(1 起);直接打开(URL 直链)不在画布内时不传。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ViewerPosition {
-    pub index: u32,
-    pub total: u32,
-}
+// ViewerPosition(查看器画布内位置,1 起)已随 MediaViewer 迁入
+// components/media_viewer.rs,此处直接导入使用。
 
 fn is_terminal_preheat_status(status: &str) -> bool {
     PREHEAT_TERMINAL_STATUSES.contains(&status)
@@ -198,84 +196,6 @@ async fn sleep_ms(ms: u32) {
         let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms as i32);
     });
     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
-}
-
-// ---- 本地最小占位组件 ----
-// 真实实现由并行迁移的 components/media_viewer.rs 与 components/space/*
-// 提供;签名按 React props 精确声明:MediaViewer 接收 memories 列表 +
-// viewer id + 关闭回调(以及 React 版全部 props),SpaceGallery 接收
-// items + kind 过滤(以及全部回调)。占位只保证编译与最小交互。
-
-#[component]
-fn MediaViewer(
-    memories: Vec<MemorySummary>,
-    viewer_id: String,
-    position: Option<ViewerPosition>,
-    is_loading_more: bool,
-    on_close: Callback<()>,
-    #[prop(into)] on_next: Option<Callback<()>>,
-    #[prop(into)] on_prev: Option<Callback<()>>,
-    prefetch_targets: Vec<MemorySummary>,
-) -> impl IntoView {
-    let _ = (
-        memories,
-        viewer_id,
-        position,
-        is_loading_more,
-        on_next,
-        on_prev,
-        prefetch_targets,
-    );
-    view! {
-        <div class="modal-backdrop" on:click=move |_: web_sys::MouseEvent| on_close.run(())>
-            <button
-                aria-label={copy::CLOSE}
-                class="icon-btn"
-                disabled={false}
-                on:click=move |event: web_sys::MouseEvent| {
-                    event.stop_propagation();
-                    on_close.run(());
-                }
-                type="button"
-            >
-                {icon_x("")}
-            </button>
-        </div>
-    }
-}
-
-#[component]
-fn SpaceGallery(
-    items: Vec<MemorySummary>,
-    kind: Option<String>,
-    on_open_viewer: Callback<String>,
-    on_exit_space: Callback<()>,
-    on_kind_change: Callback<Option<String>>,
-    on_items_change: Callback<(Vec<MemorySummary>, u32)>,
-    on_immersive_change: Callback<bool>,
-) -> impl IntoView {
-    let _ = (
-        items,
-        kind,
-        on_open_viewer,
-        on_kind_change,
-        on_items_change,
-        on_immersive_change,
-    );
-    view! {
-        <div aria-hidden="true" class="space-feature">
-            <div class="space-stage-fallback" />
-        </div>
-        <div class="mt-4 flex justify-center">
-            <Button
-                disabled={false}
-                on_click={Callback::new(move |_: web_sys::MouseEvent| on_exit_space.run(()))}
-                variant={ButtonVariant::Secondary}
-            >
-                {copy::space::TOGGLE_ACTIVE}
-            </Button>
-        </div>
-    }
 }
 
 #[component]
@@ -843,12 +763,6 @@ pub fn HomePage() -> impl IntoView {
                     .toggle_with_force("has-space-stage", immersive);
             }
         }
-        on_cleanup(move || {
-            if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-                if let Some(body) = document.body() {
-                    }
-            }
-        });
     });
 
     // 瀑布屏分配:最短列优先;未知尺寸用 4/5 兜底。列分配与骨架屏共用
@@ -1107,7 +1021,7 @@ pub fn HomePage() -> impl IntoView {
                 }
             },
         );
-        let mut options = web_sys::IntersectionObserverInit::new();
+        let options = web_sys::IntersectionObserverInit::new();
         options.set_root_margin("600px 0px");
         let observer = web_sys::IntersectionObserver::new_with_options(
             callback.as_ref().unchecked_ref(),
@@ -1224,7 +1138,7 @@ pub fn HomePage() -> impl IntoView {
             .flatten()
             .map(|query| query.matches())
             .unwrap_or(false);
-        let mut options = web_sys::ScrollIntoViewOptions::new();
+        let options = web_sys::ScrollIntoViewOptions::new();
         options.set_behavior(if reduce_motion {
             web_sys::ScrollBehavior::Auto
         } else {
@@ -1261,6 +1175,27 @@ pub fn HomePage() -> impl IntoView {
             .then(|| list[(index + 1) as usize].clone());
         [previous, next].into_iter().flatten().collect::<Vec<MemorySummary>>()
     });
+
+    // 查看器翻页回调:相邻内容按需取自 viewer_neighbors(信号实时读取,
+    // 等价 React 的每次渲染新闭包 + ref 转发口径)。
+    let viewer_on_next = {
+        let on_open_viewer_replace = on_open_viewer_replace.clone();
+        Callback::new(move |_: ()| {
+            let neighbors = viewer_neighbors.get();
+            if let Some(next) = neighbors.last() {
+                on_open_viewer_replace.run(next.id.clone());
+            }
+        })
+    };
+    let viewer_on_prev = {
+        let on_open_viewer_replace = on_open_viewer_replace.clone();
+        Callback::new(move |_: ()| {
+            let neighbors = viewer_neighbors.get();
+            if let Some(previous) = neighbors.first() {
+                on_open_viewer_replace.run(previous.id.clone());
+            }
+        })
+    };
 
     // 查看器接近已加载末尾时自动续载:翻到画布边界前先追加下一页;
     // loadNextPage 内部守卫防并发与重复。
@@ -1323,42 +1258,32 @@ pub fn HomePage() -> impl IntoView {
     });
 
     // 查看器覆盖层(两个视图共用;覆盖层不卸载底视图)。
+    // 挂载期只跟踪「有无内容」,内容本体经 Memo 传给 MediaViewer 响应式
+    // 更新(翻页不重挂载,对齐 React 的 props 更新语义)。
+    let viewer_memory = Memo::new(move |_| {
+        active_memory
+            .get()
+            .unwrap_or_else(|| crate::components::media_viewer::empty_memory_summary())
+    });
+    let has_viewer_memory = Memo::new(move |_| active_memory.get().is_some());
+    let viewer_position = Memo::new(move |_| {
+        let index = active_memory_index.get();
+        index.ge(&0).then(|| ViewerPosition {
+            index: (index + 1) as u32,
+            total: viewer_total.get(),
+        })
+    });
     let viewer_node = move || {
-        active_memory.get().map(|memory| {
-            let index = active_memory_index.get();
-            let on_next = {
-                let on_open_viewer_replace = on_open_viewer_replace.clone();
-                Callback::new(move |_: ()| {
-                    let neighbors = viewer_neighbors.get();
-                    if let Some(next) = neighbors.last() {
-                        on_open_viewer_replace.run(next.id.clone());
-                    }
-                })
-            };
-            let on_prev = {
-                let on_open_viewer_replace = on_open_viewer_replace.clone();
-                Callback::new(move |_: ()| {
-                    let neighbors = viewer_neighbors.get();
-                    if let Some(previous) = neighbors.first() {
-                        on_open_viewer_replace.run(previous.id.clone());
-                    }
-                })
-            };
+        has_viewer_memory.get().then(|| {
             view! {
                 <MediaViewer
-                    is_loading_more={is_loading_more.get()}
-                    memories={viewer_memories.get()}
+                    is_loading_more={is_loading_more}
+                    memory={viewer_memory}
                     on_close={close_viewer}
-                    on_next={Some(on_next)}
-                    on_prev={Some(on_prev)}
-                    position={index
-                        .ge(&0)
-                        .then(|| ViewerPosition {
-                            index: (index + 1) as u32,
-                            total: viewer_total.get(),
-                        })}
-                    prefetch_targets={viewer_neighbors.get()}
-                    viewer_id={memory.id.clone()}
+                    on_next={Some(viewer_on_next)}
+                    on_prev={Some(viewer_on_prev)}
+                    position={viewer_position}
+                    prefetch_targets={viewer_neighbors}
                 />
             }
         })
@@ -1376,6 +1301,8 @@ pub fn HomePage() -> impl IntoView {
     view! {
         {move || {
             // URL 驱动视图:空间画廊整体让位(数据流与 hook 顺序与视图无关)。
+            // 画廊 props 全部走 Signal:条目上报(kind 切换/续载)不重建画廊,
+            // 相机位置与焦点在 overlay 打开/关闭期间天然保留。
             if is_space_view.get() {
                 return view! {
                     <section aria-labelledby="library-title" class="page-enter hero-page">
@@ -1383,8 +1310,7 @@ pub fn HomePage() -> impl IntoView {
                             {copy::LIBRARY_TITLE}
                         </h1>
                         <SpaceGallery
-                            items={space_items.get()}
-                            kind={active_kind.get()}
+                            kind={active_kind}
                             on_exit_space={exit_space}
                             on_immersive_change={Callback::new(move |immersive: bool| {
                                 space_immersive.set(immersive);
