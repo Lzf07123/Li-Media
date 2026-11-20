@@ -5,13 +5,16 @@ use leptos_router::hooks::use_query_map;
 use leptos_router::hooks::use_location;
 use wasm_bindgen::JsCast;
 
-use crate::brand::Brand;
+use crate::brand::{self, Brand};
+use crate::lib::theme::{theme_signal, toggle_theme, use_theme_effect};
 
 const SCROLLED_THRESHOLD_PX: f64 = 8.0;
 
 #[component]
 pub fn SiteHeader() -> impl IntoView {
     let scrolled = RwSignal::new(false);
+    use_theme_effect();
+    let theme = theme_signal();
 
     let update = move || {
         if let Some(window) = web_sys::window() {
@@ -65,10 +68,49 @@ pub fn SiteHeader() -> impl IntoView {
                 <div class="ml-auto flex items-center gap-1 sm:ml-0">
                     <nav aria-label=crate::brand::copy::NAV_LABEL class="mobile-nav-primary">
                         <a class="mobile-nav-link" href="/">{Brand::NAV[0].0}</a>
-                        <a class="site-menu-trigger" href="/admin" aria-label=crate::brand::copy::ADMIN_ENTRY>
-                            {crate::brand::copy::ADMIN_ENTRY}
-                        </a>
+                        <details class="site-menu">
+                            <summary aria-label={crate::brand::copy::MORE_MENU.to_string()} class="site-menu-trigger">
+                                <span class="visually-hidden">{crate::brand::copy::MORE_MENU}</span>
+                            </summary>
+                            <nav aria-label={crate::brand::copy::MORE_MENU.to_string()} class="site-menu-panel">
+                                {Brand::NAV.iter().skip(1).map(|(label, href)| {
+                                    view! { <a class="site-menu-item" href=*href>{*label}</a> }
+                                }).collect_view()}
+                                <span aria-hidden="true" class="site-menu-sep" />
+                                <a class="site-menu-item" href="/admin">{crate::brand::copy::ADMIN_ENTRY}</a>
+                            </nav>
+                        </details>
                     </nav>
+
+                    <button
+                        aria-label={move || if theme.get() == crate::lib::theme::Theme::Dark {
+                            crate::brand::copy::THEME_LIGHT.to_string()
+                        } else {
+                            crate::brand::copy::THEME_DARK.to_string()
+                        }}
+                        title={move || if theme.get() == crate::lib::theme::Theme::Dark {
+                            crate::brand::copy::THEME_LIGHT.to_string()
+                        } else {
+                            crate::brand::copy::THEME_DARK.to_string()
+                        }}
+                        class="inline-flex min-h-11 items-center justify-center rounded-md px-2 text-foreground"
+                        on:click=move |_| toggle_theme()
+                    >
+                        {move || if theme.get() == crate::lib::theme::Theme::Dark {
+                            view! {
+                                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em">
+                                    <circle cx="12" cy="12" r="4" />
+                                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+                                </svg>
+                            }.into_any()
+                        } else {
+                            view! {
+                                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em">
+                                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                                </svg>
+                            }.into_any()
+                        }}
+                    </button>
                 </div>
             </div>
             <span aria-hidden="true" class="flow-rule" />

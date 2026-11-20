@@ -114,8 +114,21 @@ pub fn AdminPage() -> impl IntoView {
     }));
 
     let refresh_list_for_effect = refresh_list.clone();
-    Effect::new(move || {
-        refresh_list.get_value()()
+    let remote_config_for_effect = remote_config.clone();
+    let system_status_for_effect = system_status.clone();
+    Effect::new(move |_| {
+        refresh_list.get_value()();
+        // 对齐 React 版 refreshConsoleData:进入工作台即加载网盘配置与系统状态。
+        let remote_config = remote_config_for_effect.clone();
+        let system_status = system_status_for_effect.clone();
+        spawn_local(async move {
+            if let Ok(config) = admin_api::get_remote_config().await {
+                remote_config.set(Some(config));
+            }
+            if let Ok(status) = admin_api::get_system_status().await {
+                system_status.set(Some(status));
+            }
+        });
     });
 
     let do_login = Callback::new(move |e: leptos::ev::SubmitEvent| {

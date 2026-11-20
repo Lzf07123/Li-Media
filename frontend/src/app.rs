@@ -23,14 +23,15 @@ fn MemoryRedirect() -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     view! {
-        <div class="flex min-h-dvh flex-col bg-background text-foreground">
-            <AmbientBackground />
-            <SiteHeader />
-            <main
-                class="page-shell relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 lg:px-8"
-                id="main"
-            >
-                <Router>
+        // Router 包裹整个布局:页眉/页脚的 hooks(use_location 等)依赖路由上下文。
+        <Router>
+            <div class="flex min-h-dvh flex-col bg-background text-foreground">
+                <AmbientBackground />
+                <SiteHeader />
+                <main
+                    class="page-shell relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 lg:px-8"
+                    id="main"
+                >
                     <Routes fallback={NotFoundPage}>
                         <Route path={StaticSegment("/")} view={HomePage} />
                         <Route
@@ -44,10 +45,10 @@ pub fn App() -> impl IntoView {
                         />
                         <Route path={WildcardSegment("any")} view={NotFoundPage} />
                     </Routes>
-                </Router>
-            </main>
-            <SiteFooter />
-            <BackToTop />
-        </div>
+                </main>
+                <SiteFooter />
+                <BackToTop />
+            </div>
+        </Router>
     }
 }

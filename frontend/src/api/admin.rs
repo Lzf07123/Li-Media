@@ -59,47 +59,71 @@ pub struct BrowserCounts {
     pub unknown: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct RemoteConfig {
+    #[serde(default)]
     pub configured: bool,
+    #[serde(default)]
     pub oauth_configured: bool,
+    #[serde(default)]
     pub authorized: bool,
+    #[serde(default)]
     pub scan_dir: String,
+    #[serde(default)]
     pub redirect_uri: String,
+    #[serde(default)]
     pub docs_url: String,
     #[serde(default)]
     pub token_expires_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct RemoteScanTask {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub remote_dir: String,
+    #[serde(default)]
     pub status: String,
+    #[serde(default)]
     pub max_depth: u32,
+    #[serde(default)]
     pub max_items: u32,
+    #[serde(default)]
     pub delete_missing: bool,
+    #[serde(default)]
     pub processed_items: u32,
+    #[serde(default)]
     pub scanned_files: u32,
+    #[serde(default)]
     pub scanned_directories: u32,
+    #[serde(default)]
     pub discovered: u32,
+    #[serde(default)]
     pub refreshed: u32,
+    #[serde(default)]
     pub skipped: u32,
     #[serde(default)]
     pub limit_reached: bool,
     #[serde(default)]
     pub failure_reason: Option<String>,
+    #[serde(default)]
     pub started_at: String,
     #[serde(default)]
     pub completed_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SyncResponse {
+    #[serde(default)]
     pub discovered: u32,
+    #[serde(default)]
     pub matched: u32,
+    #[serde(default)]
     pub deleted: u32,
+    #[serde(default)]
     pub failed: u32,
+    #[serde(default)]
     pub scan_task: RemoteScanTask,
 }
 
@@ -137,31 +161,45 @@ pub struct SystemStatus {
     pub resources: serde_json::Value,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ThumbnailPreheatJob {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub sizes: Vec<u32>,
     #[serde(default)]
     pub kind: Option<String>,
+    #[serde(default)]
     pub limit: u32,
+    #[serde(default)]
     pub concurrency: u32,
+    #[serde(default)]
     pub queue_limit: u32,
     #[serde(default)]
     pub include_failed: bool,
+    #[serde(default)]
     pub status: String,
+    #[serde(default)]
     pub total: u32,
+    #[serde(default)]
     pub processed: u32,
+    #[serde(default)]
     pub generated: u32,
+    #[serde(default)]
     pub cached: u32,
+    #[serde(default)]
     pub failed: u32,
     #[serde(default)]
     pub skipped: u32,
+    #[serde(default)]
     pub source_bytes_downloaded: u64,
+    #[serde(default)]
     pub derivative_duration_ms: u64,
     #[serde(default)]
     pub size_results: serde_json::Value,
     #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
     pub created_at: String,
     #[serde(default)]
     pub started_at: Option<String>,
@@ -169,10 +207,13 @@ pub struct ThumbnailPreheatJob {
     pub completed_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct AdminBackgroundJob {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub action: String,
+    #[serde(default)]
     pub status: String,
     #[serde(default)]
     pub filter_snapshot: serde_json::Value,
@@ -190,6 +231,7 @@ pub struct AdminBackgroundJob {
     pub failed: u32,
     #[serde(default)]
     pub error_message: Option<String>,
+    #[serde(default)]
     pub created_at: String,
     #[serde(default)]
     pub started_at: Option<String>,
@@ -197,7 +239,7 @@ pub struct AdminBackgroundJob {
     pub completed_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct BatchPreviewResponse {
     #[serde(default)]
     pub filter_snapshot: serde_json::Value,

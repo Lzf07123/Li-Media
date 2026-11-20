@@ -25,7 +25,7 @@ pub fn BaiduSetupCard(
         brand::copy::ADMIN_REMOTE_GUIDE_SCAN.to_string(),
     ];
 
-    let badge_tone = {
+    let badge_tone = move || {
         if authorized.get() {
             BadgeTone::Success
         } else if configured.get() {
@@ -34,7 +34,7 @@ pub fn BaiduSetupCard(
             BadgeTone::Muted
         }
     };
-    let badge_text = if authorized.get() {
+    let badge_text = move || if authorized.get() {
         brand::copy::ADMIN_REMOTE_AUTHORIZED.to_string()
     } else if configured.get() {
         brand::copy::ADMIN_REMOTE_CREDENTIAL_CONFIGURED.to_string()
@@ -51,7 +51,7 @@ pub fn BaiduSetupCard(
                     </h2>
                     <p class="mt-2 text-sm text-muted">{brand::copy::ADMIN_REMOTE_GUIDE_DESCRIPTION}</p>
                 </div>
-                <Badge tone={badge_tone}>{badge_text}</Badge>
+                <Badge tone={badge_tone()}>{badge_text()}</Badge>
             </div>
 
             <ol class="mt-5 grid gap-3">
@@ -77,11 +77,11 @@ pub fn BaiduSetupCard(
                 <div class="grid min-w-0 gap-2">
                     <p class="min-w-0 text-sm">
                         <span class="text-muted">{brand::copy::ADMIN_REMOTE_SCAN_DIR_LABEL}{": "}</span>
-                        <code class="break-all">{scan_dir.get()}</code>
+                        <code class="break-all">{move || scan_dir.get()}</code>
                     </p>
                     <p class="min-w-0 text-sm">
                         <span class="text-muted">{brand::copy::ADMIN_REMOTE_REDIRECT_LABEL}{": "}</span>
-                        <code class="break-all">{redirect_uri.get()}</code>
+                        <code class="break-all">{move || redirect_uri.get()}</code>
                     </p>
                     <p class="min-w-0 text-sm">
                         <span class="text-muted">{brand::copy::ADMIN_REMOTE_TOKEN_EXPIRY}{": "}</span>
