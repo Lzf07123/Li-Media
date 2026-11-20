@@ -7,8 +7,7 @@ dist = "dist"
 port = 5173
 addresses = ["127.0.0.1"]
 
-# 开发代理 /api → Go 后端(与原 vite.config.ts 对齐)
+# 开发代理 /api → Go 后端(dev 容器网络名;宿主直跑时请改回 127.0.0.1:8000)
 [[proxy]]
-rewrite = "/api/v1|^/api"
-backend = "http://127.0.0.1:8000"
+backend = "http://limedia-go-dev:8000/api"
 no_system_proxy = true
