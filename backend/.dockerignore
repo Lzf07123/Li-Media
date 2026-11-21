@@ -10,3 +10,9 @@ media/
 baidu_token.json
 .env
 .venv/
+# Go 版:Python 遗留环境与本地运行时数据
+.venv/
+alembic/
+app/
+tests/
+pyproject.toml

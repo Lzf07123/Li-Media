@@ -1,4 +1,7 @@
-.env
-node_modules/
+target/
 dist/
-.vite/
+node_modules/
+test-results/
+playwright-report/
+.git/
+.pytest_cache/

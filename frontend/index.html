@@ -12,6 +12,9 @@
     <!-- Tailwind 4 编译产物:trunk 不执行 @apply/@import "tailwindcss",
          由宿主侧 tailwindcss CLI(src/index.css → index.compiled.css)生成。 -->
     <link data-trunk rel="css" href="index.compiled.css" />
+    <!-- favicon 复制到根;查看器 chunk 占位保留 /assets/ 路径(e2e 契约) -->
+    <link data-trunk rel="copy-file" href="public/favicon.svg" />
+    <link data-trunk rel="copy-dir" href="public/assets" />
     <!-- 启动占位高度:React 版骨架在 JS 同步渲染阶段就位,首屏可滚;
          WASM 异步引导,需要等价的启动期文档高度,让「引导期滚到底」
          的用户意图在数据就位后立刻续载(HomePage 消费)。 -->

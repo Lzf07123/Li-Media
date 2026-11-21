@@ -3,7 +3,7 @@ pub mod admin;
 pub mod types;
 
 use serde::de::DeserializeOwned;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 
 use types::*;
 
@@ -169,7 +169,7 @@ async fn raw_request(
 
     // 60s 超时(对齐 AbortSignal.timeout)。
     if let Some(controller) = web_sys::AbortController::new().ok() {
-        init_signal_timeout(&window, &controller, &request);
+        init_signal_timeout(&window, &controller);
     }
 
     let promise = window.fetch_with_request(&request);
@@ -201,23 +201,19 @@ async fn raw_request(
     Ok((status, Some(value)))
 }
 
-fn init_signal_timeout(window: &web_sys::Window, controller: &web_sys::AbortController, request: &web_sys::Request) {
-    let controller_value = wasm_bindgen::JsValue::from(controller);
-    let callback = js_sys::Function::new_with_args(
-        "controllerRef",
-        "controllerRef.abort();",
-    );
-    js_sys::Reflect::set(callback.as_ref(), &"controllerRef".into(), &controller_value).ok();
-    // 保存回调引用,避免 GC 后定时器触发失败。
-    let _ = js_sys::Reflect::set(
-        request.as_ref(),
-        &"__limedia_timeout__".into(),
-        callback.as_ref(),
-    );
+fn init_signal_timeout(window: &web_sys::Window, controller: &web_sys::AbortController) {
+    // 用 Closure 而非 Function::new_with_args:eval 路径被 CSP 拒绝,
+    // 且字符串回调既无类型安全也会泄露全局引用。
+    let controller = controller.clone();
+    let callback = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
+        controller.abort();
+    });
     let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-        &callback,
+        callback.as_ref().unchecked_ref(),
         DEFAULT_REQUEST_TIMEOUT_MS as i32,
     );
+    // 定时器触发前闭包必须常驻;单次请求生命周期内泄漏可忽略。
+    std::mem::forget(callback);
 }
 
 /// 请求并反序列化为 T(对齐 api.ts 的 request<T>)。

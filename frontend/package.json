@@ -6,11 +6,13 @@
   "scripts": {
     "test:e2e": "playwright test",
     "build": "trunk build --release",
-    "serve": "trunk serve"
+    "serve": "trunk serve",
+    "css:build": "tailwindcss -i src/index.css -o index.compiled.css --minify"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^24.0.0",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "@tailwindcss/cli": "^4.1.11"
   }
 }
