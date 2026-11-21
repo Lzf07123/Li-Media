@@ -23,6 +23,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-media}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      # 只采信来自 compose 内部网络的 X-Forwarded-For（split profile 的
+      # nginx 在此网段）；外部直连请求按 RemoteAddr 计限流键，无法伪造。
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.31.0.0/24}
       BACKEND_MEMORY_LIMIT_BYTES: ${BACKEND_MEMORY_LIMIT_BYTES:-268435456}
     # 迁移内嵌于 Go 二进制(启动即自动推进到最新)。
     command: ["limedia"]
@@ -177,6 +180,11 @@ volumes:
   nginx_cache:
 
 # 显式命名网络：与宿主上其他 compose 项目的默认网络隔离。
+# 固定子网供 TRUSTED_PROXY_CIDRS 判定 split profile 的 nginx 来源。
 networks:
   limedia:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+          gateway: 172.31.0.1

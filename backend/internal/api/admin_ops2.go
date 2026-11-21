@@ -200,7 +200,7 @@ func (h *AdminHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 		"file_cleanup_error":      nil,
 	}
 	if !dryRun {
-		_ = services.RecordAdminOperation(h.Pool, "cleanup", nil, nil, adminClientIP(r), nil)
+		_ = services.RecordAdminOperation(h.Pool, "cleanup", nil, nil, h.adminClientIP(r), nil)
 	}
 	WriteJSON(w, http.StatusOK, detail)
 }

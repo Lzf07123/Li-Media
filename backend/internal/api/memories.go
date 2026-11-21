@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"limedia/backend/internal/config"
+	"limedia/backend/internal/httpx"
 	"limedia/backend/internal/models"
 	"limedia/backend/internal/repo"
 	"limedia/backend/internal/services"
@@ -70,27 +71,9 @@ func (h *MemoriesHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/memories/{id}/thumbnail", h.Thumbnail)
 }
 
+// clientIP 与后台同一口径:未配置受信代理时忽略 X-Forwarded-For。
 func (h *MemoriesHandler) clientIP(r *http.Request) string {
-	host := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		host = fwd
-	}
-	if idx := indexByte(host, ':'); idx > 0 {
-		return host[:idx]
-	}
-	if host == "" {
-		return "unknown"
-	}
-	return host
-}
-
-func indexByte(s string, c byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == c {
-			return i
-		}
-	}
-	return -1
+	return httpx.ClientIP(r, h.Settings.TrustedProxies)
 }
 
 // validationError 按 FastAPI 422 结构输出 query 校验错误。

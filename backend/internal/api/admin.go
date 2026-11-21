@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"limedia/backend/internal/config"
+	"limedia/backend/internal/httpx"
 	"limedia/backend/internal/models"
 	"limedia/backend/internal/repo"
 	"limedia/backend/internal/services"
@@ -84,15 +85,11 @@ func (h *AdminHandler) requireAdminSession(next http.HandlerFunc) http.HandlerFu
 	}
 }
 
-func adminClientIP(r *http.Request) *string {
-	host := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		host = fwd
-	}
-	if idx := indexByte(host, ':'); idx > 0 {
-		host = host[:idx]
-	}
-	if host == "" {
+// adminClientIP 仅受信代理透传时才采信 X-Forwarded-For(见 httpx.ClientIP);
+// 直连客户端伪造该头无法改变登录限流键与审计来源。
+func (h *AdminHandler) adminClientIP(r *http.Request) *string {
+	host := httpx.ClientIP(r, h.Settings.TrustedProxies)
+	if host == "" || host == "unknown" {
 		return nil
 	}
 	return &host
@@ -110,7 +107,7 @@ func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}})
 		return
 	}
-	clientIP := adminClientIP(r)
+	clientIP := h.adminClientIP(r)
 	clientKey := "unknown"
 	if clientIP != nil {
 		clientKey = *clientIP
@@ -163,7 +160,7 @@ func (h *AdminHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		token = cookie.Value
 	}
 	_ = h.Sessions.Revoke(r.Context(), token)
-	_ = services.RecordAdminOperation(h.Pool, "logout", nil, nil, adminClientIP(r), nil)
+	_ = services.RecordAdminOperation(h.Pool, "logout", nil, nil, h.adminClientIP(r), nil)
 	http.SetCookie(w, &http.Cookie{
 		Name:     h.Settings.AdminCookieName,
 		Value:    "",

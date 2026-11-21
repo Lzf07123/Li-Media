@@ -18,6 +18,7 @@ import (
 
 	"limedia/backend/internal/api"
 	"limedia/backend/internal/config"
+	"limedia/backend/internal/httpx"
 	"limedia/backend/internal/repo"
 	"limedia/backend/internal/services"
 	"limedia/backend/internal/web"
@@ -99,7 +100,8 @@ func main() {
 	}).Handler()
 	httpServer := &http.Server{
 		Addr:              ":8000",
-		Handler:           api.NewCORS(settings.CorsOrigins).Middleware(handler),
+		// 安全头最外层:API 4xx/5xx、CORS 预检与静态资源共用同一套策略。
+		Handler:           httpx.SecurityHeaders(api.NewCORS(settings.CorsOrigins).Middleware(handler)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}

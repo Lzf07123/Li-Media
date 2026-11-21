@@ -17,6 +17,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"limedia/backend/internal/httpx"
 )
 
 // dist 由构建期注入(Docker 多阶段:trunk 产物复制到本目录);
@@ -24,14 +26,6 @@ import (
 //
 //go:embed all:dist
 var distFS embed.FS
-
-// securityHeaders 与 frontend/security-headers.conf 逐项对齐。
-// CSP 的 'wasm-unsafe-eval' 是 WebAssembly 编译必需;'unsafe-inline'
-// 用于 trunk 的内联启动脚本与主题初始化。
-const contentSecurityPolicy = "default-src 'self'; img-src 'self' data:; media-src 'self'; " +
-	"connect-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; " +
-	"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 var compressibleExt = map[string]bool{
 	".html": true, ".js": true, ".css": true, ".wasm": true,
@@ -66,22 +60,6 @@ func New() (*Handler, error) {
 	}, nil
 }
 
-// setSecurityHeaders 每个响应都带,对齐 nginx 的 always 语义。
-func setSecurityHeaders(w http.ResponseWriter) {
-	h := w.Header()
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Referrer-Policy", "no-referrer")
-	h.Set("Content-Security-Policy", contentSecurityPolicy)
-	h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-	// 仅 https 部署发 HSTS(与 nginx 的 $limedia_hsts 同义;此处按请求推断)。
-}
-
-func applyHSTS(w http.ResponseWriter, r *http.Request) {
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-	}
-}
-
 // ServeHTTP 满足 http.Handler;路径不存在时回退 index.html(SPA 路由)。
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Serve(w, r)
@@ -94,8 +72,9 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	setSecurityHeaders(w)
-	applyHSTS(w, r)
+	// 全局中间件已统一设置;本处理器单独挂载时也要自带(兜底)。
+	httpx.SetSecurityHeaders(w)
+	httpx.ApplyHSTS(w, r)
 
 	clean := path.Clean("/" + r.URL.Path)
 	rel := strings.TrimPrefix(clean, "/")

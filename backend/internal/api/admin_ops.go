@@ -210,7 +210,7 @@ func (h *AdminHandler) BatchStatus(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	detail := "action=" + job.Action + ";total=" + strconv.Itoa(job.Total) + ";session=" + sessionID.String() + ";filters=" + string(snapshot)
-	_ = services.RecordAdminOperation(h.Pool, "batch_status_queued", strPtr("memory_batch_job"), nil, adminClientIP(r), &detail)
+	_ = services.RecordAdminOperation(h.Pool, "batch_status_queued", strPtr("memory_batch_job"), nil, h.adminClientIP(r), &detail)
 
 	// 返回最新 job 行。
 	fresh, _ := h.getAdminJob(r.Context(), job.ID)
@@ -454,7 +454,7 @@ func (h *AdminHandler) BatchUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	detail := "changed=" + strconv.Itoa(changed) + ";skipped=" + strconv.Itoa(skipped) +
 		";fields=;" + "resource_ids=" + joinStrings(touched, ",")
-	_ = services.RecordAdminOperation(h.Pool, action, strPtr("memory_batch"), nil, adminClientIP(r), &detail)
+	_ = services.RecordAdminOperation(h.Pool, action, strPtr("memory_batch"), nil, h.adminClientIP(r), &detail)
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"changed": changed,
 		"skipped": skipped,
@@ -555,7 +555,7 @@ func (h *AdminHandler) UpdateMemory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	detail := "fields=" + joinStrings(sortedKeys(updates), ",") + ";id=" + id.String()
-	_ = services.RecordAdminOperation(h.Pool, action, strPtr("memory"), strPtr(id.String()), adminClientIP(r), &detail)
+	_ = services.RecordAdminOperation(h.Pool, action, strPtr("memory"), strPtr(id.String()), h.adminClientIP(r), &detail)
 	WriteJSON(w, http.StatusOK, toMemoryRead(fresh))
 }
 
@@ -592,7 +592,7 @@ func (h *AdminHandler) DeleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	detail := "title=" + memory.Title
-	_ = services.RecordAdminOperation(h.Pool, "delete", strPtr("memory"), strPtr(id.String()), adminClientIP(r), &detail)
+	_ = services.RecordAdminOperation(h.Pool, "delete", strPtr("memory"), strPtr(id.String()), h.adminClientIP(r), &detail)
 	w.WriteHeader(http.StatusNoContent)
 }
 

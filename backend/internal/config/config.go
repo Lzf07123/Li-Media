@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -24,6 +25,10 @@ type Settings struct {
 	PostgresDB     string
 	RedisURL       string
 	CorsOrigins    string
+	// TrustedProxyCIDRs 逗号分隔的受信代理网段:仅当直连对端命中时才
+	// 采信 X-Forwarded-For。默认空 = 从不采信,防止伪造头绕过登录限流。
+	TrustedProxyCIDRs string
+	TrustedProxies    []*net.IPNet
 	PublicBaseURL  string
 	AdminToken     string
 	AdminCookieName string
@@ -116,6 +121,7 @@ func Load() (*Settings, error) {
 		PostgresDB:     envString("POSTGRES_DB", "media"),
 		RedisURL:       envString("REDIS_URL", "redis://localhost:6379/0"),
 		CorsOrigins:    envString("CORS_ORIGINS", "http://localhost:5173,http://localhost:8080"),
+		TrustedProxyCIDRs: envString("TRUSTED_PROXY_CIDRS", ""),
 		PublicBaseURL:  envString("PUBLIC_BASE_URL", "http://127.0.0.1:8080"),
 		AdminToken:     envString("ADMIN_TOKEN", ""),
 		AdminCookieName: envString("ADMIN_SESSION_COOKIE_NAME", "limedia_admin_session"),
@@ -202,6 +208,10 @@ func (s *Settings) validate() error {
 	// 照抄示例值上线等于无锁。空值合法(登录 fail-closed)。
 	if strings.TrimSpace(s.AdminToken) == "change-me" {
 		return errors.New("ADMIN_TOKEN 仍为示例值 change-me;请设置强随机值后再启动")
+	}
+
+	if err := s.parseTrustedProxies(); err != nil {
+		return err
 	}
 
 	if err := checkRange("ADMIN_SESSION_TTL_MINUTES", s.AdminSessionTTLMinutes, 1, 10080); err != nil {
@@ -323,6 +333,35 @@ func (s *Settings) validate() error {
 	}
 
 	return s.resolveDatabaseURL()
+}
+
+// parseTrustedProxies 解析 TRUSTED_PROXY_CIDRS;裸 IP 视为单主机网段。
+// 空值合法:表示不采信任何 X-Forwarded-For(直连部署的推荐默认)。
+func (s *Settings) parseTrustedProxies() error {
+	s.TrustedProxies = nil
+	for _, raw := range strings.Split(s.TrustedProxyCIDRs, ",") {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		if !strings.Contains(entry, "/") {
+			ip := net.ParseIP(entry)
+			if ip == nil {
+				return fmt.Errorf("TRUSTED_PROXY_CIDRS 项 %q 不是合法 IP/CIDR", entry)
+			}
+			if ip.To4() != nil {
+				entry += "/32"
+			} else {
+				entry += "/128"
+			}
+		}
+		_, network, err := net.ParseCIDR(entry)
+		if err != nil {
+			return fmt.Errorf("TRUSTED_PROXY_CIDRS 项 %q 无效: %w", raw, err)
+		}
+		s.TrustedProxies = append(s.TrustedProxies, network)
+	}
+	return nil
 }
 
 // resolveDatabaseURL 对应 Python 版 model_validator:显式 DATABASE_URL 优先,
