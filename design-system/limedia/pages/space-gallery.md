@@ -192,7 +192,7 @@ space: {
 
 ## 12. 验收清单
 
-- [ ] `npm run typecheck`、`npm run build`、后端 `pytest` 通过
+- [ ] `cargo check --target wasm32-unknown-unknown`、`trunk build`、Go 测试通过（或 `python3 scripts/check.py`）
 - [ ] 仓库硬编码颜色扫描脚本通过（新增 CSS 无 `rgba(` 字面量）
 - [ ] 375 / 768 / 1024 / 1440 四档无横向溢出，移动端预留底部安全区
 - [ ] `prefers-reduced-motion` 下 flat 时间线完整可用

@@ -1,5 +1,8 @@
 # 预热端到端基准（preheat baseline）
 
+> **历史记录（2026-11-22）**：基准脚本 `scripts/preheat_baseline.py` 依赖已移除的
+> FastAPI 应用，随迁移一并退役；下列数据保留为迁移前基线，不再可直接复现。
+
 与 `docs/resource-baseline.md` 的单帧派生基线互补：本文件记录**预热任务链路**
 （候选枚举 → 槽位 → 派生 → DB 回写）的端到端吞吐，基准脚本为
 `scripts/preheat_baseline.py`。

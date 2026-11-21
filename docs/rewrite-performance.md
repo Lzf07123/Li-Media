@@ -96,8 +96,8 @@ Cookie/Authorization 与 random 排序绕过)在单容器中以进程内
   实测静态资源反而更快)。
 
 双容器拓扑仍保留:compose 中以 `--profile split` 启用(nginx 端口
-`SPLIT_HTTP_PORT` 默认 8081),`frontend/Dockerfile` 与
-`backend/Dockerfile` 均可用。
+`SPLIT_HTTP_PORT` 默认 8081),`frontend/Dockerfile` 可用;后端统一由
+`Dockerfile.single` 构建(迁移完成后已移除 Python 版 `backend/Dockerfile`)。
 
 ## 结论
 

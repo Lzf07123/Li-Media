@@ -1,5 +1,8 @@
 # Resource baseline
 
+> **历史记录（2026-11-22）**：脚本 `scripts/resource_baseline.py` 依赖已移除的 FastAPI
+> 应用并已退役；以下数据为迁移前基线，保留用于对比，不再可直接复现。
+
 Recorded on 2026-09-07 with `scripts/resource_baseline.py` inside the backend image under `--memory 256m --memory-swap 256m --pids-limit 64`. The fixture is a real one-second, 320x180 H.264 video; no media file is committed or persisted after the run. Stack ceiling validation found that explicit `--ulimit stack` values from 8192 KiB through 32768 KiB caused Python 3.12 to segfault in this image, so Compose intentionally leaves the stack limit disabled. The task-thread pool, cgroup memory limit, and PID limit are the active guards; revisit stack tuning only with a different runtime or a validated startup sequence.
 
 | Metric | Before | After | Result |

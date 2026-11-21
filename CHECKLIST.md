@@ -1,6 +1,10 @@
 # Li&Media 设计验收与测试通过标准
 
-> 版本：V1.0 ｜ 更新：2026-09-08 ｜ 状态：长期验收基线
+> 版本：V1.1 ｜ 更新：2026-11-22 ｜ 状态：长期验收基线
+>
+> **迁移说明**：后端已由 FastAPI 切换为 Go 1.26，前端已切换为 Leptos(Rust→WASM)，
+> 默认部署为单容器（Go 内嵌前端产物）。本文档中 pytest / Vite / typecheck /
+> nginx 唯一入口等表述已按当前技术栈更新；历史性能与资源基线中的旧命令仅作记录。
 >
 > 本文档不是已完成事项清单。每次交付前逐项判定“通过 / 不通过”，所有必测门禁都必须有证据；任何一项不通过，功能不能合入 `main`。
 > 视觉与品牌依据 [BRAND.md](design-system/limedia/BRAND.md) 和 [MASTER.md](design-system/limedia/MASTER.md)；实现与文档冲突时以代码为准，并回写设计方案。
@@ -106,9 +110,9 @@
 
 ### 证据
 
-- 后端 pytest 覆盖公开可见性、404/502/429、鉴权、配置边界、缓存口径和响应字段。
+- 后端 Go 测试覆盖公开可见性、404/502/429、鉴权、配置边界、缓存口径和响应字段。
 - 集成测试确认管理员鉴权后的接口与公开接口数据边界分离。
-- `docker compose config` 通过；Nginx 契约测试确认缓存、限流、健康检查和安全头。
+- `docker compose config` 通过；单容器/split profile 契约测试确认静态托管、健康检查和安全头。
 
 ## 7. 后台与资源验收
 
@@ -117,13 +121,13 @@
 - 后台登录、退出、会话失败、批量发布/下架、扫描、预热、状态刷新、错误重试和删除确认可用。
 - 批量状态操作可预览、确认、取消、幂等重复执行，并在操作日志中记录变更与跳过数量。
 - 状态面板显示后端栈、远端索引、任务队列、文件系统、派生缓存、临时文件和生效资源限制；不可用项显示不可用而不是零。
-- 磁盘目录扫描有文件数和超时边界；缓存、临时文件和 Nginx 缓存可分项解释。
+- 磁盘目录扫描有文件数和超时边界；缓存、临时文件和网关缓存（split profile）可分项解释。
 - backend 内存上限保持 256m；提升并发后必须重新记录 cgroup、子进程、OOM、PID 和临时文件基线。
 - 清理流程有显式确认、事务回滚、文件清理和直链缓存失效；百度网盘资源不被修改。
 
 ### 证据
 
-- 真实容器四服务 healthy；Nginx 唯一入口健康接口返回 200。
+- 真实容器 healthy；单容器入口首页与 `/api/v1/healthz` 返回 200。
 - 资源基线显示 OOM=0、临时文件残留=0、cgroup 峰值低于 256m、PID 上限内稳定。
 - 配置重启后后台显示生效值；公开预热状态基于持久化缓存命中收敛，不因内存任务历史误报。
 
@@ -131,18 +135,18 @@
 
 | 命令 | 通过标准 |
 | --- | --- |
-| `cd backend && pytest -q` | 0 failed，0 error；新增后端行为有正例、边界、失败和越权用例 |
-| `cd frontend && npm run typecheck` | TypeScript 0 error |
-| `cd frontend && npm run build` | Vite production build 成功；无新增 blocking warning/error |
-| `python3 scripts/check.py` | 后端、前端、Compose、whitespace、设计来源和 Playwright 全部通过 |
-| `python3 scripts/check.py --skip-e2e` | 仅允许在暂无浏览器环境时作为中间检查；合入/交付前仍必须跑完整版 |
-| `docker compose config --quiet` | 配置可解析；环境变量、服务边界和健康检查有效 |
+| `python3 scripts/check.py` | compose 语法、whitespace、设计令牌、容器内 `go build/vet/test` 与 `cargo check`/`trunk build` 全部通过 |
+| `python3 scripts/check.py --e2e` | 追加 Playwright 全量 e2e 通过 |
+| `docker exec limedia-go-dev sh -c 'cd /work && go build ./... && go vet ./... && go test ./... -count=1'` | 0 failed；新增后端行为有正例、边界、失败和越权用例 |
+| `docker exec limedia-rust-dev sh -c 'cd /work && cargo check --target wasm32-unknown-unknown && trunk build'` | wasm 编译 0 error；trunk 构建成功 |
+| `python3 scripts/check_frontend_sources.py` | 设计令牌只存在于 `index.css`，文案只来自 `brand.ts`/`brand.rs` |
+| `docker compose config --quiet` | 默认与 `--profile split` 配置均可解析 |
 | `git diff --check` | 无 whitespace error |
 | `cd frontend && npx playwright test` | 全部通过；失败用例必须先修复或说明为无效需求后删除，不得长期跳过 |
 
 最低自动化覆盖：
 
-- 后端：公开可见性、接口瘦身、安全头、鉴权、状态一致性、派生失败、预热状态、资源边界、配置校验和 Compose 契约。
+- 后端：公开可见性、接口瘦身、安全头、鉴权、状态一致性、派生失败、预热状态、资源边界、配置校验、405/404 方法与路径契约和 Compose 契约。
 - 前端：骨架、懒加载、队列、滚动追加、到底、筛选、查看器、视频状态、减动效、四视口、无横向溢出、后台关键工作流。
 - 新增 UI 状态必须有自动化断言；新增接口必须有后端契约测试；新增缓存或限流必须有命中/绕过/过期测试。
 
@@ -151,10 +155,10 @@
 ### 必过项
 
 1. 本地全量门禁通过。
-2. Compose 构建或重建后 `backend`、`db`、`redis`、`nginx` 全部 healthy。
-3. Nginx 唯一入口返回首页 200，`/healthz` 正常，静态资源缓存头正确。
+2. Compose 构建或重建后 `backend`、`db`、`redis`（split profile 另含 `nginx`）全部 healthy。
+3. 单容器入口返回首页 200，`/api/v1/healthz` 正常，静态资源缓存头正确。
 4. 公开首页冷缓存与热缓存都完成验收：首屏无空洞，失败可重试，预热状态收敛。
-5. 照片和视频样本在真实 Nginx 链路可打开；视频播放、Range、失败回退和重试通过。
+5. 照片和视频样本在真实部署链路可打开；视频播放、Range、失败回退和重试通过。
 6. 后台登录、扫描/预热入口、状态刷新、批量操作和清理确认通过。
 7. 明暗主题、375 / 768 / 1280 / 1600 视口、减动效、键盘路径和读屏语义通过。
 8. 公开响应无内部路径、凭证、任务 ID、堆栈或非公开资源信息。
@@ -166,7 +170,7 @@
 交付说明至少记录：
 
 - 执行命令、日期、分支、提交或运行镜像。
-- 后端 pytest、前端 typecheck/build、Playwright 的最终计数。
+- Go 测试、Rust/trunk 构建、Playwright 的最终计数。
 - 四视口截图或可复核链接。
 - 真实容器健康、公开预热状态、资源峰值、OOM 和临时文件结果。
 - 已知 P2 项、不解决的问题及后续跟踪入口；P0/P1 不允许遗留。
@@ -181,7 +185,7 @@
 
 ## 11. 公开站体验优化方案
 
-> 状态：已实施。O1–O6 均已落地并有自动化用例：O1 列表缓存头契约（`tests/test_public_cache_headers.py`，无会话 `public, max-age=15, stale-while-revalidate=30`、带会话不缓存）；O2 查看器 chunk 预取（`frontend/tests/viewer-prefetch.spec.ts`）；O3 预热轮询终态收敛、可见性刷新与用户视角文案（`brand.copy.preheatStatus*`）；O4 底部三态 `CanvasFooterState`；O5 统一媒体状态机（`frontend/src/lib/media-state.ts` + `media-state.spec.ts`）；O6 公开 DTO 瘦身（公开接口全部走 `MemorySummaryRead`，诊断字段仅保留在管理端 `to_memory_read`）。以下方案不降低第 1–10 节标准；每项进入实施时先补契约/自动化用例，再改动 UI 或 API。一次任务只做一个优化项，避免回滚范围扩大。
+> 状态：已实施。O1–O6 均已落地并有自动化用例：O1 列表缓存头契约（Go `internal/api` 测试覆盖无会话 `public, max-age=15, stale-while-revalidate=30`、带会话不缓存）；O2 查看器 chunk 预取（`frontend/tests/viewer-prefetch.spec.ts`）；O3 预热轮询终态收敛、可见性刷新与用户视角文案（`brand.copy.preheatStatus*`）；O4 底部三态 `CanvasFooterState`；O5 统一媒体状态机（`frontend/src/lib/media-state.rs` + `media-state.spec.ts`）；O6 公开 DTO 瘦身（公开接口全部走 `MemorySummary`，诊断字段仅保留在管理端）。以下方案不降低第 1–10 节标准；每项进入实施时先补契约/自动化用例，再改动 UI 或 API。一次任务只做一个优化项，避免回滚范围扩大。
 
 ### O1：列表响应与访问链路提速
 
@@ -189,15 +193,15 @@
 
 **方案**
 
-- `GET /api/v1/memories` 返回明确的短时缓存语义，并与 Nginx 15 秒网关缓存对齐；候选语义为 `public, max-age=15, stale-while-revalidate=30`。
-- 带管理会话或凭证的请求不得共享缓存；服务端或网关必须回退为 `no-store` / `private`，Nginx 继续按现有 cookie/authorization 判断绕过。
+- `GET /api/v1/memories` 返回明确的短时缓存语义，并与进程内 15 秒公开读缓存（split profile 下另有 nginx 网关缓存）对齐；候选语义为 `public, max-age=15, stale-while-revalidate=30`。
+- 带管理会话或凭证的请求不得共享缓存；服务端必须回退为 `no-store`，Nginx（split profile）继续按 cookie/authorization 判断绕过。
 - 推荐、预热状态、直链、播放和流式回退保持 `no-store`，不参与短时公开缓存。
 - 缓存键保留 `kind`、`page`、`page_size` 等查询参数；发布、下架或清理后不需要立即失效，但必须在 15 秒内自然收敛。
 
 **通过标准**
 
 - 后端契约测试断言无会话请求的缓存头、带会话请求的不缓存行为。
-- Nginx 契约测试确认网关缓存键、`proxy_cache_bypass` / `proxy_no_cache` 与后端语义一致。
+- 进程内缓存契约测试（Go `internal/api`）确认缓存键与绕过条件；split profile 下另有 nginx 配置检查保证语义一致。
 - Playwright 验证首页首次加载、筛选变更和二次加载正常；不出现跨筛选错误复用。
 
 ### O2：查看器 chunk 预取
@@ -284,14 +288,14 @@
 
 - 后端测试扫描公开列表、详情、推荐和计数响应，确认没有远端路径、远端 ID、失败原因或内部任务字段。
 - 管理端测试确认诊断字段仍然完整。
-- 前端 typecheck、build 和查看器/下载/状态机用例通过。
+- 前端 wasm 编译、trunk 构建和查看器/下载/状态机用例通过。
 
 ### 交付顺序与总门禁
 
 1. O4 底部三态提示：纯前端状态与文案，风险最低，先建立用户可感知的完整浏览闭环。
 2. O5 统一媒体状态机：先抽公共状态模型，再迁移卡片和查看器；不和视觉大改混在一个提交。
 3. O3 预热状态轮询收敛：补前端网络断言和公开文案验收。
-4. O1 列表短缓存：先契约测试，再改服务端/Nginx；交付前必须验证带会话请求不共享缓存。
+4. O1 列表短缓存：先契约测试，再改服务端（split 时同步 nginx）；交付前必须验证带会话请求不共享缓存。
 5. O2 查看器预取：在功能稳定后做传输优化，避免掩盖状态机问题。
 6. O6 公开 DTO 瘦身：最后做契约裁剪，确保前端已不依赖内部字段。
 

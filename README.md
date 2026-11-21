@@ -17,7 +17,7 @@
 cp .env.example .env
 ```
 
-镜像和构建依赖默认使用中科大源；可在 `.env` 中调整 `IMAGE_REGISTRY`、`APT_MIRROR`、`PIP_INDEX_URL` 和 `NPM_CONFIG_REGISTRY`。
+镜像与 Alpine 软件源默认走 `docker.m.daocloud.io` 与 USTC；可在 `.env` 中调整 `IMAGE_REGISTRY`、`APT_MIRROR` 和 `GOPROXY`。
 
 2. 启动服务：
 
@@ -25,23 +25,23 @@ cp .env.example .env
 docker compose up --build
 ```
 
-3. 打开唯一 Nginx 入口：
+3. 打开唯一入口：
 
 ```text
 http://localhost:8080
 ```
 
-默认部署中只有 Nginx 暴露宿主端口；backend、PostgreSQL 和 Redis 只在 Compose 网络内访问。API 文档默认由 Nginx 关闭；如需调试，可在 backend 容器内访问 `http://127.0.0.1:8000/api/docs`。
+默认部署只有一个 `backend` 容器：Go 二进制同时托管内嵌前端与 `/api`，PostgreSQL 与 Redis 只在 Compose 网络内访问。仓库不再提供 API 文档路由（`/api/docs` 已随 FastAPI 移除），排障使用 `/api/v1/healthz` 与 `/api/v1/readyz`。
 
-生产环境 TLS 仍由同一 Nginx 终止。需要证书挂载、`HTTPS_PORT` 映射和 443 监听配置时，先提供 Compose 覆盖文件，再在部署环境中启用：
+TLS 由外部反向代理或负载均衡终止。需要 nginx 网关缓存时启用 split profile（宿主端口 `SPLIT_HTTP_PORT`，默认 8081）：
 
-```text
-HTTPS_PORT=443
+```bash
+docker compose --profile split up -d
 ```
 
 ### 低配生产机拉取部署
 
-`backend`、`nginx` 与 `backend-test` 同时声明了 `image` 与 `build`：本机 `--build` 构建后自动打上仓库标签；低配生产机无需构建，直接拉取镜像仓库（默认 `uhub.service.ucloud.cn/li-media/`）：
+`backend`（以及 split profile 的 `nginx`）同时声明了 `image` 与 `build`：本机 `--build` 构建后自动打上仓库标签；低配生产机无需构建，直接拉取镜像仓库（默认 `uhub.service.ucloud.cn/li-media/`）：
 
 ```bash
 docker compose pull
@@ -67,32 +67,23 @@ go test ./...
 
 ### 质量门禁
 
-一键运行后端测试、前端构建、设计令牌/品牌来源检查和 Playwright 冒烟测试:
+一键运行 compose 语法、空白错误、设计令牌/品牌来源、容器内 Go 测试与 Rust wasm 检查：
 
 ```bash
-# 后端
-cd backend && go test ./...
-# 前端
-cd frontend && trunk build
-# 设计令牌与品牌来源
-python3 scripts/check_frontend_sources.py
-# e2e(需 trunk serve 与 Go server 运行中)
-cd frontend && PLAYWRIGHT_BASE_URL=http://127.0.0.1:14173 npx playwright test
+python3 scripts/check.py          # 常规门禁(不含浏览器套件)
+python3 scripts/check.py --e2e    # 追加 Playwright 全量 e2e(需运行中的栈)
 ```
 
-在提交或部署前校验单入口端口边界；`--quiet` 只输出错误：
+分项命令：
 
 ```bash
+docker exec limedia-go-dev sh -c 'cd /work && go build ./... && go vet ./... && go test ./... -count=1'
+docker exec limedia-rust-dev sh -c 'cd /work && cargo check --target wasm32-unknown-unknown && trunk build'
+python3 scripts/check_frontend_sources.py
 docker compose config --quiet
 ```
 
-临时跳过浏览器测试时使用：
-
-```bash
-python3 scripts/check.py --skip-e2e
-```
-
-Playwright 默认使用本机 Chrome；已启动的前端可通过 `PLAYWRIGHT_BASE_URL` 复用。若要启用 Git 提交钩子，安装 [pre-commit](https://pre-commit.com/) 后执行：
+`PLAYWRIGHT_BASE_URL` 可复用已启动的实例（单容器栈 `http://127.0.0.1:8080`，trunk 开发服务 `http://127.0.0.1:14173`）。若要启用 Git 提交钩子，安装 [pre-commit](https://pre-commit.com/) 后执行：
 
 ```bash
 pre-commit install
@@ -117,7 +108,7 @@ cd frontend && PLAYWRIGHT_BASE_URL=http://127.0.0.1:14173 npx playwright test
 API 契约基线见 [docs/contract-samples/](docs/contract-samples/README.md),重写前后
 性能对比见 [docs/rewrite-performance.md](docs/rewrite-performance.md)。
 
-前端 e2e 指向 Docker 栈（nginx 唯一入口，`docker compose up -d --build` 且 healthy 后）：
+前端 e2e 指向单容器栈（`docker compose up -d --build` 且 healthy 后）：
 
 ```bash
 PLAYWRIGHT_BASE_URL=http://localhost:8080 npx playwright test
@@ -125,30 +116,22 @@ PLAYWRIGHT_BASE_URL=http://localhost:8080 npx playwright test
 
 `frontend/tests/docker-stack.spec.ts` 是不打 mock 的真栈冒烟，只在设置 `PLAYWRIGHT_BASE_URL` 时执行。
 
-预热端到端基准（本地源，无百度凭据可跑；结果与历史对比见 `docs/preheat-baseline.md`）：
-
-```bash
-docker compose run --rm --no-deps \
-  -v "$(pwd)/scripts:/mnt/scripts:ro" \
-  backend python /mnt/scripts/preheat_baseline.py \
-  --photos 24 --videos 6 --sizes 240,480 --concurrency 2
-```
-
-> 国内网络下 USTC 镜像源不稳定时，可用官方源构建：
-> `IMAGE_REGISTRY=docker.io/library/ APT_MIRROR=http://deb.debian.org PIP_INDEX_URL=https://pypi.org/simple docker compose build backend`
+> 镜像源不可达时，可临时改用官方源构建：
+> `IMAGE_REGISTRY=docker.io/library/ docker compose build backend`
 
 ## 目录结构
 
 ```text
 backend/
   cmd/server/          服务入口(配置→连接池→迁移→HTTP)
-  internal/{config,db,models,repo,services,api}/  分层实现
+  internal/{api,config,db,httpx,models,repo,services,web}/  分层实现
   internal/db/migrations/  golang-migrate 内嵌基线
-  tests → Go 测试与包内 *_test.go 等价覆盖
+  internal/web/dist/   构建期嵌入的前端产物(仓库仅 .gitkeep 占位)
 frontend/
   src/                 Leptos 前端(.rs;brand.ts 为文案事实来源)
   src/index.css        视觉令牌唯一来源
   tests/               Playwright e2e(TypeScript)
+scripts/               质量门禁/契约抓取与 diff/性能基线
 design-system/limedia/ 项目级设计方案
 packages/li-design/    设计模板子模块
 CHECKLIST.md          当前版本验收基线
@@ -161,7 +144,7 @@ CHECKLIST.md          当前版本验收基线
 - 公开列表和详情返回瘦身 DTO，只包含首页卡片和查看器需要的字段。
 - 派生图矩阵为 240 / 480 / 768 / 1280px；首页按列宽和 DPR 选择最小可用尺寸，查看器移动端用 480px、桌面端用 1280px。
 - 视频仅在用户触发播放后经服务端流代理播放，支持 Range 拖拽与并发治理；`/api/v1/memories/:id/direct-url` 的直链签发与短链缓存能力保留，但前端当前不消费（e2e 契约固化“播放走服务端流、不发直链请求”）。
-- 管理清理会移除本地索引、派生缓存、临时文件和 Nginx 派生图缓存，但不修改百度网盘资源。
+- 管理清理会移除本地索引、派生缓存、临时文件和网关派生图缓存（split profile 时），但不修改百度网盘资源。
 - 扫描、直链探测、单帧派生和流回退分别受独立并发与队列上限治理；重复派生请求会合并，队列满时返回 `429`。运维指标位于 `GET /api/v1/admin/tasks/metrics`。
 - 管理后台会汇总显示后端栈（API / 数据库 / Redis / 任务治理）、远端存储索引状态以及内存 / 线程 / PID / 临时文件 / 磁盘 / 队列资源状态；数据来自 `GET /api/v1/admin/system/status`。
 - 公开首页读取 `GET /api/v1/memories/preheat-status` 的服务端预热摘要；访客只能看到运行中、未预热、就绪、降级和安全的已处理 / 总数进度，看不到任务 ID、远端路径或失败原因。
@@ -171,15 +154,15 @@ CHECKLIST.md          当前版本验收基线
 - 查看器在 zoom≤1 时支持横向滑动翻页（纵向与短距拖拽不触发，拖拽跟手、减动效下直接阈值翻页）；推进到已加载末尾前 3 项自动续载下一页，位置计数旁短暂提示“正在加载更多回忆”，可一路翻到库末尾。
 - 查看器左下显示「标题 · 地点 · 日期」元信息行（空段自动省略、全空不渲染）；动作区提供复制链接（clipboard API 优先、execCommand 回退）并短暂反馈成功/失败；视频播放时左上显示时长与分辨率徽章。
 - 触屏（hover: none）卡片常驻单行弱化「地点 · 日期」，标题只在查看器与桌面 hover 出现；移动端（≤768px）hero 精选全屏化（100svh，负边距抵消页眉边框贴视口顶），精选池比例过滤按同口径换算，无贴合图像时按可见占比降序取前 5。
-- 后台资源状态额外显示文件系统总 / 已用 / 可用空间，以及派生图、临时文件和 Nginx 缓存的文件数与字节数；目录扫描有数量与超时边界，不可读路径会显示不可用而不是误导性的零。
+- 后台资源状态额外显示文件系统总 / 已用 / 可用空间，以及派生图、临时文件和网关缓存（split profile）的文件数与字节数；目录扫描有数量与超时边界，不可读路径会显示不可用而不是误导性的零。
 - 后台媒体工作台采用分区卡片布局；筛选、当前范围操作、选中记录操作和横向滚动表格分离，窄屏时字段自动换行且不重叠。
 - 前端对可见缩略图使用全局加载队列，最多同时发起 2 个图像请求；查看器大图高优先级，媒体切换或关闭时取消排队请求。
-- Compose 对 backend / PostgreSQL / Redis / Nginx 设置 CPU、内存、PID 和日志轮转边界；backend 内存硬上限为 256m。远程首帧源读取、临时目录配额和 FFmpeg 子进程资源也有独立保护。基线见 [docs/resource-baseline.md](docs/resource-baseline.md)。
+- Compose 对 backend / PostgreSQL / Redis（以及可选的 split profile nginx）设置 CPU、内存、PID 和日志轮转边界；backend 内存硬上限为 256m。远程首帧源读取、临时目录配额和 FFmpeg 子进程资源也有独立保护。基线见 [docs/resource-baseline.md](docs/resource-baseline.md)。
 - 预热、派生、直链探测、扫描、流回退、临时文件数量和临时磁盘配额都在启动时从环境变量读取，并带上下限校验；`queue_limit=0` 表示不排队，临时文件/配额为 0 表示关闭。配置不会热更新，修改后需要重启 backend。扩大并发不会突破容器 `mem_limit` / `pids_limit`，可能增加派生子进程的峰值资源，务必重新运行资源基线。
 
 ## 当前进度
 
-- 单网关传输：同一域名和端口提供 SPA、API、健康检查和公开派生图；Nginx 不缓存短时直链或带凭证响应。
+- 单进程传输：同一端口提供 SPA、API、健康检查和公开派生图；公开读接口使用进程内 15s 短缓存，不缓存短时直链或带凭证响应。
 - Remote-First：百度网盘只作为存储源；服务端保存扫描任务、远程索引和可观测状态，不保存媒体本体。
 - 已完成：公开瘦身列表/详情、`/api/v1/memories/recommend` 每次访问随机推荐、类型筛选、无限分段加载和 URL 驱动查看器。
 - 已完成：递归分页扫描、增量去重、扫描检查点、限流退避、元数据回填、远程缩略图代理、按需媒体流转发和 Range 播放。
@@ -222,18 +205,20 @@ CHECKLIST.md          当前版本验收基线
 | `unsupported` | AVI、FLV、Matroska/MKV、MOV、MPEG-TS、WebM、WMV，或 HEVC/H.265/HVC1、MPEG-4 Part 2、MPEG-2、ProRes、VP8/VP9、AV1 | 保守矩阵按“无浏览器专属配置可播放”判定；Safari HEVC 等能力必须由后续客户端能力查询细化，不能默认放宽全站谓词。 |
 | `unknown` | 容器/编码/音轨证据不足，或受控探测数据不足 | 默认不进入公开画布和推荐；只在管理员触发探测时使用远程前缀和 `ffprobe`，不完整下载源媒体，也不转码。 |
 
-兼容状态变化会同步刷新计数、列表、详情、推荐和 Nginx 代理缓存。探测结果不保存源媒体副本、完整直链、Token 或 Cookie。
+兼容状态变化会同步刷新计数、列表、详情、推荐和公开读缓存（split profile 下另有 nginx 缓存）。探测结果不保存源媒体副本、完整直链、Token 或 Cookie。
 
 ## 管理入口
 
 1. 在 `.env` 中设置：
 
 ```bash
-ADMIN_TOKEN=change-me
+ADMIN_TOKEN=$(openssl rand -hex 32)
 BAIDU_OAUTH_CLIENT_ID=your-app-key
 BAIDU_OAUTH_CLIENT_SECRET=your-secret-key
 BAIDU_OAUTH_REDIRECT_URI=http://127.0.0.1:8080/admin/baidu/callback
 ```
+
+`ADMIN_TOKEN` 留空时管理端始终拒绝登录；示例值 `change-me` 会被启动校验直接拒绝。
 
 2. 在百度网盘开放平台把回调地址配置为同一值，并将媒体放入 `BAIDU_SYNC_DIR`。
 

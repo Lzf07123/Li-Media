@@ -66,11 +66,8 @@
 ## 验证
 
 ```bash
-cd frontend
-npm run typecheck
-npm run build
-cd ../backend
-../.venv/bin/pytest -q
+python3 scripts/check.py          # compose/空白/令牌 + 容器内 Go 测试 + Rust wasm 构建
+python3 scripts/check.py --e2e    # 追加 Playwright（栈运行中）
 ```
 
 上线前还需检查：明暗正文 AA、320/390/768/769/1280/1600 无横向溢出、焦点可见、空态/加载/失败/404、发布后公开列表即时展示、下架后公开页隐藏、Compose 服务健康。

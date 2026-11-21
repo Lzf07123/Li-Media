@@ -10,9 +10,10 @@
 
 ## 技术约定
 
-- 后端使用 Go 1.26(标准库 net/http + pgx/v5 + golang-migrate 内嵌迁移),不再使用 FastAPI;安全扫描(govulncheck)必须清零。
+- 后端使用 Go 1.26(标准库 net/http + pgx/v5 + golang-migrate 内嵌迁移),不再使用 FastAPI;Python/FastAPI 实现与 pytest 套件已从仓库移除;安全扫描(govulncheck)必须清零。
 - 部署默认单容器:前端 trunk 产物经 `//go:embed` 进入 Go 二进制(`Dockerfile.single`),nginx 反代为可选 split profile。
-- 前端使用 Leptos 0.8(Rust→WASM,trunk 构建),不再使用 React/Vite;`frontend/src` 下 `.rs` 为源,React 遗留文件在迁移完成后清理。
+- 前端使用 Leptos 0.8(Rust→WASM,trunk 构建),不再使用 React/Vite;`frontend/src` 下 `.rs` 为源。
+- 管理审计与登录限流的客户端地址只在直连对端命中 `TRUSTED_PROXY_CIDRS` 时才采信 `X-Forwarded-For`;默认空表示从不采信。
 - 网盘凭据、下载链接和用户数据不写入仓库,只放 `.env` 或服务配置。
 - 内容类型只做 `photo` 与 `video`,不做电影、剧集、动漫、纪录片或音乐 MV。
 - 后端公开数据只返回 `published` 状态的回忆内容。
@@ -35,6 +36,9 @@ docker network create --subnet 172.30.0.0/24 --gateway 172.30.0.1 limedia-dev
 ## 常用验证
 
 ```bash
+# 一键门禁(compose/空白/设计令牌 + 容器内 Go 测试 + Rust wasm 构建)
+python3 scripts/check.py
+
 # 后端
 docker exec limedia-go-dev sh -c 'cd /work && go build ./... && go vet ./... && go test ./... -count=1'
 

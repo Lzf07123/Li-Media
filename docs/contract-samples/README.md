@@ -1,5 +1,10 @@
 # M0 重构基线(golang/leptos 重写前)
 
+> **历史基线说明（2026-11-22）**：FastAPI 实现与其 pytest 套件已随迁移完成从仓库移除。
+> `fastapi/` 样本仍是公开 API 的行为契约基准，`go-samples/` 与 `go-admin/` 为 Go 实现
+> 抓取的对照样本；下文“复现环境”中的 Python 步骤仅作历史记录。当前契约验证请用
+> `scripts/contract-capture.sh` 对 Go 服务抓取后运行 `scripts/contract-diff.py`。
+
 记录日期:2026-11-20。分支:`codex/go-leptos-rewrite`。
 
 ## 现有测试基线(全绿)
