@@ -141,18 +141,29 @@ func (h *MemoriesHandler) List(w http.ResponseWriter, r *http.Request) {
 		h.validationError(w, "keyword", "String should have at most 100 characters", keyword)
 		return
 	}
-	page, err := strconv.Atoi(q.Get("page"))
-	if err != nil || page < 1 {
-		h.validationError(w, "page", "Input should be greater than or equal to 1", q.Get("page"))
-		return
+	// 默认值与 FastAPI Query(default=1 / 24)一致:缺省参数必须返回首页,
+	// 而不是 422(契约基线样本只覆盖显式 page=1,但语义上是默认值)。
+	page := 1
+	if raw := q.Get("page"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 {
+			h.validationError(w, "page", "Input should be greater than or equal to 1", raw)
+			return
+		}
+		page = parsed
 	}
 	pageSize := 24
 	if raw := q.Get("page_size"); raw != "" {
-		pageSize, err = strconv.Atoi(raw)
-		if err != nil || pageSize < 1 || pageSize > 100 {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 {
 			h.validationError(w, "page_size", "Input should be greater than or equal to 1", raw)
 			return
 		}
+		if parsed > 100 {
+			h.validationError(w, "page_size", "Input should be less than or equal to 100", raw)
+			return
+		}
+		pageSize = parsed
 	}
 	sort := q.Get("sort")
 	if sort == "" {
