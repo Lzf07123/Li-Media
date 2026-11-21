@@ -5,13 +5,15 @@
 #   docker build -f Dockerfile.single -t limedia .
 #
 # 分层策略:rust 依赖与 Go 模块各自缓存,源码改动只失效最后一层。
+# 基础镜像统一拼 IMAGE_REGISTRY 前缀(留空则回退 Docker Hub);
+# RUST_IMAGE / GO_IMAGE / RUN_IMAGE 只写裸仓库名与标签。
 ARG IMAGE_REGISTRY=docker.m.daocloud.io/library/
 ARG RUST_IMAGE=rust:1-slim
 ARG GO_IMAGE=golang:1.26-alpine
 ARG RUN_IMAGE=alpine:3.20
 
 # ---- 1. 前端 ----
-FROM ${RUST_IMAGE} AS web
+FROM ${IMAGE_REGISTRY}${RUST_IMAGE} AS web
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
 RUN rustup target add wasm32-unknown-unknown \
@@ -26,7 +28,7 @@ COPY frontend/ ./
 RUN trunk build --release || (sleep 5 && trunk build --release)
 
 # ---- 2. 后端(嵌入前端产物) ----
-FROM ${GO_IMAGE} AS api
+FROM ${IMAGE_REGISTRY}${GO_IMAGE} AS api
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=$GOPROXY CGO_ENABLED=0
 WORKDIR /app
@@ -39,7 +41,7 @@ COPY --from=web /src/dist/ ./internal/web/dist/
 RUN go build -trimpath -ldflags="-s -w" -o /out/limedia ./cmd/server
 
 # ---- 3. 运行时 ----
-FROM ${RUN_IMAGE} AS runtime
+FROM ${IMAGE_REGISTRY}${RUN_IMAGE} AS runtime
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then sed -i "s|https://dl-cdn.alpinelinux.org|${APT_MIRROR}|g" /etc/apk/repositories; fi \
     && apk add --no-cache ffmpeg ca-certificates tzdata \

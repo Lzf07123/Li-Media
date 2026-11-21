@@ -9,6 +9,7 @@ services:
         IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}
         RUST_IMAGE: ${RUST_IMAGE:-rust:1-slim}
         GO_IMAGE: ${GO_IMAGE:-golang:1.26-alpine}
+        RUN_IMAGE: ${RUN_IMAGE:-alpine:3.20}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         APT_MIRROR: ${APT_MIRROR:-}
     restart: unless-stopped
