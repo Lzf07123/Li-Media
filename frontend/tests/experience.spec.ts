@@ -822,6 +822,9 @@ test("infinite canvas keeps content when appending fails", async ({ page }) => {
   });
 
   await page.goto("/");
+  // wasm 挂载与首屏分页完成后再滚动:否则 scrollTo 落在空文档上,
+  // 首屏渲染后不会自动触底,后续分页永远不会发起(测试竞态)。
+  await expect(page.locator(".masonry .post-card")).toHaveCount(18);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect(page.locator(".masonry .post-card")).toHaveCount(36);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
