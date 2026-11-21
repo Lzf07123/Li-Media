@@ -9,7 +9,8 @@
 
 ## 技术栈与路由
 
-- React 19 + TypeScript + Vite 7 + Tailwind CSS 4 + React Router 7 + lucide-react。
+- Leptos 0.8(Rust→WASM)+ trunk + Tailwind CSS 4;图标为内联 SVG(原 lucide-react 图标集等价迁移)。
+- 后端:Go 1.23(net/http + pgx/v5),内嵌 golang-migrate 迁移;原 FastAPI 已退役。
 - 路由：`/`（回忆库和 `?viewer=<memoryId>` 查看器）、`/?view=space`（空间画廊 · 时间回廊，`?viewer=` 查看器在其上可用）、`/memories/:memoryId`（兼容重定向到查看器）、`/admin`（后台）、`*`（404）。
 - API：`/api/v1/memories`、`/api/v1/memories/recommend`、`/api/v1/memories/:id`、`/api/v1/memories/:id/thumbnail`、`/api/v1/memories/:id/direct-url`、`/api/v1/memories/:id/stream`、`/api/v1/admin/memories`、`/api/v1/admin/cleanup`。公开列表与推荐只返回 **240px 派生图就绪**的内容（未预热不做占位兜底，直接不出现）；详情/直链/流不受此过滤，查看器直链仍可达。空间画廊用 `sort=captured_desc` 单向分页，从最新端向过去推进。
 

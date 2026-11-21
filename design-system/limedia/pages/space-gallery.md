@@ -171,16 +171,16 @@ space: {
 
 ## 10. 组件与文件落点
 
-| 文件 | 职责 |
+| 文件(Rust/Leptos 实现) | 职责 |
 | --- | --- |
-| `frontend/src/components/space/SpaceGallery.tsx` | 舞台 + 走廊 + 操作栏；`React.lazy` 加载（同 `MediaViewer` 惯例） |
-| `frontend/src/components/space/SpacePane.tsx` | 单 pane（memo 化，按 `memory.width/height` 算几何，双档图源交叉淡入） |
-| `frontend/src/components/space/use-space-camera.ts` | rAF spring 相机状态机 + 输入绑定（wheel/pointer/keyboard 三入口解耦） |
-| `frontend/src/pages/HomePage.tsx` | 读 `view` 参数、条件渲染、切换钮；网格分支不动 |
-| `frontend/src/index.css` | `@layer components` 内 `.space-*` 类；响应式覆盖放层外（沿用 MASTER 口径） |
-| `frontend/src/lib/brand.ts` | `space` 文案段 |
+| `frontend/src/components/space/space_gallery.rs` | 舞台 + 走廊 + 操作栏；数据流自持(captured_desc 分页) |
+| `frontend/src/components/space/space_pane.rs` | 单 pane(按 `memory.width/height` 算几何,双档图源交叉淡入) |
+| `frontend/src/components/space/camera.rs` | wasm 内 rAF spring 相机状态机 + 输入绑定(wheel/pointer/keyboard 三入口解耦),直写 transform/opacity |
+| `frontend/src/pages/home.rs` | 读 `view` 参数、条件渲染、切换钮;网格分支不动 |
+| `frontend/src/index.css` | `@layer components` 内 `.space-*` 类;响应式覆盖放层外(沿用 MASTER 口径) |
+| `frontend/src/lib/brand.ts` | `space` 文案段(生成 brand.rs) |
 
-不改动：`App.tsx` 路由、`MediaViewer`、`HeroFeature`、后端（`sort=captured_desc` 已支持）。
+不改动:路由(`app.rs`)、`media_viewer.rs`、`hero_feature.rs`、后端(`sort=captured_desc` 已支持)。
 
 ## 11. 分期实施
 

@@ -1,11 +1,11 @@
 # Li&Media
 
-> 基于百度网盘存储的公开回忆库，用于展示照片和视频回忆。当前仓库包含 FastAPI 后端、React 前端、项目级设计系统、数据库迁移和 Docker Compose 编排。
+> 基于百度网盘存储的公开回忆库，用于展示照片和视频回忆。当前仓库包含 Go 后端、Leptos(Rust→WASM)前端、项目级设计系统、内嵌数据库迁移和 Docker Compose 编排。
 
 ## 技术栈
 
-- 后端：FastAPI + SQLAlchemy + Alembic + PostgreSQL + Redis
-- 前端：React 19 + TypeScript + Vite + Tailwind CSS 4
+- 后端：Go 1.23(标准库 net/http)+ pgx/v5 + golang-migrate 内嵌迁移 + PostgreSQL + Redis
+- 前端：Leptos 0.8(Rust→WASM)+ trunk + Tailwind CSS 4
 - 设计：首次设计以 [Li&Design](packages/li-design/README.md) 为参考，实例化为项目内 [design-system/limedia](design-system/limedia/BRAND.md)；运行时只使用 `frontend/src/index.css` 与 `frontend/src/lib/brand.ts`，不依赖模板仓库。
 - 部署：Docker Compose + Nginx
 
@@ -54,24 +54,30 @@ docker compose up -d
 
 ```bash
 cd frontend
-npm run dev
-npm run typecheck
-npm run build
+trunk serve          # 开发服务(:5173,/api 代理到 127.0.0.1:8000)
+trunk build --release
 npm run test:e2e
 ```
 
 ```bash
 cd backend
-uvicorn app.main:app --reload
-alembic upgrade head
+go run ./cmd/server   # 启动即自动迁移到最新版本
+go test ./...
 ```
 
 ### 质量门禁
 
-一键运行后端测试、前端类型检查、生产构建、设计令牌/品牌来源检查和 Playwright 冒烟测试：
+一键运行后端测试、前端构建、设计令牌/品牌来源检查和 Playwright 冒烟测试:
 
 ```bash
-python3 scripts/check.py
+# 后端
+cd backend && go test ./...
+# 前端
+cd frontend && trunk build
+# 设计令牌与品牌来源
+python3 scripts/check_frontend_sources.py
+# e2e(需 trunk serve 与 Go server 运行中)
+cd frontend && PLAYWRIGHT_BASE_URL=http://127.0.0.1:14173 npx playwright test
 ```
 
 在提交或部署前校验单入口端口边界；`--quiet` 只输出错误：
@@ -94,18 +100,22 @@ pre-commit install
 
 ### 容器内开发与测试
 
-后端测试镜像（`backend/Dockerfile` 的 `test` target，在 runtime 之上补装 pytest）通过 dev profile 提供，生产栈不受影响：
+开发测试全程容器化(宿主无需安装 Go/Rust 工具链),拓扑见 [AGENTS.md](AGENTS.md) 的
+「开发环境」:
 
 ```bash
-# 构建测试镜像并跑容器内全量 pytest
-docker compose --profile dev build backend-test
-docker compose --profile dev run --rm backend-test
+# Go 测试(容器内)
+docker exec limedia-go-dev sh -c 'cd /work && go test ./... -count=1'
 
-# 指定用例
-docker compose --profile dev run --rm backend-test pytest tests/test_thumbnail_preheat.py -q
+# 前端构建(容器内,wasm32 target + trunk)
+docker exec limedia-rust-dev sh -c 'cd /work && trunk build --release'
+
+# e2e(宿主,需 trunk serve 与 Go server 运行)
+cd frontend && PLAYWRIGHT_BASE_URL=http://127.0.0.1:14173 npx playwright test
 ```
 
-容器内契约测试（compose/nginx 清单）按既有 skipif 跳过，仍以仓库根运行的 `pytest` 与 `scripts/check.py` 为准。
+API 契约基线见 [docs/contract-samples/](docs/contract-samples/README.md),重写前后
+性能对比见 [docs/rewrite-performance.md](docs/rewrite-performance.md)。
 
 前端 e2e 指向 Docker 栈（nginx 唯一入口，`docker compose up -d --build` 且 healthy 后）：
 
@@ -131,11 +141,14 @@ docker compose run --rm --no-deps \
 
 ```text
 backend/
-  app/                 FastAPI 应用
-  alembic/             数据库迁移
-  tests/               后端测试
+  cmd/server/          服务入口(配置→连接池→迁移→HTTP)
+  internal/{config,db,models,repo,services,api}/  分层实现
+  internal/db/migrations/  golang-migrate 内嵌基线
+  tests → Go 测试与包内 *_test.go 等价覆盖
 frontend/
-  src/                 React 前端
+  src/                 Leptos 前端(.rs;brand.ts 为文案事实来源)
+  src/index.css        视觉令牌唯一来源
+  tests/               Playwright e2e(TypeScript)
 design-system/limedia/ 项目级设计方案
 packages/li-design/    设计模板子模块
 CHECKLIST.md          当前版本验收基线
