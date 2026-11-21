@@ -1,6 +1,6 @@
 // MemoryCard(逐语义对齐 components/MemoryCard.tsx):IntersectionObserver
 // 240px 预载带 + 滚出滞回带挂起 + 队列加载缩略图 + 自动退避重试 + 交错入场。
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use leptos::prelude::*;
@@ -49,6 +49,7 @@ pub fn MemoryCard(
     /// 画布交错入场的全局序号:映射为 --card-enter-index,延迟上限由 CSS 收口。
     #[prop(default = 0)] enter_index: u32,
 ) -> impl IntoView {
+
     let media_state = RwSignal::new(MediaLifecycleMap::new());
     let thumbnail_failed = RwSignal::new(false);
     let natural_size: RwSignal<Option<(f64, f64)>> = RwSignal::new(None);
@@ -185,14 +186,25 @@ pub fn MemoryCard(
             .get_bounding_client_rect();
         let top = rect.top();
         let bottom = rect.bottom();
-        is_in_view.set(bottom > -PRELOAD_BAND_PX && top < inner_height + PRELOAD_BAND_PX);
-        load_suspended.set(bottom < -SUSPEND_MARGIN_PX || top > inner_height + SUSPEND_MARGIN_PX);
+        // 仅在值变化时写入:Leptos 的 set 无相等性短路,无条件 set 会让
+        // 队列加载 effect 每次滚动帧都 abort+重新入队(React setState
+        // 对相同值 bail-out 的对应语义)。
+        let next_in_view = bottom > -PRELOAD_BAND_PX && top < inner_height + PRELOAD_BAND_PX;
+        if is_in_view.get_untracked() != next_in_view {
+            is_in_view.set(next_in_view);
+        }
+        let next_suspended =
+            bottom < -SUSPEND_MARGIN_PX || top > inner_height + SUSPEND_MARGIN_PX;
+        if load_suspended.get_untracked() != next_suspended {
+            load_suspended.set(next_suspended);
+        }
     });
 
     // 队列加载缩略图:依赖 isIntersecting / loadSuspended / retryAttempt;
     // effect 重跑前 cleanup 先 abort 队列任务释放槽位。
     let thumbnail_url_for_loader = thumbnail_url.clone();
     Effect::new(move || {
+
         let intersecting = is_intersecting.get();
         let suspended = load_suspended.get();
         let retry = retry_attempt.get();
@@ -257,16 +269,67 @@ pub fn MemoryCard(
         let natural_size_for_load = natural_size;
         let queued_for_load = queued_thumbnail_url;
         let thumbnail_url_for_load = thumbnail_url.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            match handle.await {
-                Ok(image) => {
-                    queued_for_load.set(Some(thumbnail_url_for_load));
+        // 最短加载窗口:同一 URL 常被英雄 LQIP 先行加载,卡片任务命中
+        // 内存缓存瞬间完成会让 Loading 一闪而过(骨架闪光回归)。
+        // 成功就绪统一延迟到 ≥400ms,保证占位闪光(150ms 计时)可见。
+        let load_started_ms = js_sys::Date::now();
+        let ready_timer: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
+        let ready_timer_for_cleanup = send_wrapper::SendWrapper::new(ready_timer.clone());
+        on_cleanup(move || {
+            if let Some(timer_id) = (**ready_timer_for_cleanup).get() {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.clear_timeout_with_handle(timer_id);
+                }
+            }
+        });
+        // finish_ready 用 Rc<RefCell> 包装:回调闭包(Fn)与 async 任务
+        // (FnOnce/image 按值)共享同一份就绪逻辑。
+        let finish_ready: Rc<RefCell<Option<Box<dyn Fn(web_sys::HtmlImageElement)>>>> =
+            Rc::new(RefCell::new(Some(Box::new({
+                let media_state_for_load = media_state_for_load;
+                let queued_for_load = queued_for_load;
+                let natural_size_for_load = natural_size_for_load;
+                let thumbnail_url_for_load = thumbnail_url_for_load.clone();
+                move |image: web_sys::HtmlImageElement| {
                     let width = image.natural_width();
                     let height = image.natural_height();
                     if width > 0 && height > 0 {
                         natural_size_for_load.set(Some((width as f64, height as f64)));
                     }
+                    queued_for_load.set(Some(thumbnail_url_for_load.clone()));
                     dispatch_preview(&media_state_for_load, MediaLifecycleActionType::Ready);
+                }
+            }))));
+        let finish_for_callback = finish_ready.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            match handle.await {
+                Ok(image) => {
+                    let elapsed = js_sys::Date::now() - load_started_ms;
+                    let min_window = 400.0f64;
+                    if elapsed < min_window {
+                        let timer_for_callback = ready_timer.clone();
+                        let image_for_callback = image.clone();
+                        let callback: Closure<dyn Fn()> = Closure::new(move || {
+                            timer_for_callback.set(None);
+                            if let Some(finish) = finish_for_callback.borrow_mut().take() {
+                                finish(image_for_callback.clone());
+                            }
+                        });
+                        if let Some(window) = web_sys::window() {
+                            let timer_id = window
+                                .set_timeout_with_callback_and_timeout_and_arguments_0(
+                                    callback.as_ref().unchecked_ref(),
+                                    (min_window - elapsed) as i32,
+                                )
+                                .ok();
+                            ready_timer.set(timer_id);
+                        }
+                        std::mem::forget(callback);
+                    } else {
+                        if let Some(finish) = finish_ready.borrow_mut().take() {
+                            finish(image);
+                        }
+                    }
                 }
                 Err(ImageLoadError::Aborted) => {}
                 Err(_) => {

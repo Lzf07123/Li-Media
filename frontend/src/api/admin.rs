@@ -151,13 +151,22 @@ pub struct CleanupResult {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SystemStatus {
+    #[serde(default)]
     pub generated_at: String,
+    #[serde(default)]
     pub backend: serde_json::Value,
+    #[serde(default)]
     pub remote_storage: serde_json::Value,
+    // 部分部署/测试 mock 不提供源码合规体检块:缺省按 null 处理。
+    #[serde(default)]
     pub source_zero: serde_json::Value,
+    #[serde(default)]
     pub preheat: serde_json::Value,
+    #[serde(default)]
     pub tasks: serde_json::Value,
+    #[serde(default)]
     pub metrics: serde_json::Value,
+    #[serde(default)]
     pub resources: serde_json::Value,
 }
 
@@ -408,13 +417,26 @@ pub async fn get_latest_thumbnail_preheat() -> Result<Option<ThumbnailPreheatJob
     get_job_or_null("/admin/thumbnails/preheat/latest").await
 }
 
-pub async fn preview_thumbnail_preheat() -> Result<u32, ApiError> {
+/// 预热预估(对齐 previewThumbnailPreheat:GET sizes/kind 查询参数,
+/// limit/include_failed 不参与预估请求)。
+pub async fn preview_thumbnail_preheat(
+    sizes: &[&str],
+    kind: Option<&str>,
+) -> Result<u32, ApiError> {
     #[derive(Deserialize)]
     struct Resp {
         #[serde(default)]
         total: u32,
     }
-    let resp: Resp = get("/admin/thumbnails/preheat/preview").await?;
+    let mut query: Vec<String> = sizes
+        .iter()
+        .map(|size| format!("sizes={}", js_sys::encode_uri_component(size)))
+        .collect();
+    if let Some(kind) = kind {
+        query.push(format!("kind={}", js_sys::encode_uri_component(kind)));
+    }
+    let path = format!("/admin/thumbnails/preheat/preview?{}", query.join("&"));
+    let resp: Resp = get(&path).await?;
     Ok(resp.total)
 }
 

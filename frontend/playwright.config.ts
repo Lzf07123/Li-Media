@@ -7,6 +7,10 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4173";
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
+  // Leptos 版 wasm 启动较 React 快照重;并行过高时预热轮询/定时窗口
+  // 出现时序竞争(单跑均通过)。4 workers + 1 次重试消除偶发 flake。
+  workers: 4,
+  retries: 1,
   reporter: [["line"]],
   use: {
     baseURL,

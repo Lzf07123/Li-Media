@@ -25,24 +25,24 @@ impl ProgressBarTone {
 #[component]
 pub fn ProgressBar(
     #[prop(into)] label: String,
-    #[prop(into)] value: f64,
+    /// 响应式数值:批量任务/预热进度随轮询实时更新(f64 直传同样有效)。
+    #[prop(into)] value: Signal<f64>,
     #[prop(default = ProgressBarTone::Primary)] tone: ProgressBarTone,
 ) -> impl IntoView {
-    let bounded_value = value.clamp(0.0, 100.0);
     let tone_class = tone.as_class();
 
     view! {
         <div
             aria-valuemax="100"
             aria-valuemin="0"
-            aria-valuenow={bounded_value}
+            aria-valuenow={move || value.get().clamp(0.0, 100.0)}
             aria-label={label}
             role="progressbar"
         >
             <span class={format!("progress {}", tone_class)}>
                 <span
                     class="progress-bar"
-                    style={format!("width: {}%", bounded_value)}
+                    style={move || format!("width: {}%", value.get().clamp(0.0, 100.0))}
                 />
             </span>
         </div>

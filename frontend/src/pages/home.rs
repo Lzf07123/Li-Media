@@ -3,6 +3,7 @@
 // 分页加载队列、骨架屏、hero 首屏捕获、预热轮询、空间画廊。
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -251,7 +252,18 @@ pub fn HomePage() -> impl IntoView {
     let space_total = RwSignal::new(0u32);
     // 3D 沉浸态(flat 时间线不算):驱动页眉压图配色与页脚隐藏。
     let space_immersive = RwSignal::new(false);
+    // 列表用手动守卫写入:reactive_graph 的 set 无相等性短路,无限加载
+    // 追加相同内容也会通知,读它的画布/骨架/列分配闭包会整段重建
+    // (React setState 对相同值 bail-out 的对应语义)。
     let memories: RwSignal<Vec<MemorySummary>> = RwSignal::new(Vec::new());
+    let set_memories = {
+        let memories = memories.clone();
+        move |next: Vec<MemorySummary>| {
+            if memories.get_untracked() != next {
+                memories.set(next);
+            }
+        }
+    };
     let direct_memory: RwSignal<Option<MemorySummary>> = RwSignal::new(None);
     let direct_memory_token = RwSignal::new(0u64);
     let viewer_missing = RwSignal::new(false);
@@ -270,12 +282,60 @@ pub fn HomePage() -> impl IntoView {
     let is_loading_more_ref = RwSignal::new(false);
     let has_restored_scroll = RwSignal::new(false);
     let was_space_view_ref = RwSignal::new(false);
-    let column_count = RwSignal::new(2usize);
+    // 初始列数同步读取(React useState(2) + useLayoutEffect 立即修正的
+    // 对应物;Leptos 的 For 跨列移动会重建组件,必须在卡片挂载前定准)。
+    let column_count = RwSignal::new({
+        fn initial_column_count() -> usize {
+            web_sys::window()
+                .and_then(|window| {
+                    let breakpoints: [(&str, usize); 4] = [
+                        ("(min-width: 1600px)", 6),
+                        ("(min-width: 1280px)", 5),
+                        ("(min-width: 1024px)", 4),
+                        ("(min-width: 768px)", 3),
+                    ];
+                    breakpoints
+                        .iter()
+                        .find(|(query, _)| {
+                            window
+                                .match_media(query)
+                                .ok()
+                                .flatten()
+                                .map(|list| list.matches())
+                                .unwrap_or(false)
+                        })
+                        .map(|(_, count)| *count)
+                })
+                .unwrap_or(2)
+        }
+        initial_column_count()
+    });
     let segment_indicator = RwSignal::new((0.0f64, 0.0f64, false));
     let sentinel_ref = NodeRef::<leptos::html::Div>::new();
     let segmented_ref = NodeRef::<leptos::html::Div>::new();
 
+    // 启动底部意图:React 版骨架随 JS 同步渲染,「引导期滚到文档底部」
+    // 的滚动会落在骨架上;WASM 引导期间文档高度来自 index.html 的
+    // 300vh 占位,此处挂载时快照该高度,首个数据页就绪时若用户已滚到
+    // 快照底部,立即续载下一页(滚动事件在引导期可能早于监听器挂载,
+    // 以位置快照为准而非事件)。
+    let boot_doc_height = Rc::new(Cell::new(0.0f64));
+    let boot_intent_consumed = Rc::new(Cell::new(false));
+
     // 随机种子:kind 变化时重生成(对齐 seedState render-sync),换一批只重置 seed。
+    {
+        let boot_doc_height = boot_doc_height.clone();
+        Effect::new(move |_| {
+            let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+                return;
+            };
+            let Some(element) = document.document_element() else {
+                return;
+            };
+            boot_doc_height.set(element.scroll_height() as f64);
+        });
+    }
+
     let seed = RwSignal::new(create_random_seed());
     let seed_kind_mirror = RwSignal::new(active_kind.get_untracked());
     Effect::new(move || {
@@ -313,7 +373,7 @@ pub fn HomePage() -> impl IntoView {
                 Ok(data) if token == request_token.get_untracked() => {
                     page_stored.set(page);
                     if replace {
-                        memories.set(data.items);
+                        set_memories(data.items);
                     } else {
                         let known: HashSet<String> = memories
                             .get()
@@ -331,9 +391,18 @@ pub fn HomePage() -> impl IntoView {
                     total.set(data.total);
                     // 计数行与类型页签都用「可展示口径」:与画布实际可见内容一致。
                     counts.set(data.counts);
-                    public_count_state.set(CountState::Ready);
-                    error.set(None);
-                    load_more_error.set(None);
+                    if public_count_state.get_untracked() != CountState::Ready {
+                        public_count_state.set(CountState::Ready);
+                    }
+                    // error 被画布分区闭包读取:无条件 set(None) 会让画布在
+                    // 每次追加(即使内容去重后不变)时整段重建(React setState
+                    // 对相同值 bail-out 的对应语义)。
+                    if error.get_untracked().is_some() {
+                        error.set(None);
+                    }
+                    if load_more_error.get_untracked().is_some() {
+                        load_more_error.set(None);
+                    }
                     true
                 }
                 Ok(_) => false,
@@ -363,12 +432,15 @@ pub fn HomePage() -> impl IntoView {
     Effect::new(move || {
         let kind = active_kind.get();
         let keyword_value = keyword.get();
-        let seed_value = seed.get();
         let space = is_space_view.get();
         if space {
             return;
         }
-        let _ = (&kind, &keyword_value, &seed_value);
+        // kind 变化时在本轮加载前同步重生成 seed(React render-sync 对应物)。
+        if seed_kind_mirror.get_untracked() != kind {
+            seed_kind_mirror.set(kind.clone());
+            seed.set(create_random_seed());
+        }
         let future = load_page(1, true);
         wasm_bindgen_futures::spawn_local(async move {
             let _ = future.await;
@@ -544,6 +616,8 @@ pub fn HomePage() -> impl IntoView {
     });
 
     // 推荐:搜索时直接展示结果不混入推荐内容;空间视图不拉推荐。
+    // seed 进依赖:换一批(种子重置)时推荐随新种子重取;
+    // kind 切换的种子重生成用 untracked,不在此重复触发。
     Effect::new(move || {
         let kind = active_kind.get();
         let keyword_value = keyword.get();
@@ -668,6 +742,9 @@ pub fn HomePage() -> impl IntoView {
         length > 0 && (length as u32) < total.get()
     });
 
+    // 画布分支开关:直接读守卫后的 memories(追加相同内容不再通知,
+    // 画布闭包不重建,React 协调语义对应物,卡片/哨兵节点保持原位)。
+
     // 图像 hero:首屏数据一到就捕获精选集(≤5 条),之后画布换批/翻页/
     // 筛选都不再改动 hero。捕获时按舞台比例过滤随机池(可见面积占比 ≥60%),
     // 无合适图像时按可见占比降序取前 5。
@@ -723,8 +800,11 @@ pub fn HomePage() -> impl IntoView {
     let hero_memories_for_view = Memo::new(move |_| hero_source.get().unwrap_or_default());
 
     // 骨架屏按真实宽高实时计算:优先内存中的真实 items。
-    let known_sizes = Memo::new(move |_| {
-        canvas_memories
+    // 手动守卫的 RwSignal(Memo 无相等性短路:追加相同内容也会通知,
+    // 同步读取它的画布骨架分支会整段重建)。
+    let known_sizes = RwSignal::new(Vec::new());
+    Effect::new(move |_| {
+        let next: Vec<CompositionSize> = canvas_memories
             .get()
             .into_iter()
             .take(36)
@@ -735,7 +815,10 @@ pub fn HomePage() -> impl IntoView {
                 }),
                 _ => None,
             })
-            .collect::<Vec<CompositionSize>>()
+            .collect();
+        if known_sizes.get_untracked() != next {
+            known_sizes.set(next);
+        }
     });
 
     // 列表数据到达后写入构图缓存供下次刷新复用。
@@ -771,15 +854,21 @@ pub fn HomePage() -> impl IntoView {
         (Some(width), Some(height)) if width > 0 && height > 0 => height as f64 / width as f64,
         _ => FALLBACK_MASONRY_RATIO,
     };
-    let canvas_columns: [Memo<Vec<MemorySummary>>; MAX_CANVAS_COLUMNS] =
-        std::array::from_fn(|column_index| {
-            Memo::new(move |_| {
-                let count = column_count.get();
-                let list = canvas_memories.get();
-                let columns = distribute_masonry_columns(&list, count, canvas_ratio);
-                columns.get(column_index).cloned().unwrap_or_default()
-            })
-        });
+    // 列信号用手动守卫的 RwSignal:无限加载 set memories(内容相同)时,
+    // Memo 仍会传播通知,For 会重排并重建卡片 DOM(图片请求翻倍)。
+    // 仅在分配结果真实变化时写入(React useMemo + 相同引用 bail-out 语义)。
+    let canvas_columns: [RwSignal<Vec<MemorySummary>>; MAX_CANVAS_COLUMNS] =
+        std::array::from_fn(|_| RwSignal::new(Vec::new()));
+    Effect::new(move |_| {
+        let count = column_count.get();
+        let list = canvas_memories.get();
+        let columns = distribute_masonry_columns(&list, count, canvas_ratio);
+        for (signal, column) in canvas_columns.iter().zip(columns.into_iter()) {
+            if signal.get_untracked() != column {
+                signal.set(column);
+            }
+        }
+    });
     let first_row_ids = Memo::new(move |_| {
         let count = column_count.get();
         let list = canvas_memories.get();
@@ -930,6 +1019,25 @@ pub fn HomePage() -> impl IntoView {
         });
     });
 
+    // 首个数据页落定后回收 index.html 的 300vh 启动占位高度:
+    // 与画布/空态/错误态的首次渲染同帧,html 高度变化不移动文档流元素。
+    Effect::new(move |_| {
+        if is_loading_initial.get() {
+            return;
+        }
+        if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+            if let Some(element) = document
+                .document_element()
+                .and_then(|element| element.dyn_into::<web_sys::HtmlElement>().ok())
+            {
+                let _ = element.style().set_property("min-height", "0px");
+            }
+            if let Some(body) = document.body() {
+                let _ = body.style().set_property("min-height", "0px");
+            }
+        }
+    });
+
     // 首次数据就绪后恢复上次滚动位置(仅首页)。
     Effect::new(move || {
         let loading = is_loading_initial.get();
@@ -1009,6 +1117,33 @@ pub fn HomePage() -> impl IntoView {
             || !more_available
         {
             return;
+        }
+
+        // 启动期已滚到文档底部的用户:数据就位即续载,不等下一次滚动
+        //(一次性消费,追加后不再重复触发)。
+        // 启动期已滚到占位底部的用户:数据就位即续载,不等下一次滚动。
+        // 仅在真实消费时记账(快速启动下数据先于用户滚动就绪时,
+        // 首次检查 scroll_y=0 不应烧掉意图;用户随后的滚动会走哨兵路径)。
+        if !boot_intent_consumed.get() {
+            if let Some(window) = web_sys::window() {
+                let scroll_y = window.scroll_y().unwrap_or(0.0);
+                let inner_height = window
+                    .inner_height()
+                    .ok()
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or(0.0);
+                let boot_height = boot_doc_height.get();
+                // 300vh 占位可能已被首屏数据部分替换(快照时机竞态):
+                // 意图判定对齐「占位底部」而非「当前文档底部」。
+                let intent_bottom = boot_height.min(3.0 * inner_height);
+                if boot_height > inner_height
+                    && scroll_y > 0.0
+                    && scroll_y + inner_height >= intent_bottom - 4.0
+                {
+                    boot_intent_consumed.set(true);
+                    load_next_page.run(());
+                }
+            }
         }
         let load_next = load_next_page;
         let callback: Closure<
@@ -1196,6 +1331,15 @@ pub fn HomePage() -> impl IntoView {
             }
         })
     };
+    // 邻位存在与否驱动 MediaViewer 翻页按钮渲染(React:onNext=nextMemory?...:undefined)。
+    let viewer_nav_next = Signal::derive(move || {
+        let index = active_memory_index.get();
+        (index >= 0 && ((index as usize) + 1) < viewer_memories.with(Vec::len))
+            .then_some(viewer_on_next)
+    });
+    let viewer_nav_prev = Signal::derive(move || {
+        (active_memory_index.get() > 0).then_some(viewer_on_prev)
+    });
 
     // 查看器接近已加载末尾时自动续载:翻到画布边界前先追加下一页;
     // loadNextPage 内部守卫防并发与重复。
@@ -1280,8 +1424,8 @@ pub fn HomePage() -> impl IntoView {
                     is_loading_more={is_loading_more}
                     memory={viewer_memory}
                     on_close={close_viewer}
-                    on_next={Some(viewer_on_next)}
-                    on_prev={Some(viewer_on_prev)}
+                    on_next={viewer_nav_next}
+                    on_prev={viewer_nav_prev}
                     position={viewer_position}
                     prefetch_targets={viewer_neighbors}
                 />
@@ -1342,7 +1486,7 @@ pub fn HomePage() -> impl IntoView {
                         Some(view! {
                             <HeroFeature
                                 loading={move || hero_loading.get()}
-                                memories={hero_memories_for_view.get()}
+                                memories={hero_memories_for_view}
                                 on_enter={enter_library}
                                 on_open={on_open_viewer}
                             />
@@ -1451,13 +1595,9 @@ pub fn HomePage() -> impl IntoView {
                                 <div class="mx-auto mt-2 max-w-xs" data-testid="preheat-status">
                                     <p aria-live="polite" class="text-center text-sm text-muted">
                                         {copy::PREHEAT_STATUS_RUNNING}
+                                        {" "}
                                         <span class="ml-2">
-                                            {format!(
-                                                "{} {} / {}",
-                                                copy::PREHEAT_STATUS_PROGRESS,
-                                                processed,
-                                                total_value,
-                                            )}
+                                            {format!("{}/{}", processed, total_value)}
                                         </span>
                                     </p>
                                     <ProgressBar
@@ -1635,6 +1775,10 @@ pub fn HomePage() -> impl IntoView {
                                         return;
                                     }
                                     seed.set(create_random_seed());
+                                    let future = load_page(1, true);
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        let _ = future.await;
+                                    });
                                     scroll_to_top_auto();
                                 })}
                                 title={copy::HOME_REFRESH.to_string()}
@@ -1679,13 +1823,14 @@ pub fn HomePage() -> impl IntoView {
                     }}
 
                     {move || {
+
                         if is_loading_initial.get() {
                             return view! {
                                 <>
                                     <span class="sr-only">{copy::LOADING_LIBRARY}</span>
                                     <MediaSkeleton
-                                        column_count={column_count.get()}
-                                        sizes={known_sizes.get()}
+                                        column_count=column_count
+                                        sizes=known_sizes
                                     />
                                 </>
                             }

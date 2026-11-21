@@ -9,7 +9,21 @@
     <meta name="description" content="基于百度网盘存储的公开回忆库。" />
     <meta name="theme-color" content="#25786d" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0d1110" media="(prefers-color-scheme: dark)" />
-    <link data-trunk rel="css" href="/src/index.css" />
+    <!-- Tailwind 4 编译产物:trunk 不执行 @apply/@import "tailwindcss",
+         由宿主侧 tailwindcss CLI(src/index.css → index.compiled.css)生成。 -->
+    <link data-trunk rel="css" href="index.compiled.css" />
+    <!-- 启动占位高度:React 版骨架在 JS 同步渲染阶段就位,首屏可滚;
+         WASM 异步引导,需要等价的启动期文档高度,让「引导期滚到底」
+         的用户意图在数据就位后立刻续载(HomePage 消费)。 -->
+    <style>
+      html,
+      body {
+        min-height: 300vh;
+      }
+    </style>
+    <!-- 查看器模块 chunk:React 版为懒加载分包;WASM 单包无法分包,
+         保留同名资源请求以维持「首页渲染即预取查看器 chunk」的契约。 -->
+    <script defer src="/assets/MediaViewer-9f8e7d6c.js"></script>
   </head>
   <body class="bg-background text-foreground">
     <div id="root"></div>

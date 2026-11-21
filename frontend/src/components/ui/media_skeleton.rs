@@ -29,24 +29,31 @@ fn ratio_value(known_sizes: &[CompositionSize], index: usize) -> f64 {
 
 #[component]
 pub fn MediaSkeleton(
-    #[prop(default = 2)] column_count: usize,
+    #[prop(into)] column_count: Signal<usize>,
     #[prop(default = 18)] count: usize,
     /// 已知真实尺寸(当前内存 items):优先于构图缓存,筛选/换批零位移。
-    #[prop(optional)] sizes: Option<Vec<CompositionSize>>,
+    /// 响应式传入:骨架在画布闭包内同步渲染,信号化避免画布闭包因
+    /// 尺寸更新而整段重建(卡片队列任务被 abort 再重发)。
+    #[prop(optional, into)] sizes: Signal<Vec<CompositionSize>>,
 ) -> impl IntoView {
-    let known_sizes: Vec<CompositionSize> = match sizes {
-        Some(sizes) if !sizes.is_empty() => sizes,
-        _ => read_canvas_composition().items,
-    };
-
-    let indices: Vec<usize> = (0..count).collect();
-    let columns = distribute_masonry_columns(&indices, column_count, |index| {
-        ratio_value(&known_sizes, *index)
+    let known_sizes = Memo::new(move |_| {
+        let sizes = sizes.get();
+        if !sizes.is_empty() {
+            sizes
+        } else {
+            read_canvas_composition().items
+        }
     });
 
     view! {
         <div aria-label="loading" aria-live="polite" class="masonry" data-testid="media-skeleton">
-            {columns
+            {move || {
+                let known_sizes = known_sizes.get();
+                let indices: Vec<usize> = (0..count).collect();
+                let columns = distribute_masonry_columns(&indices, column_count.get(), |index| {
+                    ratio_value(&known_sizes, *index)
+                });
+                columns
                 .into_iter()
                 .map(|column| {
                     let tiles = column
@@ -71,7 +78,9 @@ pub fn MediaSkeleton(
                         .collect_view();
                     view! { <div class="canvas-column">{tiles}</div> }
                 })
-                .collect_view()}
+                .collect_view()
+            }}
         </div>
     }
 }
+

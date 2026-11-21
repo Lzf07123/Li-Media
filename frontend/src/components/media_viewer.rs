@@ -131,8 +131,10 @@ fn clear_timeout(entry: Option<(Closure<dyn Fn()>, i32)>) {
 pub fn MediaViewer(
     memory: Memo<MemorySummary>,
     on_close: Callback<()>,
-    #[prop(into)] on_next: Option<Callback<()>>,
-    #[prop(into)] on_prev: Option<Callback<()>>,
+    /// 有下一张/上一张时才传入(React:onNext = nextMemory ? ... : undefined),
+    /// 末页/首页时按钮与键盘翻页同时收起。
+    #[prop(into)] on_next: Signal<Option<Callback<()>>>,
+    #[prop(into)] on_prev: Signal<Option<Callback<()>>>,
     /// 相邻回忆:空闲时预取其查看器尺寸图片,翻页即可显示。
     #[prop(into)] prefetch_targets: Signal<Vec<MemorySummary>>,
     /// 画布内位置(1 起):直接打开(URL 直链)不在画布内时不传、不显示计数。
@@ -667,7 +669,7 @@ pub fn MediaViewer(
 
                 if key == "ArrowLeft" || key == "ArrowRight" {
                     let is_left = key == "ArrowLeft";
-                    let nav = if is_left { on_prev } else { on_next };
+                    let nav = if is_left { on_prev.get() } else { on_next.get() };
                     if let Some(nav) = nav {
                         if is_video.get_untracked() || current_zoom <= 1.0 {
                             event.prevent_default();
@@ -1049,10 +1051,10 @@ pub fn MediaViewer(
             let dy = event.client_y() as f64 - start_y;
             if dx.abs() > SWIPE_THRESHOLD_PX && dx.abs() > SWIPE_AXIS_RATIO * dy.abs() {
                 if dx < 0.0 {
-                    if let Some(next) = on_next {
+                    if let Some(next) = on_next.get() {
                         next.run(());
                     }
-                } else if let Some(prev) = on_prev {
+                } else if let Some(prev) = on_prev.get() {
                     prev.run(());
                 }
             }
@@ -1128,11 +1130,23 @@ pub fn MediaViewer(
                     anchor.set_attribute("download", &filename).ok()?;
                     let body = document.body()?;
                     body.append_child(&anchor).ok()?;
-                    if let Some(html_anchor) = anchor.dyn_ref::<web_sys::HtmlElement>() {
-                        html_anchor.click();
-                    }
+                    // click() 可能被 JS 层(如拦截扩展)抛错:经 Function::call
+                    // 才能把 JS 异常转成 Result,download 失败据此进入失败态。
+                    let clicked = anchor
+                        .dyn_ref::<web_sys::HtmlElement>()
+                        .and_then(|html_anchor| {
+                            js_sys::Reflect::get(html_anchor.as_ref(), &"click".into())
+                                .ok()
+                                .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+                                .and_then(|function| {
+                                    function
+                                        .call1(html_anchor.as_ref(), html_anchor.as_ref())
+                                        .ok()
+                                })
+                        })
+                        .is_some();
                     anchor.remove();
-                    Some(())
+                    clicked.then_some(())
                 })
                 .is_some();
             dispatch(
@@ -1660,7 +1674,7 @@ pub fn MediaViewer(
             }}
 
             {move || {
-                on_prev.clone().map(|on_prev| {
+                on_prev.get().map(|on_prev| {
                     view! {
                         <button
                             aria-label={copy::VIEWER_PREVIOUS}
@@ -1675,7 +1689,7 @@ pub fn MediaViewer(
                 })
             }}
             {move || {
-                on_next.clone().map(|on_next| {
+                on_next.get().map(|on_next| {
                     view! {
                         <button
                             aria-label={copy::VIEWER_NEXT}

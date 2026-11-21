@@ -23,11 +23,16 @@ type ioReader interface {
 	Read(p []byte) (int, error)
 }
 
-// PreheatStatus 公开预热状态占位:thumbnail_preheat 服务接入后
-// 替换为真实聚合(Cache-Control: no-store 是契约)。
+// PreheatStatus 公开预热状态:Go 版尚未接入预热调度服务,按契约返回
+// not_preheated 终态(预热未启动;首页据此展示首次加载提示)。
+// Cache-Control: no-store 是契约。
 func (h *MemoriesHandler) PreheatStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	ErrorDetail(w, http.StatusNotFound, "preheat status unavailable")
+	WriteJSON(w, http.StatusOK, PublicPreheatStatusResponse{
+		Status:    "not_preheated",
+		Processed: 0,
+		Total:     0,
+	})
 }
 
 // Thumbnail 派生图服务:缓存直出 / 本地派生 / 远程派生(对齐 get_memory_thumbnail)。

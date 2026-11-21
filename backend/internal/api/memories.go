@@ -59,6 +59,9 @@ func (h *MemoriesHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/memories", h.List)
 	mux.HandleFunc("GET /api/v1/memories/recommend", h.Recommend)
 	mux.HandleFunc("GET /api/v1/memories/public-counts", h.PublicCounts)
+	// 前端契约路径(FastAPI 版即此路径):预热状态对外只暴露这一个;
+	// /public/ 前缀是历史别名,一并保留。
+	mux.HandleFunc("GET /api/v1/memories/preheat-status", h.PreheatStatus)
 	mux.HandleFunc("GET /api/v1/memories/public/preheat-status", h.PreheatStatus)
 	mux.HandleFunc("GET /api/v1/memories/{id}", h.Detail)
 	mux.HandleFunc("GET /api/v1/memories/{id}/direct-url", h.DirectURL)

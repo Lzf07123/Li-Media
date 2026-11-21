@@ -175,8 +175,10 @@ fn FeaturedMedia(
         .as_deref()
         .and_then(|path| resolve_thumbnail_url(Some(path), FEATURED_THUMBNAIL_SIZE));
     // 同为高优先级:hook 顺序保证 240 先入队,1280 随后并行派生。
-    let (lqip_state, _lqip_loaded_url) = use_queued_thumbnail(lqip_url.clone(), ImageLoadPriority::High);
-    let (hq_state, _hq_loaded_url) = use_queued_thumbnail(hq_url.clone(), ImageLoadPriority::High);
+    // img src 只在对应队列任务完成后才赋值:直赋 URL 会产生绕过 2 槽
+    // 限流队列的额外网络请求,并发请求数会超出预算。
+    let (lqip_state, lqip_loaded_url) = use_queued_thumbnail(lqip_url.clone(), ImageLoadPriority::High);
+    let (hq_state, hq_loaded_url) = use_queued_thumbnail(hq_url.clone(), ImageLoadPriority::High);
     let accessible_name = if memory.title.is_empty() {
         copy::DETAIL_PREVIEW_ALT.to_string()
     } else {
@@ -219,7 +221,7 @@ fn FeaturedMedia(
                             decoding="async"
                             fetchpriority="high"
                             loading="eager"
-                            src={url.clone()}
+                            src={lqip_loaded_url}
                         />
                     }
                 })
@@ -241,7 +243,7 @@ fn FeaturedMedia(
                             decoding="async"
                             fetchpriority="high"
                             loading="eager"
-                            src={url.clone()}
+                            src={hq_loaded_url}
                         />
                     }
                 })
@@ -382,7 +384,11 @@ fn hero_feature_skeleton() -> impl IntoView {
 #[component]
 pub fn HeroFeature(
     /// 首屏捕获的精选回忆(≤5 条,捕获后保持稳定)。
-    memories: Vec<MemorySummary>,
+    /// 响应式传入:组件只创建一次,记忆到达时内部各槽位原地更新
+    /// (React key 稳定 + props 更新的对应语义;避免组件重建把已入队的
+    /// 队列任务全部 abort 再重发)。
+    #[prop(into)]
+    memories: Signal<Vec<MemorySummary>>,
     /// 首屏列表尚未返回时展示结构镜像骨架。
     loading: impl Fn() -> bool + Send + 'static,
     /// CTA「进入回忆库」:滚动画布区。
@@ -402,10 +408,19 @@ pub fn HeroFeature(
     // 上一帧精选的身份与 src(渲染期捕获比对;对齐 lastFeaturedRef)。
     let last_featured = StoredValue::new(Option::<(String, Option<String>)>::None);
 
-    let memories = Arc::new(memories);
-    let memories_for_memo = memories.clone();
+    let memories_len = Memo::new(move |_| memories.with(Vec::len));
+    let strip_items = Memo::new(move |_| {
+        memories
+            .with(|list| {
+                list.iter()
+                    .skip(1)
+                    .take(UP_NEXT_COUNT)
+                    .cloned()
+                    .collect::<Vec<MemorySummary>>()
+            })
+    });
     let auto_advance_supported =
-        Memo::new(move |_| memories_for_memo.len() > 1 && !reduced_motion.get());
+        Memo::new(move |_| memories_len.get() > 1 && !reduced_motion.get());
     let paused_now =
         Memo::new(move |_| user_paused.get() || hover_paused.get() || focus_paused.get() || hidden_paused.get());
     let advance_active = Memo::new(move |_| auto_advance_supported.get() && !paused_now.get());
@@ -474,7 +489,6 @@ pub fn HeroFeature(
 
     // 定时器与进度线同生命周期:featuredIndex / advanceActive 任一变化都
     // 重开一个完整周期,保证发丝线从 0 重新铺满时与真实切换时刻对齐。
-    let memories_for_timer = memories.clone();
     Effect::new(move || {
         let active = advance_active.get();
         let index = featured_index.get();
@@ -482,7 +496,7 @@ pub fn HeroFeature(
         if !active {
             return;
         }
-        let len = memories_for_timer.len();
+        let len = memories_len.get();
         let slot = TimerSlot::new();
         let slot_for_callback = slot.clone();
         let callback: Closure<dyn Fn()> = Closure::new(move || {
@@ -521,28 +535,27 @@ pub fn HeroFeature(
         on_cleanup(move || slot_for_cleanup.clear());
     });
 
-    let memories_len = memories.len();
-    let strip_items: Vec<MemorySummary> = memories
-        .iter()
-        .skip(1)
-        .take(UP_NEXT_COUNT)
-        .cloned()
-        .collect();
 
     view! {
         {move || {
             if loading() {
                 return hero_feature_skeleton().into_any();
             }
-            if memories.is_empty() {
+            let memories_list = memories.get();
+            let strip_items: Vec<MemorySummary> = memories_list
+                .iter()
+                .skip(1)
+                .take(UP_NEXT_COUNT)
+                .cloned()
+                .collect();
+            if memories_list.is_empty() {
                 // 空库与加载失败不伪造图像(品牌铁律):hero 直接退场。
                 return ().into_any();
             }
 
             // 嵌套 move 闭包各自持有克隆句柄;外层闭包保持 FnMut。
-            let memories_for_featured = memories.clone();
-            let memories_for_meta = memories.clone();
-            let memories_for_meta_kind = memories.clone();
+            let memories_for_meta = memories_list.clone();
+            let memories_for_meta_kind = memories_list.clone();
 
             view! {
                 <div class="hero-feature" data-testid="hero-feature">
@@ -582,8 +595,8 @@ pub fn HeroFeature(
                             // key 随精选切换重挂载:LQIP→高清交叉淡入与 Ken Burns
                             // 从新主图重新起拍。渲染期捕获 outgoing(对齐 React
                             // render-phase capture)。
-                            let index = featured_index.get().min(memories_len - 1);
-                            let featured = memories_for_featured[index].clone();
+                            let index = featured_index.get().min(memories_len.get() - 1);
+                            let featured = memories_list[index].clone();
                             let last = last_featured.read_value().as_ref().cloned();
                             if last.as_ref().map(|(id, _)| id.as_str()) != Some(featured.id.as_str()) {
                                 if let Some((outgoing_id, Some(outgoing_src))) = last {
@@ -612,13 +625,13 @@ pub fn HeroFeature(
                             <p class="hero-meta tnum">
                                 <span class="hero-meta-index">
                                     {move || {
-                                        let index = featured_index.get().min(memories_len - 1);
+                                        let index = featured_index.get().min(memories_len.get() - 1);
                                         format!("{:02}", index + 1)
                                     }}
                                 </span>
                                 <span aria-hidden="true">
                                     {move || {
-                                        let index = featured_index.get().min(memories_len - 1);
+                                        let index = featured_index.get().min(memories_len.get() - 1);
                                         let featured = &memories_for_meta[index];
                                         let featured_meta = [
                                             featured.location.clone(),
@@ -637,7 +650,7 @@ pub fn HeroFeature(
                                     }}
                                 </span>
                                 {move || {
-                                    let index = featured_index.get().min(memories_len - 1);
+                                    let index = featured_index.get().min(memories_len.get() - 1);
                                     let featured = &memories_for_meta_kind[index];
                                     let video_duration = format_duration(featured.duration_seconds);
                                     match (featured.kind == "video", video_duration) {
