@@ -415,3 +415,58 @@ func TestUnsupportedMethodReturns405WithAllow(t *testing.T) {
 		t.Fatalf("未注册路径状态 = %d, want 404", missing.Code)
 	}
 }
+
+func TestAdminCleanupReturnsNestedStats(t *testing.T) {
+	pool := apiTestPool(t)
+	settings := apiTestSettings(t, nil)
+	handler := adminRouter(t, settings, pool, 5)
+
+	login := postLogin(t, handler, `{"token":"test-admin-token"}`, nil)
+	if login.Code != http.StatusNoContent {
+		t.Fatalf("登录状态 = %d", login.Code)
+	}
+	cookies := login.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("会话 cookie 数量 = %d", len(cookies))
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/cleanup", strings.NewReader(`{"confirm":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookies[0])
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("清理 dry-run 状态 = %d, want 200(%s)", recorder.Code, recorder.Body.String())
+	}
+
+	var payload struct {
+		DryRun       bool           `json:"dry_run"`
+		Stats        map[string]any `json:"stats"`
+		Duration     *float64       `json:"duration_seconds"`
+		CompletedAt  *string        `json:"completed_at"`
+		FileCleanErr any            `json:"file_cleanup_error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("清理响应解析失败: %v", err)
+	}
+	if !payload.DryRun {
+		t.Fatal("dry_run 应为 true")
+	}
+	for _, key := range []string{
+		"memories", "remote_file_indexes", "scan_tasks",
+		"thumbnail_files", "estimated_bytes_to_free",
+	} {
+		if _, ok := payload.Stats[key]; !ok {
+			t.Fatalf("stats 缺少 %q, got %v", key, payload.Stats)
+		}
+	}
+	if _, ok := payload.Stats["nginx_cache_files"]; ok {
+		t.Fatal("stats 不应再包含 nginx_cache_files")
+	}
+	if payload.Duration == nil || *payload.Duration != 0 {
+		t.Fatalf("dry-run duration = %v, want 0", payload.Duration)
+	}
+	if payload.CompletedAt != nil {
+		t.Fatalf("dry-run completed_at = %v, want null", *payload.CompletedAt)
+	}
+}

@@ -171,6 +171,24 @@ func (h *AdminHandler) SystemStatus(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, status)
 }
 
+// cleanupStatsResponse / cleanupResponse 对齐 FastAPI 响应模型
+// (字段顺序与可空性保持一致)。
+type cleanupStatsResponse struct {
+	Memories             int   `json:"memories"`
+	RemoteFileIndexes    int   `json:"remote_file_indexes"`
+	ScanTasks            int   `json:"scan_tasks"`
+	ThumbnailFiles       int   `json:"thumbnail_files"`
+	EstimatedBytesToFree int64 `json:"estimated_bytes_to_free"`
+}
+
+type cleanupResponse struct {
+	DryRun           bool                 `json:"dry_run"`
+	Stats            cleanupStatsResponse `json:"stats"`
+	DurationSeconds  float64              `json:"duration_seconds"`
+	CompletedAt      *string              `json:"completed_at"`
+	FileCleanupError *string              `json:"file_cleanup_error"`
+}
+
 // Cleanup 本地媒体清理(dry-run 语义对齐)。
 func (h *AdminHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
@@ -182,26 +200,26 @@ func (h *AdminHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 
 	mediaCount := services.CleanupCountsDB(r.Context(), h.Pool)
 	derivedFiles, derivedBytes := services.ScanDerivedMedia(h.Settings.MediaRoot)
-	started := time.Now()
+	// dry-run 不产生耗时与完成时间(默认 0 / null),与 FastAPI 基线一致。
+	response := cleanupResponse{
+		DryRun: dryRun,
+		Stats: cleanupStatsResponse{
+			Memories:             mediaCount.Memories,
+			RemoteFileIndexes:    mediaCount.RemoteFileIndexes,
+			ScanTasks:            mediaCount.ScanTasks,
+			ThumbnailFiles:       derivedFiles,
+			EstimatedBytesToFree: derivedBytes,
+		},
+	}
 	if !dryRun {
+		started := time.Now()
 		services.RemoveDerivedMediaFiles(h.Settings.MediaRoot)
-	}
-	completedAt := time.Now().UTC()
-	detail := map[string]any{
-		"dry_run":                 dryRun,
-		"memories":                mediaCount.Memories,
-		"remote_file_indexes":     mediaCount.RemoteFileIndexes,
-		"scan_tasks":              mediaCount.ScanTasks,
-		"thumbnail_files":         derivedFiles,
-		"estimated_bytes_to_free": derivedBytes,
-		"duration_seconds":        completedAt.Sub(started).Seconds(),
-		"completed_at":            apiTimeString(&completedAt),
-		"file_cleanup_error":      nil,
-	}
-	if !dryRun {
+		completedAt := time.Now().UTC()
+		response.DurationSeconds = time.Since(started).Seconds()
+		response.CompletedAt = apiTimeString(&completedAt)
 		_ = services.RecordAdminOperation(h.Pool, "cleanup", nil, nil, h.adminClientIP(r), nil)
 	}
-	WriteJSON(w, http.StatusOK, detail)
+	WriteJSON(w, http.StatusOK, response)
 }
 
 // BaiduAuthorize 生成授权跳转地址。
