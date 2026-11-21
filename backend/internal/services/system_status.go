@@ -597,7 +597,6 @@ func CollectSystemStatus(
 		&settings.BackendMemoryLimitBytes,
 		&settings.RemoteThumbnailDiskQuotaBytes,
 		&settings.RemoteThumbnailMaxTempFiles,
-		settings.NginxCacheRoot,
 	)
 
 	backend := BackendRuntimeStatus{

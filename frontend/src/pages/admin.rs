@@ -2138,10 +2138,6 @@ pub fn AdminPage() -> impl IntoView {
                                                 <dd class="text-sm">{stats.thumbnail_files}</dd>
                                             </div>
                                             <div>
-                                                <dt class="text-xs text-muted">{brand::copy::ADMIN_CLEANUP_NGINX_CACHE}</dt>
-                                                <dd class="text-sm">{stats.nginx_cache_files}</dd>
-                                            </div>
-                                            <div>
                                                 <dt class="text-xs text-muted">{brand::copy::ADMIN_CLEANUP_BYTES}</dt>
                                                 <dd class="text-sm">{format_bytes_admin(stats.estimated_bytes_to_free)}</dd>
                                             </div>

@@ -43,7 +43,7 @@ func TestRunBatchStatusJobCompletes(t *testing.T) {
 		}
 	}
 
-	deps := &BatchStatusJobDeps{Pool: pool, Settings: &config.Settings{NginxCacheRoot: "/nonexistent-nginx-cache"}}
+	deps := &BatchStatusJobDeps{Pool: pool, Settings: &config.Settings{}}
 	operator := uuid.MustParse("40000000-0000-4000-8000-000000000001")
 	RunBatchStatusJob(ctx, deps, jobID, models.MemoryStatusHidden, &operator)
 
@@ -99,7 +99,6 @@ func TestRunBatchStatusJobCompletes(t *testing.T) {
 		"job=" + jobID.String(),
 		"status=completed",
 		"session=" + operator.String(),
-		"nginx_cache_files=0",
 		`filters={"keyword": null, "status": "hidden"}`,
 		`resource_ids=["` + m1 + `","` + m2 + `","` + m3 + `"]`,
 	} {
@@ -134,7 +133,7 @@ func TestRunBatchStatusJobCancelled(t *testing.T) {
 
 	// 预先请求取消:首个分块开始即中断。
 	RequestBatchStatusCancel(jobID)
-	deps := &BatchStatusJobDeps{Pool: pool, Settings: &config.Settings{NginxCacheRoot: "/nonexistent-nginx-cache"}}
+	deps := &BatchStatusJobDeps{Pool: pool, Settings: &config.Settings{}}
 	RunBatchStatusJob(ctx, deps, jobID, models.MemoryStatusHidden, nil)
 
 	var status string

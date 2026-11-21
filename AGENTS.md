@@ -11,7 +11,7 @@
 ## 技术约定
 
 - 后端使用 Go 1.26(标准库 net/http + pgx/v5 + golang-migrate 内嵌迁移),不再使用 FastAPI;Python/FastAPI 实现与 pytest 套件已从仓库移除;安全扫描(govulncheck)必须清零。
-- 部署默认单容器:前端 trunk 产物经 `//go:embed` 进入 Go 二进制(`Dockerfile.single`),nginx 反代为可选 split profile。
+- 部署为单容器:前端 trunk 产物经 `//go:embed` 进入 Go 二进制(`Dockerfile.single`);仓库不保留 nginx/双容器方案。
 - 前端使用 Leptos 0.8(Rust→WASM,trunk 构建),不再使用 React/Vite;`frontend/src` 下 `.rs` 为源。
 - 管理审计与登录限流的客户端地址只在直连对端命中 `TRUSTED_PROXY_CIDRS` 时才采信 `X-Forwarded-For`;默认空表示从不采信。
 - 网盘凭据、下载链接和用户数据不写入仓库,只放 `.env` 或服务配置。

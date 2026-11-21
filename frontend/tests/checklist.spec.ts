@@ -276,7 +276,6 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
       caches: {
         derived_thumbnails: { files: 3, bytes: 245760, status: "ok" },
         temporary: { files: 0, bytes: 0, status: "ok" },
-        nginx: { files: 5, bytes: 163840, status: "ok" },
       },
       stack: { soft_kbytes: 8192, hard_kbytes: null },
       limits: {
@@ -412,7 +411,6 @@ test("admin counts, compatibility and batch confirmation are explicit", async ({
   ).toBeVisible();
   await expect(page.getByText("缓存占用")).toBeVisible();
   await expect(page.getByText("3 文件 · 240 KB")).toBeVisible();
-  await expect(page.getByText("5 文件 · 160 KB")).toBeVisible();
   await expect(page.getByText("生效资源限制")).toBeVisible();
   await expect(page.getByText("2 / 64")).toBeVisible();
   await expect(page.getByText("16 / 3")).toBeVisible();

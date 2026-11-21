@@ -59,7 +59,10 @@ Go 版以单查询取 id + 内存种子洗牌替代 Python 的全量 ORM 实体�
 | 图片并发队列 | TS 全局队列(并发 2) | Rust 全局队列(同语义) |
 | 派生图 | Pillow(照片)+ ffmpeg(视频) | ffmpeg 统一(Go 无纯 Go WebP 编码器) |
 
-## 部署拓扑:单容器 vs 双容器(2026-11-21 实测)
+## 部署拓扑:单容器 vs 双容器(2026-11-21 实测,历史对比)
+
+> 双容器(nginx 反代)方案已在验收后移除,仓库现在只保留单容器部署;
+> 以下数据保留为选型依据。
 
 单容器方案将前端 trunk 产物 `//go:embed` 进 Go 二进制,一个进程同时服务
 静态资源与 `/api`,替代 nginx 反代 + 独立后端的双容器栈。两种拓扑使用
@@ -95,9 +98,10 @@ Cookie/Authorization 与 random 排序绕过)在单容器中以进程内
 - `open_file_cache`、sendfile 等内核零拷贝路径(Go 从内存 embed 读取,
   实测静态资源反而更快)。
 
-双容器拓扑仍保留:compose 中以 `--profile split` 启用(nginx 端口
-`SPLIT_HTTP_PORT` 默认 8081),`frontend/Dockerfile` 可用;后端统一由
-`Dockerfile.single` 构建(迁移完成后已移除 Python 版 `backend/Dockerfile`)。
+验收后双容器拓扑已移除:compose 只保留 `backend` + PostgreSQL + Redis,
+`frontend/Dockerfile`、`nginx.conf` 与 security-headers 配置一并删除;
+后端统一由 `Dockerfile.single` 构建(迁移完成后已移除 Python 版
+`backend/Dockerfile`)。
 
 ## 结论
 

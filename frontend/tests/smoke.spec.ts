@@ -173,7 +173,6 @@ const systemStatus = {
     caches: {
       derived_thumbnails: { files: 12, bytes: 245760, status: "ok" },
       temporary: { files: 0, bytes: 0, status: "ok" },
-      nginx: { files: 8, bytes: 163840, status: "ok" },
     },
     stack: { soft_kbytes: null, hard_kbytes: null },
     limits: {
@@ -638,7 +637,6 @@ test("admin cleanup confirms before clearing local index", async ({ page }) => {
             remote_file_indexes: 1,
             scan_tasks: 1,
             thumbnail_files: 2,
-            nginx_cache_files: 0,
             estimated_bytes_to_free: 18,
           },
           duration_seconds: 0,
@@ -658,7 +656,6 @@ test("admin cleanup confirms before clearing local index", async ({ page }) => {
           remote_file_indexes: 1,
           scan_tasks: 1,
           thumbnail_files: 2,
-          nginx_cache_files: 0,
           estimated_bytes_to_free: 18,
         },
         duration_seconds: 0.1,

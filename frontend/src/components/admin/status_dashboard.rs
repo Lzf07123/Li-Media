@@ -322,7 +322,6 @@ pub fn AdminStatusDashboard(
                 let cache_rows: Vec<(&'static str, String, String, String)> = [
                     ("derived_thumbnails", brand::copy::ADMIN_CACHE_DERIVED),
                     ("temporary", brand::copy::ADMIN_CACHE_TEMPORARY),
-                    ("nginx", brand::copy::ADMIN_CACHE_NGINX),
                 ]
                 .into_iter()
                 .map(|(key, label)| {

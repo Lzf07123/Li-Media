@@ -12,7 +12,6 @@ func systemStatusTestSettings(mediaRoot string) *config.Settings {
 		ProjectName:                "Li&Media",
 		Version:                    "0.1.0",
 		MediaRoot:                  mediaRoot,
-		NginxCacheRoot:             mediaRoot + "/nginx_cache",
 		RedisURL:                   "redis://127.0.0.1:1/0", // 连接立即失败 → unavailable
 		MediaDerivativeVersion:     "20260906-ratio-v1",
 		BaiduSyncDir:               "/apps/Li&Media",

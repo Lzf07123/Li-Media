@@ -10,7 +10,7 @@ test.skip(
   "PLAYWRIGHT_BASE_URL 未设置：真栈冒烟只在指向 docker compose 栈时运行",
 );
 
-test("docker stack serves frontend and backend health through nginx", async ({
+test("docker stack serves frontend and backend health from one container", async ({
   request,
 }) => {
   const frontend = await request.get("/healthz");

@@ -405,7 +405,6 @@ pub mod copy {
     pub const ADMIN_CACHE_TITLE: &str = "缓存占用";
     pub const ADMIN_CACHE_DERIVED: &str = "派生图缓存";
     pub const ADMIN_CACHE_TEMPORARY: &str = "临时文件";
-    pub const ADMIN_CACHE_NGINX: &str = "Nginx 缓存";
     pub const ADMIN_CACHE_FILES: &str = "文件";
     pub const ADMIN_CACHE_BYTES: &str = "大小";
     pub const ADMIN_CACHE_UNAVAILABLE: &str = "不可用";
@@ -502,7 +501,6 @@ pub mod copy {
     pub const ADMIN_CLEANUP_REMOTE_INDEXES: &str = "远程文件索引";
     pub const ADMIN_CLEANUP_SCAN_TASKS: &str = "扫描任务";
     pub const ADMIN_CLEANUP_THUMBNAILS: &str = "派生图与临时文件";
-    pub const ADMIN_CLEANUP_NGINX_CACHE: &str = "Nginx 缓存文件";
     pub const ADMIN_CLEANUP_BYTES: &str = "预计释放空间";
     pub const ADMIN_CLEANUP_SUCCESS: &str = "本地清理完成，网盘资源未变化。";
     pub const ADMIN_CLEANUP_FAILED: &str = "本地索引清理失败，数据库已回滚。";

@@ -50,7 +50,7 @@ func (h *AdminHandler) TasksMetrics(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"tasks":     h.Governor.Stats(),
 		"metrics":   h.Governor.Metrics.Snapshot(),
-		"resources": services.CollectResourceMetrics(h.Settings.MediaRoot, &h.Settings.BackendMemoryLimitBytes, &h.Settings.RemoteThumbnailDiskQuotaBytes, &h.Settings.RemoteThumbnailMaxTempFiles, h.Settings.NginxCacheRoot),
+		"resources": services.CollectResourceMetrics(h.Settings.MediaRoot, &h.Settings.BackendMemoryLimitBytes, &h.Settings.RemoteThumbnailDiskQuotaBytes, &h.Settings.RemoteThumbnailMaxTempFiles),
 	})
 }
 
@@ -193,7 +193,6 @@ func (h *AdminHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 		"remote_file_indexes":     mediaCount.RemoteFileIndexes,
 		"scan_tasks":              mediaCount.ScanTasks,
 		"thumbnail_files":         derivedFiles,
-		"nginx_cache_files":       0,
 		"estimated_bytes_to_free": derivedBytes,
 		"duration_seconds":        completedAt.Sub(started).Seconds(),
 		"completed_at":            apiTimeString(&completedAt),

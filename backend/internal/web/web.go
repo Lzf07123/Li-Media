@@ -1,9 +1,8 @@
 // Package web 内嵌前端构建产物,单容器部署时由 Go 直接托管静态资源。
 //
-// 与 nginx 版(双容器)的职责对齐:SPA fallback、安全头、gzip、
-// 逐资源缓存策略;proxy_cache(派生缩略图磁盘缓存)不做进程内复刻——
-// 缩略图响应本身带 immutable 一年缓存,浏览器侧已命中,服务端缓存
-// 收益仅在首次并发,性能对比见 docs/rewrite-performance.md。
+// 职责:SPA fallback、安全头、gzip、逐资源缓存策略;派生缩略图磁盘缓存
+// 不在静态层复刻——缩略图响应本身带 immutable 一年缓存,浏览器侧已命中,
+// 服务端缓存收益仅在首次并发,性能对比见 docs/rewrite-performance.md。
 package web
 
 import (

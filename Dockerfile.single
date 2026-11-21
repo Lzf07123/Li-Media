@@ -1,5 +1,5 @@
 # 单容器镜像:前端 trunk 构建产物内嵌进 Go 二进制,一个进程同时
-# 服务静态资源与 /api(替代 nginx + backend 双容器)。
+# 服务静态资源与 /api。
 #
 # 构建上下文为仓库根:
 #   docker build -f Dockerfile.single -t limedia .

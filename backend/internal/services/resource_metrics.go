@@ -78,11 +78,10 @@ type ResourceDirectoryUsage struct {
 	Status string `json:"status"`
 }
 
-// ResourceCachesStatus 派生缓存/临时/nginx 缓存用量。
+// ResourceCachesStatus 派生缓存/临时目录用量。
 type ResourceCachesStatus struct {
 	DerivedThumbnails ResourceDirectoryUsage `json:"derived_thumbnails"`
 	Temporary         ResourceDirectoryUsage `json:"temporary"`
-	Nginx             ResourceDirectoryUsage `json:"nginx"`
 }
 
 // ResourceStackStatus 栈软硬限制(RLIM_INFINITY 读取为 null)。
@@ -357,7 +356,6 @@ func CollectResourceMetrics(
 	backendMemoryLimitBytes *int64,
 	tempDiskQuotaBytes *int64,
 	tempMaxFiles *int,
-	nginxCacheRoot string,
 ) *ResourceStatus {
 	rss, threads := readProcStatus()
 	if rss == nil {
@@ -376,11 +374,6 @@ func CollectResourceMetrics(
 	derivedCache := readDirectoryUsage(filepath.Join(mediaRoot, "thumbnails"))
 	// tmp 目录只走一遍遍历:计数与字节直接复用目录用量结果。
 	temporaryCache := readDirectoryUsage(temporaryDir)
-	nginxDir := nginxCacheRoot
-	if nginxDir == "" {
-		nginxDir = filepath.Join(mediaRoot, "nginx_cache")
-	}
-	nginxCache := readDirectoryUsage(nginxDir)
 
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
@@ -427,7 +420,6 @@ func CollectResourceMetrics(
 		Caches: ResourceCachesStatus{
 			DerivedThumbnails: derivedCache,
 			Temporary:         temporaryCache,
-			Nginx:             nginxCache,
 		},
 		Stack: readStackLimits(),
 		Limits: ResourceLimitStatus{

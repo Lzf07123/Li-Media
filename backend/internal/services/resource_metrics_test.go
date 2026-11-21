@@ -13,7 +13,7 @@ func writeFileForTest(dir, name, content string) error {
 
 func TestCollectResourceMetrics(t *testing.T) {
 	dir := t.TempDir()
-	// 派生缓存:2 个文件;tmp:1 个文件;nginx:1 个文件。
+	// 派生缓存:2 个文件;tmp:1 个文件。
 	if err := os.MkdirAll(filepath.Join(dir, "thumbnails", "m1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -29,29 +29,16 @@ func TestCollectResourceMetrics(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tmp", "probe.media"), []byte("12"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "nginx_cache"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "nginx_cache", "entry"), []byte("123"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	quota := int64(4 * 1024 * 1024 * 1024)
 	maxFiles := 8
-	metrics := CollectResourceMetrics(dir, nil, &quota, &maxFiles, "")
+	metrics := CollectResourceMetrics(dir, nil, &quota, &maxFiles)
 
 	if metrics.Caches.DerivedThumbnails.Files != 2 || metrics.Caches.DerivedThumbnails.Bytes != 10 {
 		t.Fatalf("derived = %+v, want (2, 10)", metrics.Caches.DerivedThumbnails)
 	}
 	if metrics.Caches.Temporary.Files != 1 || metrics.Caches.Temporary.Bytes != 2 {
 		t.Fatalf("temporary = %+v, want (1, 2)", metrics.Caches.Temporary)
-	}
-	// nginx_cache_root 未传 → 回退 media_root/nginx_cache。
-	if metrics.Caches.Nginx.Files != 1 || metrics.Caches.Nginx.Bytes != 3 {
-		t.Fatalf("nginx = %+v, want (1, 3)", metrics.Caches.Nginx)
-	}
-	if metrics.Caches.Nginx.Status != "ok" {
-		t.Fatalf("nginx status = %q", metrics.Caches.Nginx.Status)
 	}
 
 	if metrics.Temporary.Files != 1 || metrics.Temporary.Bytes != 2 {
@@ -100,7 +87,7 @@ func TestCollectResourceMetrics(t *testing.T) {
 
 func TestCollectResourceMetricsMissingRoot(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "does-not-exist")
-	metrics := CollectResourceMetrics(dir, nil, nil, nil, "")
+	metrics := CollectResourceMetrics(dir, nil, nil, nil)
 
 	// 缺失目录:缓存用量为 0 但状态 ok;filesystem 回退到 tmp 目录再回退父目录。
 	if metrics.Caches.DerivedThumbnails.Files != 0 || metrics.Caches.DerivedThumbnails.Status != "ok" {
@@ -122,7 +109,7 @@ func TestCollectResourceMetricsTruncated(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	metrics := CollectResourceMetrics(dir, nil, nil, nil, "")
+	metrics := CollectResourceMetrics(dir, nil, nil, nil)
 	if metrics.Caches.DerivedThumbnails.Status != "truncated" {
 		t.Fatalf("超 50000 文件应 truncated: %+v", metrics.Caches.DerivedThumbnails)
 	}

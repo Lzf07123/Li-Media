@@ -12,8 +12,7 @@ type Router struct {
 	Memories *MemoriesHandler
 	Admin    *AdminHandler
 	Static   http.Handler
-	// Cache 若设置,仅对匿名公开读端点生效(15s TTL,对齐 nginx
-	// proxy_cache);nil 时纯直通。
+	// Cache 若设置,仅对匿名公开读端点生效(15s TTL);nil 时纯直通。
 	Cache *TTLResponseCache
 }
 

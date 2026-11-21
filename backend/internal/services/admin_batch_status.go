@@ -223,10 +223,10 @@ type BatchStatusJobDeps struct {
 	Settings *config.Settings
 }
 
-// RunBatchStatusJob 执行批量状态变更:分块扫描、失败计数、
-// 完成后失效 nginx 缓存并写审计日志(对齐 run_batch_status_job)。
+// RunBatchStatusJob 执行批量状态变更:分块扫描、失败计数并写审计日志
+// (对齐 run_batch_status_job)。
 // 异常路径等价 Python except 分支:job 置 failed、error_message 取
-// err.Error()、completed_at 落库、写 invalidated=0 的审计日志。
+// err.Error()、completed_at 落库、写审计日志。
 func RunBatchStatusJob(
 	ctx context.Context,
 	deps *BatchStatusJobDeps,
@@ -235,7 +235,6 @@ func RunBatchStatusJob(
 	operatorSessionID *uuid.UUID,
 ) {
 	pool := deps.Pool
-	invalidatedCacheFiles := 0
 
 	job, err := getAdminBackgroundJob(ctx, pool, jobID)
 	if err != nil || job == nil {
@@ -257,7 +256,7 @@ func RunBatchStatusJob(
 			 completed_at = $2 WHERE id = $3`,
 			errText, time.Now().UTC(), jobID)
 		if fresh, err := getAdminBackgroundJob(ctx, pool, jobID); err == nil && fresh != nil {
-			recordBatchJobLog(ctx, pool, fresh, operatorSessionID, 0)
+			recordBatchJobLog(ctx, pool, fresh, operatorSessionID)
 		}
 	}
 
@@ -295,10 +294,9 @@ loop:
 				finishFailed(execErr.Error())
 				return
 			}
-			invalidatedCacheFiles = InvalidateNginxProxyCache(deps.Settings, "")
 			ClearBatchStatusCancel(jobID)
 			if fresh, err := getAdminBackgroundJob(ctx, pool, jobID); err == nil && fresh != nil {
-				recordBatchJobLog(ctx, pool, fresh, operatorSessionID, invalidatedCacheFiles)
+				recordBatchJobLog(ctx, pool, fresh, operatorSessionID)
 			}
 			return
 		}
@@ -362,9 +360,8 @@ loop:
 		finishFailed(err.Error())
 		return
 	}
-	invalidatedCacheFiles = InvalidateNginxProxyCache(deps.Settings, "")
 	if fresh, err := getAdminBackgroundJob(ctx, pool, jobID); err == nil && fresh != nil {
-		recordBatchJobLog(ctx, pool, fresh, operatorSessionID, invalidatedCacheFiles)
+		recordBatchJobLog(ctx, pool, fresh, operatorSessionID)
 	}
 }
 
@@ -453,7 +450,6 @@ func recordBatchJobLog(
 	pool *pgxpool.Pool,
 	job *models.AdminBackgroundJob,
 	operatorSessionID *uuid.UUID,
-	invalidatedCacheFiles int,
 ) {
 	session := "unknown"
 	if operatorSessionID != nil {
@@ -473,10 +469,9 @@ func recordBatchJobLog(
 		action = string(runes[:32])
 	}
 	detail := fmt.Sprintf(
-		"job=%s;status=%s;total=%d;session=%s;processed=%d;changed=%d;skipped=%d;failed=%d;nginx_cache_files=%d;filters=%s;resource_ids=%s",
+		"job=%s;status=%s;total=%d;session=%s;processed=%d;changed=%d;skipped=%d;failed=%d;filters=%s;resource_ids=%s",
 		job.ID.String(), job.Status, job.Total, session,
 		job.Processed, job.Changed, job.Skipped, job.Failed,
-		invalidatedCacheFiles,
 		pythonSortedJSON(decodeJSONWithNumbers(job.FilterSnapshot)),
 		pythonCompactJSON(decodeJSONWithNumbers(job.ResourceIDs)),
 	)

@@ -133,7 +133,6 @@ pub struct CleanupStats {
     pub remote_file_indexes: u32,
     pub scan_tasks: u32,
     pub thumbnail_files: u32,
-    pub nginx_cache_files: u32,
     pub estimated_bytes_to_free: u64,
 }
 

@@ -1,9 +1,8 @@
-// cache.go 进程内 TTL 缓存,替代双容器方案的 nginx proxy_cache。
+// cache.go 进程内 TTL 缓存:仅缓存匿名 GET 的公开读端点。
 //
-// 对齐语义:仅缓存匿名 GET 的公开读端点;带 Cookie/Authorization 与
-// random 排序一律绕过(与 nginx 的 proxy_cache_bypass 同义);TTL 15s
-// 与 proxy_cache_valid 200 15s 一致。缓存体量很小(页面级 JSON),
-// 用 map + 互斥锁即可,不需要 LRU 淘汰——条目数受页面参数组合约束。
+// 带 Cookie/Authorization 与 random 排序一律绕过;TTL 15s 与公开列表
+// 的 Cache-Control 对齐。缓存体量很小(页面级 JSON),用 map + 互斥锁
+// 即可,不需要 LRU 淘汰——条目数受页面参数组合约束。
 package api
 
 import (
@@ -14,7 +13,7 @@ import (
 	"time"
 )
 
-// cacheablePath 判定是否进入缓存白名单(与 nginx location 对齐)。
+// cacheablePath 判定是否进入缓存白名单。
 func cacheablePath(path string) bool {
 	if path == "/api/v1/memories" {
 		return true
@@ -98,7 +97,7 @@ func (c *TTLResponseCache) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// cacheable 与 nginx 的 bypass 条件对齐。
+// cacheable 定义匿名公开读的绕过条件。
 func (c *TTLResponseCache) cacheable(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false

@@ -60,7 +60,6 @@ func RunBrowserCompatibilityProbe(
 	operatorSessionID *uuid.UUID,
 ) {
 	pool := deps.Pool
-	invalidatedCacheFiles := 0
 
 	job, err := getAdminBackgroundJob(ctx, pool, jobID)
 	if err != nil || job == nil {
@@ -80,7 +79,7 @@ func RunBrowserCompatibilityProbe(
 			 completed_at = $2 WHERE id = $3`,
 			errText, time.Now().UTC(), jobID)
 		if fresh, err := getAdminBackgroundJob(ctx, pool, jobID); err == nil && fresh != nil {
-			recordBrowserProbeJobLog(ctx, pool, fresh, operatorSessionID, 0)
+			recordBrowserProbeJobLog(ctx, pool, fresh, operatorSessionID)
 		}
 	}
 
@@ -135,10 +134,9 @@ loop:
 				runErr = execErr
 				break loop
 			}
-			invalidatedCacheFiles = InvalidateNginxProxyCache(deps.Settings, "")
 			ClearBrowserProbeCancel(jobID)
 			if fresh, err := getAdminBackgroundJob(ctx, pool, jobID); err == nil && fresh != nil {
-				recordBrowserProbeJobLog(ctx, pool, fresh, operatorSessionID, invalidatedCacheFiles)
+				recordBrowserProbeJobLog(ctx, pool, fresh, operatorSessionID)
 			}
 			return
 		}
@@ -162,9 +160,6 @@ loop:
 		if err := persistCounters(); err != nil {
 			runErr = err
 			break loop
-		}
-		if memoryFile.BrowserCompatibility != models.BrowserCompatibilityStateUnknown {
-			invalidatedCacheFiles += InvalidateNginxProxyCache(deps.Settings, "")
 		}
 	}
 
@@ -191,7 +186,7 @@ loop:
 		return
 	}
 	if fresh, err := getAdminBackgroundJob(ctx, pool, jobID); err == nil && fresh != nil {
-		recordBrowserProbeJobLog(ctx, pool, fresh, operatorSessionID, invalidatedCacheFiles)
+		recordBrowserProbeJobLog(ctx, pool, fresh, operatorSessionID)
 	}
 }
 
@@ -277,17 +272,15 @@ func recordBrowserProbeJobLog(
 	pool *pgxpool.Pool,
 	job *models.AdminBackgroundJob,
 	operatorSessionID *uuid.UUID,
-	invalidatedCacheFiles int,
 ) {
 	session := "unknown"
 	if operatorSessionID != nil {
 		session = operatorSessionID.String()
 	}
 	detail := fmt.Sprintf(
-		"job=%s;status=%s;total=%d;session=%s;processed=%d;changed=%d;skipped=%d;failed=%d;nginx_cache_files=%d;filters=%s;resource_ids=%s",
+		"job=%s;status=%s;total=%d;session=%s;processed=%d;changed=%d;skipped=%d;failed=%d;filters=%s;resource_ids=%s",
 		job.ID.String(), job.Status, job.Total, session,
 		job.Processed, job.Changed, job.Skipped, job.Failed,
-		invalidatedCacheFiles,
 		pythonSortedJSON(decodeJSONWithNumbers(job.FilterSnapshot)),
 		pythonCompactJSON(decodeJSONWithNumbers(job.ResourceIDs)),
 	)

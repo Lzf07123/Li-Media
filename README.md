@@ -7,7 +7,7 @@
 - 后端：Go 1.26(标准库 net/http)+ pgx/v5 + golang-migrate 内嵌迁移 + PostgreSQL + Redis
 - 前端：Leptos 0.8(Rust→WASM)+ trunk + Tailwind CSS 4
 - 设计：首次设计以 [Li&Design](packages/li-design/README.md) 为参考，实例化为项目内 [design-system/limedia](design-system/limedia/BRAND.md)；运行时只使用 `frontend/src/index.css` 与 `frontend/src/lib/brand.ts`，不依赖模板仓库。
-- 部署：Docker Compose 单容器（Go 内嵌前端产物，`Dockerfile.single`）；双容器（nginx 反代）保留为 `--profile split`
+- 部署：Docker Compose 单容器（Go 内嵌前端产物，`Dockerfile.single`），仅 `backend` + PostgreSQL + Redis
 
 ## 本地启动
 
@@ -33,15 +33,11 @@ http://localhost:8080
 
 默认部署只有一个 `backend` 容器：Go 二进制同时托管内嵌前端与 `/api`，PostgreSQL 与 Redis 只在 Compose 网络内访问。仓库不再提供 API 文档路由（`/api/docs` 已随 FastAPI 移除），排障使用 `/api/v1/healthz` 与 `/api/v1/readyz`。
 
-TLS 由外部反向代理或负载均衡终止。需要 nginx 网关缓存时启用 split profile（宿主端口 `SPLIT_HTTP_PORT`，默认 8081）：
-
-```bash
-docker compose --profile split up -d
-```
+TLS 由外部反向代理或负载均衡终止；如该代理需要按真实客户端限流，把其来源网段写入 `TRUSTED_PROXY_CIDRS`。
 
 ### 低配生产机拉取部署
 
-`backend`（以及 split profile 的 `nginx`）同时声明了 `image` 与 `build`：本机 `--build` 构建后自动打上仓库标签；低配生产机无需构建，直接拉取镜像仓库（默认 `uhub.service.ucloud.cn/li-media/`）：
+`backend` 同时声明了 `image` 与 `build`：本机 `--build` 构建后自动打上仓库标签；低配生产机无需构建，直接拉取镜像仓库（默认 `uhub.service.ucloud.cn/li-media/`）：
 
 ```bash
 docker compose pull
@@ -144,7 +140,7 @@ CHECKLIST.md          当前版本验收基线
 - 公开列表和详情返回瘦身 DTO，只包含首页卡片和查看器需要的字段。
 - 派生图矩阵为 240 / 480 / 768 / 1280px；首页按列宽和 DPR 选择最小可用尺寸，查看器移动端用 480px、桌面端用 1280px。
 - 视频仅在用户触发播放后经服务端流代理播放，支持 Range 拖拽与并发治理；`/api/v1/memories/:id/direct-url` 的直链签发与短链缓存能力保留，但前端当前不消费（e2e 契约固化“播放走服务端流、不发直链请求”）。
-- 管理清理会移除本地索引、派生缓存、临时文件和网关派生图缓存（split profile 时），但不修改百度网盘资源。
+- 管理清理会移除本地索引、派生缓存和临时文件，但不修改百度网盘资源。
 - 扫描、直链探测、单帧派生和流回退分别受独立并发与队列上限治理；重复派生请求会合并，队列满时返回 `429`。运维指标位于 `GET /api/v1/admin/tasks/metrics`。
 - 管理后台会汇总显示后端栈（API / 数据库 / Redis / 任务治理）、远端存储索引状态以及内存 / 线程 / PID / 临时文件 / 磁盘 / 队列资源状态；数据来自 `GET /api/v1/admin/system/status`。
 - 公开首页读取 `GET /api/v1/memories/preheat-status` 的服务端预热摘要；访客只能看到运行中、未预热、就绪、降级和安全的已处理 / 总数进度，看不到任务 ID、远端路径或失败原因。
@@ -154,10 +150,10 @@ CHECKLIST.md          当前版本验收基线
 - 查看器在 zoom≤1 时支持横向滑动翻页（纵向与短距拖拽不触发，拖拽跟手、减动效下直接阈值翻页）；推进到已加载末尾前 3 项自动续载下一页，位置计数旁短暂提示“正在加载更多回忆”，可一路翻到库末尾。
 - 查看器左下显示「标题 · 地点 · 日期」元信息行（空段自动省略、全空不渲染）；动作区提供复制链接（clipboard API 优先、execCommand 回退）并短暂反馈成功/失败；视频播放时左上显示时长与分辨率徽章。
 - 触屏（hover: none）卡片常驻单行弱化「地点 · 日期」，标题只在查看器与桌面 hover 出现；移动端（≤768px）hero 精选全屏化（100svh，负边距抵消页眉边框贴视口顶），精选池比例过滤按同口径换算，无贴合图像时按可见占比降序取前 5。
-- 后台资源状态额外显示文件系统总 / 已用 / 可用空间，以及派生图、临时文件和网关缓存（split profile）的文件数与字节数；目录扫描有数量与超时边界，不可读路径会显示不可用而不是误导性的零。
+- 后台资源状态额外显示文件系统总 / 已用 / 可用空间，以及派生图与临时文件的文件数和字节数；目录扫描有数量与超时边界，不可读路径会显示不可用而不是误导性的零。
 - 后台媒体工作台采用分区卡片布局；筛选、当前范围操作、选中记录操作和横向滚动表格分离，窄屏时字段自动换行且不重叠。
 - 前端对可见缩略图使用全局加载队列，最多同时发起 2 个图像请求；查看器大图高优先级，媒体切换或关闭时取消排队请求。
-- Compose 对 backend / PostgreSQL / Redis（以及可选的 split profile nginx）设置 CPU、内存、PID 和日志轮转边界；backend 内存硬上限为 256m。远程首帧源读取、临时目录配额和 FFmpeg 子进程资源也有独立保护。基线见 [docs/resource-baseline.md](docs/resource-baseline.md)。
+- Compose 对 backend / PostgreSQL / Redis 设置 CPU、内存、PID 和日志轮转边界；backend 内存硬上限为 256m。远程首帧源读取、临时目录配额和 FFmpeg 子进程资源也有独立保护。基线见 [docs/resource-baseline.md](docs/resource-baseline.md)。
 - 预热、派生、直链探测、扫描、流回退、临时文件数量和临时磁盘配额都在启动时从环境变量读取，并带上下限校验；`queue_limit=0` 表示不排队，临时文件/配额为 0 表示关闭。配置不会热更新，修改后需要重启 backend。扩大并发不会突破容器 `mem_limit` / `pids_limit`，可能增加派生子进程的峰值资源，务必重新运行资源基线。
 
 ## 当前进度
@@ -205,7 +201,7 @@ CHECKLIST.md          当前版本验收基线
 | `unsupported` | AVI、FLV、Matroska/MKV、MOV、MPEG-TS、WebM、WMV，或 HEVC/H.265/HVC1、MPEG-4 Part 2、MPEG-2、ProRes、VP8/VP9、AV1 | 保守矩阵按“无浏览器专属配置可播放”判定；Safari HEVC 等能力必须由后续客户端能力查询细化，不能默认放宽全站谓词。 |
 | `unknown` | 容器/编码/音轨证据不足，或受控探测数据不足 | 默认不进入公开画布和推荐；只在管理员触发探测时使用远程前缀和 `ffprobe`，不完整下载源媒体，也不转码。 |
 
-兼容状态变化会同步刷新计数、列表、详情、推荐和公开读缓存（split profile 下另有 nginx 缓存）。探测结果不保存源媒体副本、完整直链、Token 或 Cookie。
+兼容状态变化会同步刷新计数、列表、详情、推荐和进程内公开读缓存。探测结果不保存源媒体副本、完整直链、Token 或 Cookie。
 
 ## 管理入口
 

@@ -4,6 +4,10 @@
 > `fastapi/` 样本仍是公开 API 的行为契约基准，`go-samples/` 与 `go-admin/` 为 Go 实现
 > 抓取的对照样本；下文“复现环境”中的 Python 步骤仅作历史记录。当前契约验证请用
 > `scripts/contract-capture.sh` 对 Go 服务抓取后运行 `scripts/contract-diff.py`。
+>
+> **迁移后有意的差异**：双容器（nginx）方案已移除，管理员任务指标与系统状态不再返回
+> `resources.caches.nginx`，清理统计不再包含 `nginx_cache_files`。`go-admin/24` 已同步；
+> `fastapi/*` 保持历史原样。
 
 记录日期:2026-11-20。分支:`codex/go-leptos-rewrite`。
 

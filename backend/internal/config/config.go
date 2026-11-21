@@ -40,7 +40,6 @@ type Settings struct {
 	AdminCookieSecure       *bool // nil=自动:public_base_url 为 https 时启用 Secure
 
 	MediaRoot        string
-	NginxCacheRoot   string
 	ThumbnailMaxSize int
 	ThumbnailQuality int
 
@@ -133,7 +132,6 @@ func Load() (*Settings, error) {
 		AdminCookieSecure:      envOptBool("ADMIN_COOKIE_SECURE"),
 
 		MediaRoot:        envString("MEDIA_ROOT", "./data/media"),
-		NginxCacheRoot:   envString("NGINX_CACHE_ROOT", "./data/nginx_cache"),
 		ThumbnailMaxSize: envInt("THUMBNAIL_MAX_SIZE", 1280),
 		ThumbnailQuality: envInt("THUMBNAIL_QUALITY", 82),
 

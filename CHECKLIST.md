@@ -3,8 +3,9 @@
 > 版本：V1.1 ｜ 更新：2026-11-22 ｜ 状态：长期验收基线
 >
 > **迁移说明**：后端已由 FastAPI 切换为 Go 1.26，前端已切换为 Leptos(Rust→WASM)，
-> 默认部署为单容器（Go 内嵌前端产物）。本文档中 pytest / Vite / typecheck /
-> nginx 唯一入口等表述已按当前技术栈更新；历史性能与资源基线中的旧命令仅作记录。
+> 部署为单容器（Go 内嵌前端产物），nginx/双容器方案已移除。本文档中
+> pytest / Vite / typecheck / Nginx 唯一入口等表述已按当前技术栈更新；
+> 历史性能与资源基线中的旧命令仅作记录。
 >
 > 本文档不是已完成事项清单。每次交付前逐项判定“通过 / 不通过”，所有必测门禁都必须有证据；任何一项不通过，功能不能合入 `main`。
 > 视觉与品牌依据 [BRAND.md](design-system/limedia/BRAND.md) 和 [MASTER.md](design-system/limedia/MASTER.md)；实现与文档冲突时以代码为准，并回写设计方案。
@@ -112,7 +113,7 @@
 
 - 后端 Go 测试覆盖公开可见性、404/502/429、鉴权、配置边界、缓存口径和响应字段。
 - 集成测试确认管理员鉴权后的接口与公开接口数据边界分离。
-- `docker compose config` 通过；单容器/split profile 契约测试确认静态托管、健康检查和安全头。
+- `docker compose config` 通过；单容器契约测试确认静态托管、健康检查和安全头。
 
 ## 7. 后台与资源验收
 
@@ -121,7 +122,7 @@
 - 后台登录、退出、会话失败、批量发布/下架、扫描、预热、状态刷新、错误重试和删除确认可用。
 - 批量状态操作可预览、确认、取消、幂等重复执行，并在操作日志中记录变更与跳过数量。
 - 状态面板显示后端栈、远端索引、任务队列、文件系统、派生缓存、临时文件和生效资源限制；不可用项显示不可用而不是零。
-- 磁盘目录扫描有文件数和超时边界；缓存、临时文件和网关缓存（split profile）可分项解释。
+- 磁盘目录扫描有文件数和超时边界；缓存与临时文件可分项解释。
 - backend 内存上限保持 256m；提升并发后必须重新记录 cgroup、子进程、OOM、PID 和临时文件基线。
 - 清理流程有显式确认、事务回滚、文件清理和直链缓存失效；百度网盘资源不被修改。
 
@@ -140,7 +141,7 @@
 | `docker exec limedia-go-dev sh -c 'cd /work && go build ./... && go vet ./... && go test ./... -count=1'` | 0 failed；新增后端行为有正例、边界、失败和越权用例 |
 | `docker exec limedia-rust-dev sh -c 'cd /work && cargo check --target wasm32-unknown-unknown && trunk build'` | wasm 编译 0 error；trunk 构建成功 |
 | `python3 scripts/check_frontend_sources.py` | 设计令牌只存在于 `index.css`，文案只来自 `brand.ts`/`brand.rs` |
-| `docker compose config --quiet` | 默认与 `--profile split` 配置均可解析 |
+| `docker compose config --quiet` | 配置可解析 |
 | `git diff --check` | 无 whitespace error |
 | `cd frontend && npx playwright test` | 全部通过；失败用例必须先修复或说明为无效需求后删除，不得长期跳过 |
 
@@ -155,7 +156,7 @@
 ### 必过项
 
 1. 本地全量门禁通过。
-2. Compose 构建或重建后 `backend`、`db`、`redis`（split profile 另含 `nginx`）全部 healthy。
+2. Compose 构建或重建后 `backend`、`db`、`redis` 全部 healthy。
 3. 单容器入口返回首页 200，`/api/v1/healthz` 正常，静态资源缓存头正确。
 4. 公开首页冷缓存与热缓存都完成验收：首屏无空洞，失败可重试，预热状态收敛。
 5. 照片和视频样本在真实部署链路可打开；视频播放、Range、失败回退和重试通过。
@@ -193,15 +194,15 @@
 
 **方案**
 
-- `GET /api/v1/memories` 返回明确的短时缓存语义，并与进程内 15 秒公开读缓存（split profile 下另有 nginx 网关缓存）对齐；候选语义为 `public, max-age=15, stale-while-revalidate=30`。
-- 带管理会话或凭证的请求不得共享缓存；服务端必须回退为 `no-store`，Nginx（split profile）继续按 cookie/authorization 判断绕过。
+- `GET /api/v1/memories` 返回明确的短时缓存语义，并与进程内 15 秒公开读缓存对齐；候选语义为 `public, max-age=15, stale-while-revalidate=30`。
+- 带管理会话或凭证的请求不得共享缓存；服务端必须回退为 `no-store`。
 - 推荐、预热状态、直链、播放和流式回退保持 `no-store`，不参与短时公开缓存。
 - 缓存键保留 `kind`、`page`、`page_size` 等查询参数；发布、下架或清理后不需要立即失效，但必须在 15 秒内自然收敛。
 
 **通过标准**
 
 - 后端契约测试断言无会话请求的缓存头、带会话请求的不缓存行为。
-- 进程内缓存契约测试（Go `internal/api`）确认缓存键与绕过条件；split profile 下另有 nginx 配置检查保证语义一致。
+- 进程内缓存契约测试（Go `internal/api`）确认缓存键与绕过条件。
 - Playwright 验证首页首次加载、筛选变更和二次加载正常；不出现跨筛选错误复用。
 
 ### O2：查看器 chunk 预取
@@ -295,7 +296,7 @@
 1. O4 底部三态提示：纯前端状态与文案，风险最低，先建立用户可感知的完整浏览闭环。
 2. O5 统一媒体状态机：先抽公共状态模型，再迁移卡片和查看器；不和视觉大改混在一个提交。
 3. O3 预热状态轮询收敛：补前端网络断言和公开文案验收。
-4. O1 列表短缓存：先契约测试，再改服务端（split 时同步 nginx）；交付前必须验证带会话请求不共享缓存。
+4. O1 列表短缓存：先契约测试，再改服务端；交付前必须验证带会话请求不共享缓存。
 5. O2 查看器预取：在功能稳定后做传输优化，避免掩盖状态机问题。
 6. O6 公开 DTO 瘦身：最后做契约裁剪，确保前端已不依赖内部字段。
 
