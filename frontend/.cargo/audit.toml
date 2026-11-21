@@ -1,0 +1,7 @@
+# cargo-audit 配置:仅忽略已确认无修复路径的传递依赖。
+[advisories]
+ignore = [
+  # paste 已停止维护;由 leptos → either_of → paste 传递引入,
+  # RustSec 无修复版本,且仅用于编译期宏展开,不进入运行时产物。
+  "RUSTSEC-2024-0436",
+]

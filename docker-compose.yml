@@ -11,6 +11,7 @@ services:
         RUST_IMAGE: ${RUST_IMAGE:-rust:1-slim}
         GO_IMAGE: ${GO_IMAGE:-golang:1.26-alpine}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        APT_MIRROR: ${APT_MIRROR:-}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -60,7 +61,7 @@ services:
       start_period: 10s
 
   db:
-    image: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}postgres:16-alpine
+    image: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-media}
@@ -98,7 +99,7 @@ services:
       start_period: 5s
 
   redis:
-    image: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}redis:7-alpine
+    image: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}redis:7-alpine
     restart: unless-stopped
     command:
       - redis-server
