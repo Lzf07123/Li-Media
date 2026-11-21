@@ -1,12 +1,14 @@
 services:
+  # 单容器:Go 二进制内嵌前端产物,同时服务静态资源与 /api(默认方案)。
+  # 双容器(nginx 反代)保留为 split profile:`docker compose --profile split up -d`。
   backend:
-    # image 与 build 并存：本机构建会打上仓库标签；低配生产机执行
-    # docker compose pull 直接拉取远端镜像，跳过构建。
-    image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}backend:${APP_IMAGE_TAG:-latest}
+    image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}limedia:${APP_IMAGE_TAG:-latest}
     build:
-      context: ./backend
+      context: .
+      dockerfile: Dockerfile.single
       args:
         IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}
+        RUST_IMAGE: ${RUST_IMAGE:-rust:1-slim}
         GO_IMAGE: ${GO_IMAGE:-golang:1.23-alpine}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     restart: unless-stopped
@@ -20,12 +22,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: ${POSTGRES_DB:-media}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      NGINX_CACHE_ROOT: /app/data/nginx_cache
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
       BACKEND_MEMORY_LIMIT_BYTES: ${BACKEND_MEMORY_LIMIT_BYTES:-268435456}
-    # 迁移内嵌于 Go 二进制(启动即自动推进到最新);X-Forwarded-For 由
-    # nginx 传入,限流键与审计 IP 直接读取该头。
-    command: sh -c "server"
+    # 迁移内嵌于 Go 二进制(启动即自动推进到最新)。
+    command: ["limedia"]
+    ports:
+      - "${HTTP_PORT:-8080}:8000"
     mem_limit: 256m
     cpus: 1.0
     pids_limit: 64
@@ -38,7 +40,6 @@ services:
       - limedia
     volumes:
       - backend_data:/app/data
-      - nginx_cache:/app/data/nginx_cache
     depends_on:
       db:
         condition: service_healthy
@@ -125,7 +126,10 @@ services:
       timeout: 3s
       retries: 5
 
+  # 双容器方案(可选):nginx 反代 + 前端镜像。默认栈不含它;
+  # 需要网关级 proxy_cache 时 `docker compose --profile split up -d`。
   nginx:
+    profiles: ["split"]
     # 镜像名跟随构建目录 frontend，避免与官方 nginx 镜像同名混淆。
     image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}frontend:${APP_IMAGE_TAG:-latest}
     build:
@@ -136,7 +140,7 @@ services:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.27-alpine}
     restart: unless-stopped
     ports:
-      - "${HTTP_PORT:-8080}:80"
+      - "${SPLIT_HTTP_PORT:-8081}:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -165,32 +169,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
-  # 容器内测试入口（不随生产栈启动）：backend/Dockerfile 的 test target
-  # 在 runtime 之上补装 pytest。用法：
-  #   docker compose --profile dev run --rm backend-test            # 全量
-  #   docker compose --profile dev run --rm backend-test pytest tests/test_x.py -q
-  backend-test:
-    image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}backend-test:${APP_IMAGE_TAG:-latest}
-    build:
-      context: ./backend
-      target: test
-      args:
-        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.mirrors.ustc.edu.cn/library/}
-        APT_MIRROR: ${APT_MIRROR:-http://mirrors.ustc.edu.cn}
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.ustc.edu.cn/pypi/simple}
-    profiles: ["dev"]
-    command: pytest -q
-    mem_limit: 512m
-    cpus: 1.0
-    pids_limit: 128
-    logging:
-      driver: json-file
-      options:
-        max-size: 5m
-        max-file: "3"
-    networks:
-      - limedia
 
 volumes:
   backend_data:

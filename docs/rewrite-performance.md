@@ -59,9 +59,51 @@ Go 版以单查询取 id + 内存种子洗牌替代 Python 的全量 ORM 实体�
 | 图片并发队列 | TS 全局队列(并发 2) | Rust 全局队列(同语义) |
 | 派生图 | Pillow(照片)+ ffmpeg(视频) | ffmpeg 统一(Go 无纯 Go WebP 编码器) |
 
+## 部署拓扑:单容器 vs 双容器(2026-11-21 实测)
+
+单容器方案将前端 trunk 产物 `//go:embed` 进 Go 二进制,一个进程同时服务
+静态资源与 `/api`,替代 nginx 反代 + 独立后端的双容器栈。两种拓扑使用
+同一种子库、同一台机器、顺序采样(间隔 0.25s,避开网关 10r/s 限流)。
+
+| 指标 | 双容器(nginx→Go) | 单容器(Go 内嵌) |
+|---|---|---|
+| 容器数(不含 db/redis) | 2 | **1** |
+| 镜像体积 | 192MB + 89.1MB = **281MB** | **206MB**(含 ffmpeg 与前端产物) |
+| 进程内存 | nginx 18.8MB + Go 14.3MB = **33.1MB** | **33.6MB** |
+| GET /memories p50 / p95 | 2.16 / 4.04 ms | **1.67 / 2.47 ms** |
+| GET /memories/recommend p50 / p95 | 3.25 / 8.06 ms | **1.61 / 2.05 ms** |
+| GET /memories/public-counts p50 | 1.51 ms | **1.47 ms** |
+| GET /memories/{id} p50 | 1.47 ms | 1.50 ms |
+| wasm 首载(gzip 传输) | 140 ms / 0.97MB | **107 ms / 1.0MB** |
+| index.html | 1.2 ms / 1.7KB | **0.91 ms / 1.7KB** |
+
+功能等价性:双容器的 nginx `proxy_cache`(匿名公开读 15s 缓存、带
+Cookie/Authorization 与 random 排序绕过)在单容器中以进程内
+`TTLResponseCache` 复刻(同 TTL、同 bypass 条件、`X-Cache: HIT/MISS`
+可观测);gzip(含 `application/wasm`)与安全头(CSP/HSTS/Permissions-Policy)
+由 Go 中间件提供;SPA fallback 与 hashed 资源 `immutable` 一年缓存同语义。
+
+单容器少一跳进程间转发,列表/推荐类端点因此更快;内存几乎持平
+(Go 内嵌 11MB wasm 与静态服务占用约等于一个 nginx 进程)。
+
+**单容器未复刻的能力(取舍)**:
+- 网关级限流(`limit_req` 10-20 r/s 按路径)。单容器依赖应用层
+  流/派生并发治理;若需 IP 级限流,建议前置 CDN/负载均衡或后续在
+  Go 侧加 `golang.org/x/time/rate` 中间件。
+- nginx 的磁盘级 `proxy_cache`(缩略图)。缩略图响应本身带
+  `immutable` 一年缓存,浏览器侧命中,服务端缓存仅在首轮并发有收益。
+- `open_file_cache`、sendfile 等内核零拷贝路径(Go 从内存 embed 读取,
+  实测静态资源反而更快)。
+
+双容器拓扑仍保留:compose 中以 `--profile split` 启用(nginx 端口
+`SPLIT_HTTP_PORT` 默认 8081),`frontend/Dockerfile` 与
+`backend/Dockerfile` 均可用。
+
 ## 结论
 
 - 后端延迟 5-13×、内存 -79%,同时代码量从 9,399 行(Python app)降至约 8,600 行(Go internal+cmd),
   测试从 134 个 pytest 覆盖到等价 Go 测试套件(全绿)。
 - 前端交互行为与 React 版逐测试等价(87 e2e 全绿),代价是 wasm 体积。
 - 契约零破坏:公开 11 端点 + admin 10 端点逐字段一致(见 docs/contract-samples/)。
+- 部署收敛为单容器(Go 内嵌前端):省掉一个镜像与进程,延迟不劣于双容器,
+  内存持平;代价是网关级限流需另行补齐。

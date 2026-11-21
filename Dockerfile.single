@@ -1,0 +1,54 @@
+# 单容器镜像:前端 trunk 构建产物内嵌进 Go 二进制,一个进程同时
+# 服务静态资源与 /api(替代 nginx + backend 双容器)。
+#
+# 构建上下文为仓库根:
+#   docker build -f Dockerfile.single -t limedia .
+#
+# 分层策略:rust 依赖与 Go 模块各自缓存,源码改动只失效最后一层。
+ARG IMAGE_REGISTRY=docker.m.daocloud.io/library/
+ARG RUST_IMAGE=rust:1-slim
+ARG GO_IMAGE=golang:1.23-alpine
+ARG RUN_IMAGE=alpine:3.20
+
+# ---- 1. 前端 ----
+FROM ${RUST_IMAGE} AS web
+ARG CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
+RUN rustup target add wasm32-unknown-unknown \
+    && cargo install trunk --locked --version 0.21.14
+WORKDIR /src
+COPY frontend/Cargo.toml frontend/Cargo.lock ./
+COPY frontend/src/main.rs ./src/main.rs
+RUN cargo fetch
+COPY frontend/ ./
+# trunk 首次构建会下载 wasm-bindgen 二进制(约 15MB):国内链路偶发断流,
+# 单次退避重试避免整个镜像层重建。
+RUN trunk build --release || (sleep 5 && trunk build --release)
+
+# ---- 2. 后端(嵌入前端产物) ----
+FROM ${GO_IMAGE} AS api
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=$GOPROXY CGO_ENABLED=0
+WORKDIR /app
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ ./
+# go:embed 需要编译时文件在模块内:用构建产物覆盖占位 dist。
+RUN rm -rf internal/web/dist && mkdir -p internal/web/dist
+COPY --from=web /src/dist/ ./internal/web/dist/
+RUN go build -trimpath -ldflags="-s -w" -o /out/limedia ./cmd/server
+
+# ---- 3. 运行时 ----
+FROM ${RUN_IMAGE} AS runtime
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s|https://dl-cdn.alpinelinux.org|${APT_MIRROR}|g" /etc/apk/repositories; fi \
+    && apk add --no-cache ffmpeg ca-certificates tzdata \
+    && addgroup -S limedia && adduser -S -G limedia limedia \
+    && mkdir -p /app/data && chown -R limedia:limedia /app
+WORKDIR /app
+COPY --from=api /out/limedia /usr/local/bin/limedia
+USER limedia
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8000/api/v1/healthz || exit 1
+CMD ["limedia"]

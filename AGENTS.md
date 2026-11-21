@@ -11,6 +11,7 @@
 ## 技术约定
 
 - 后端使用 Go 1.23(标准库 net/http + pgx/v5 + golang-migrate 内嵌迁移),不再使用 FastAPI。
+- 部署默认单容器:前端 trunk 产物经 `//go:embed` 进入 Go 二进制(`Dockerfile.single`),nginx 反代为可选 split profile。
 - 前端使用 Leptos 0.8(Rust→WASM,trunk 构建),不再使用 React/Vite;`frontend/src` 下 `.rs` 为源,React 遗留文件在迁移完成后清理。
 - 网盘凭据、下载链接和用户数据不写入仓库,只放 `.env` 或服务配置。
 - 内容类型只做 `photo` 与 `video`,不做电影、剧集、动漫、纪录片或音乐 MV。
@@ -40,9 +41,9 @@ docker exec limedia-go-dev sh -c 'cd /work && go build ./... && go vet ./... && 
 # 前端(编译 + 构建产物)
 docker exec limedia-rust-dev sh -c 'cd /work && cargo check --target wasm32-unknown-unknown 2>&1 | grep -cE "^error" && trunk build'
 
-# e2e(宿主;需 trunk serve 与 Go server 运行中)
+# e2e(宿主;对生产栈 http://127.0.0.1:8080 或 trunk serve 14173 均可)
 cd frontend
-PLAYWRIGHT_BASE_URL=http://127.0.0.1:14173 npx playwright test
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:8080 npx playwright test
 
 # 设计令牌与品牌来源检查(brand.rs 之外的 .rs 不得硬编码 --limedia-*)
 python3 scripts/check_frontend_sources.py

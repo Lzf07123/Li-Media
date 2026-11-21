@@ -1,8 +1,20 @@
-**/.DS_Store
-**/.env
-**/.pytest_cache/
-**/__pycache__/
-**/.venv/
+# 单容器构建上下文(仓库根):排除一切与构建无关的本地状态。
+.git/
+.zcode/
+.env
+.env.*
+!.env.example
+.DS_Store
+node_modules/
 **/node_modules/
-**/dist/
-**/.vite/
+frontend/target/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+backend/data/
+backend/media/
+backend/.venv/
+**/__pycache__/
+*.log
+*.tmp
+test-results/

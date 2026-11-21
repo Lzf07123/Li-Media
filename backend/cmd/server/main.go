@@ -20,6 +20,7 @@ import (
 	"limedia/backend/internal/config"
 	"limedia/backend/internal/repo"
 	"limedia/backend/internal/services"
+	"limedia/backend/internal/web"
 	"limedia/backend/internal/db"
 )
 
@@ -84,10 +85,17 @@ func main() {
 		Derivatives: memories.Derivatives,
 	}
 
+	staticHandler, staticErr := web.New()
+	if staticErr != nil {
+		logger.Warn("前端产物不可用(仅 API 模式)", "error", staticErr)
+	}
+
 	handler := (&api.Router{
 		Health:   &api.HealthHandler{Pool: pool, Redis: redisClient},
 		Memories: memories,
 		Admin:    admin,
+		Static:   staticHandler,
+		Cache:    api.NewTTLResponseCache(15 * time.Second),
 	}).Handler()
 	httpServer := &http.Server{
 		Addr:              ":8000",
