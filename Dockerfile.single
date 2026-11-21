@@ -4,7 +4,11 @@
 # 构建上下文为仓库根:
 #   docker build -f Dockerfile.single -t limedia .
 #
-# 分层策略:rust 依赖与 Go 模块各自缓存,源码改动只失效最后一层。
+# 分层策略:rust 依赖与 Go 模块各自缓存,源码改动只失效最后一层;
+# Cargo registry/target 与 Go build cache 使用 BuildKit 缓存挂载,
+# 跨多次构建复用编译产物(需要 BuildKit,Compose v2 默认启用)。
+# 不写 # syntax 指令:避免额外从 Docker Hub 拉取 frontend 镜像,
+# 内置 BuildKit 已支持 RUN --mount=type=cache。
 # 基础镜像统一拼 IMAGE_REGISTRY 前缀(留空则回退 Docker Hub);
 # RUST_IMAGE / GO_IMAGE / RUN_IMAGE 只写裸仓库名与标签。
 ARG IMAGE_REGISTRY=docker.m.daocloud.io/library/
@@ -16,16 +20,31 @@ ARG RUN_IMAGE=alpine:3.20
 FROM ${IMAGE_REGISTRY}${RUST_IMAGE} AS web
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI
-RUN rustup target add wasm32-unknown-unknown \
-    && cargo install trunk --locked --version 0.21.14
 WORKDIR /src
 COPY frontend/Cargo.toml frontend/Cargo.lock ./
+# 工具与 wasm-bindgen CLI 都从 crates.io 安装(cargo 缓存卷复用编译产物)。
+# wasm-bindgen 预置到 trunk 工具缓存,避免构建期从 GitHub 下载二进制——
+# 该链路在国内网络下经常断流,是整个镜像构建最不稳定的环节。
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/tmp/trunk-target \
+    rustup target add wasm32-unknown-unknown \
+    && CARGO_TARGET_DIR=/tmp/trunk-target cargo install trunk --locked --version 0.21.14 \
+    && WB_VERSION=$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/[^0-9.]/, ""); print; exit}' Cargo.lock) \
+    && test -n "$WB_VERSION" \
+    && CARGO_TARGET_DIR=/tmp/trunk-target cargo install wasm-bindgen-cli --version "$WB_VERSION" \
+    && mkdir -p "/root/.cache/trunk/wasm-bindgen-$WB_VERSION" \
+    && cp /usr/local/cargo/bin/wasm-bindgen "/root/.cache/trunk/wasm-bindgen-$WB_VERSION/wasm-bindgen"
 COPY frontend/src/main.rs ./src/main.rs
-RUN cargo fetch
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch
 COPY frontend/ ./
-# trunk 首次构建会下载 wasm-bindgen 二进制(约 15MB):国内链路偶发断流,
-# 单次退避重试避免整个镜像层重建。
-RUN trunk build --release || (sleep 5 && trunk build --release)
+# Cargo target 缓存跨构建复用:源码改动只重编应用 crate,不再重编全部依赖。
+RUN --mount=type=cache,target=/src/target,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    trunk build --release
 
 # ---- 2. 后端(嵌入前端产物) ----
 FROM ${IMAGE_REGISTRY}${GO_IMAGE} AS api
@@ -33,12 +52,16 @@ ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=$GOPROXY CGO_ENABLED=0
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 COPY backend/ ./
 # go:embed 需要编译时文件在模块内:用构建产物覆盖占位 dist。
 RUN rm -rf internal/web/dist && mkdir -p internal/web/dist
 COPY --from=web /src/dist/ ./internal/web/dist/
-RUN go build -trimpath -ldflags="-s -w" -o /out/limedia ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -ldflags="-s -w" -o /out/limedia ./cmd/server
 
 # ---- 3. 运行时 ----
 FROM ${IMAGE_REGISTRY}${RUN_IMAGE} AS runtime
