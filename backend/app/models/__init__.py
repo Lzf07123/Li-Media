@@ -1,2 +1,0 @@
-"""SQLAlchemy persistence models."""
-

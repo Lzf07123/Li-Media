@@ -1,2 +1,0 @@
-"""Versioned API endpoints."""
-
