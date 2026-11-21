@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- 后端：Go 1.23(标准库 net/http)+ pgx/v5 + golang-migrate 内嵌迁移 + PostgreSQL + Redis
+- 后端：Go 1.26(标准库 net/http)+ pgx/v5 + golang-migrate 内嵌迁移 + PostgreSQL + Redis
 - 前端：Leptos 0.8(Rust→WASM)+ trunk + Tailwind CSS 4
 - 设计：首次设计以 [Li&Design](packages/li-design/README.md) 为参考，实例化为项目内 [design-system/limedia](design-system/limedia/BRAND.md)；运行时只使用 `frontend/src/index.css` 与 `frontend/src/lib/brand.ts`，不依赖模板仓库。
 - 部署：Docker Compose 单容器（Go 内嵌前端产物，`Dockerfile.single`）；双容器（nginx 反代）保留为 `--profile split`

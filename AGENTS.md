@@ -10,7 +10,7 @@
 
 ## 技术约定
 
-- 后端使用 Go 1.23(标准库 net/http + pgx/v5 + golang-migrate 内嵌迁移),不再使用 FastAPI。
+- 后端使用 Go 1.26(标准库 net/http + pgx/v5 + golang-migrate 内嵌迁移),不再使用 FastAPI;安全扫描(govulncheck)必须清零。
 - 部署默认单容器:前端 trunk 产物经 `//go:embed` 进入 Go 二进制(`Dockerfile.single`),nginx 反代为可选 split profile。
 - 前端使用 Leptos 0.8(Rust→WASM,trunk 构建),不再使用 React/Vite;`frontend/src` 下 `.rs` 为源,React 遗留文件在迁移完成后清理。
 - 网盘凭据、下载链接和用户数据不写入仓库,只放 `.env` 或服务配置。
