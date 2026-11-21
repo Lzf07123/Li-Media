@@ -376,3 +376,42 @@ func TestCORSPreflightAllowlist(t *testing.T) {
 		t.Fatalf("非白名单来源不得回显, got %q", got)
 	}
 }
+
+func TestUnsupportedMethodReturns405WithAllow(t *testing.T) {
+	// 只做路由匹配,不进入业务处理器,因此无需数据库。
+	handler := (&Router{
+		Health:   &HealthHandler{},
+		Memories: &MemoriesHandler{},
+		Admin:    &AdminHandler{},
+	}).Handler()
+
+	cases := []struct {
+		method    string
+		path      string
+		wantAllow string
+	}{
+		{http.MethodPost, "/api/v1/memories", "GET, HEAD"},
+		{http.MethodPatch, "/api/v1/admin/memories", "GET, HEAD"},
+		{http.MethodGet, "/api/v1/admin/login", "POST"},
+	}
+	for _, tc := range cases {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.path, nil))
+		if recorder.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s 状态 = %d, want 405", tc.method, tc.path, recorder.Code)
+		}
+		if got := recorder.Header().Get("Allow"); got != tc.wantAllow {
+			t.Fatalf("%s %s Allow = %q, want %q", tc.method, tc.path, got, tc.wantAllow)
+		}
+		if got := decodeDetail(t, recorder); got != "Method Not Allowed" {
+			t.Fatalf("%s %s detail = %q", tc.method, tc.path, got)
+		}
+	}
+
+	// 未注册路径仍是 404,不能被 405 探测误伤。
+	missing := httptest.NewRecorder()
+	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodPost, "/api/v1/does-not-exist", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("未注册路径状态 = %d, want 404", missing.Code)
+	}
+}

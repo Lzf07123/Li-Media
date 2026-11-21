@@ -40,9 +40,15 @@ func (rt *Router) mux() http.Handler {
 		rt.Admin.Register(mux)
 	}
 
-	// 兜底:API 前缀继续返回 JSON 404;其余路径交给内嵌前端(SPA fallback)。
+	// 兜底:API 前缀先区分「路径存在但方法不支持(405)」与「路径不存在
+	// (404)」,对齐 FastAPI;其余路径交给内嵌前端(SPA fallback)。
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
+			if allow := allowedMethods(mux, r); len(allow) > 0 {
+				w.Header().Set("Allow", strings.Join(allow, ", "))
+				ErrorDetail(w, http.StatusMethodNotAllowed, "Method Not Allowed")
+				return
+			}
 			ErrorDetail(w, http.StatusNotFound, "Not Found")
 			return
 		}
@@ -53,4 +59,31 @@ func (rt *Router) mux() http.Handler {
 		ErrorDetail(w, http.StatusNotFound, "Not Found")
 	})
 	return mux
+}
+
+// allowedMethods 用路由表本身探测同一路径支持的方法:逐一以候选方法
+// 调用 ServeMux.Handler,命中真实路由(pattern 不是 "/" 兜底)即支持。
+// 这样新增路由无需同步维护一份方法清单,也不会误报未注册路径。
+func allowedMethods(mux *http.ServeMux, r *http.Request) []string {
+	candidates := []string{
+		http.MethodGet, http.MethodPost, http.MethodPatch,
+		http.MethodDelete, http.MethodPut,
+	}
+	allowed := make([]string, 0, len(candidates)+1)
+	hasGet := false
+	for _, method := range candidates {
+		probe := r.Clone(r.Context())
+		probe.Method = method
+		if _, pattern := mux.Handler(probe); pattern != "/" {
+			allowed = append(allowed, method)
+			if method == http.MethodGet {
+				hasGet = true
+			}
+		}
+	}
+	// GET 支持的路径同时允许 HEAD(Go ServeMux 语义),Allow 显式列出。
+	if hasGet {
+		allowed = append(allowed, http.MethodHead)
+	}
+	return allowed
 }
