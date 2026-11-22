@@ -25,9 +25,13 @@ ARG RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static
 ARG RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup
 # crates.io 稀疏索引镜像;留空则使用官方 crates.io。
 ARG CARGO_REGISTRY_MIRROR=sparse+https://mirrors.ustc.edu.cn/crates.io-index/
+# 构建并发上限:默认 4,避免 Rust 依赖编译打满整机;CI 可调大(如 8/16),
+# 低配机可调到 2。CARGO_BUILD_JOBS 同时作用于工具安装与 trunk 的前端构建。
+ARG BUILD_JOBS=4
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI \
     RUSTUP_DIST_SERVER=$RUSTUP_DIST_SERVER \
-    RUSTUP_UPDATE_ROOT=$RUSTUP_UPDATE_ROOT
+    RUSTUP_UPDATE_ROOT=$RUSTUP_UPDATE_ROOT \
+    CARGO_BUILD_JOBS=$BUILD_JOBS
 RUN if [ -n "$CARGO_REGISTRY_MIRROR" ]; then \
         mkdir -p "$CARGO_HOME" \
         && printf '[source.crates-io]\nreplace-with = "mirror"\n\n[source.mirror]\nregistry = "%s"\n\n[net]\nretry = 5\n' "$CARGO_REGISTRY_MIRROR" > "$CARGO_HOME/config.toml"; \
@@ -65,6 +69,8 @@ RUN --mount=type=cache,target=/src/target,sharing=locked \
 # ---- 2. 后端(嵌入前端产物) ----
 FROM ${IMAGE_REGISTRY}${GO_IMAGE} AS api
 ARG GOPROXY=https://goproxy.cn,direct
+# 与 Rust 阶段同口径的并发上限,避免多包并行编译叠加负载。
+ARG BUILD_JOBS=4
 ENV GOPROXY=$GOPROXY CGO_ENABLED=0
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
@@ -77,7 +83,7 @@ RUN rm -rf internal/web/dist && mkdir -p internal/web/dist
 COPY --from=web /src/dist/ ./internal/web/dist/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -ldflags="-s -w" -o /out/limedia ./cmd/server
+    go build -p "$BUILD_JOBS" -trimpath -ldflags="-s -w" -o /out/limedia ./cmd/server
 
 # ---- 3. 运行时 ----
 FROM ${IMAGE_REGISTRY}${RUN_IMAGE} AS runtime

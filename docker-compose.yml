@@ -15,6 +15,7 @@ services:
         RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://mirrors.ustc.edu.cn/rust-static}
         RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://mirrors.ustc.edu.cn/rust-static/rustup}
         CARGO_REGISTRY_MIRROR: ${CARGO_REGISTRY_MIRROR:-sparse+https://mirrors.ustc.edu.cn/crates.io-index/}
+        BUILD_JOBS: ${BUILD_JOBS:-4}
     restart: unless-stopped
     env_file: .env
     environment:

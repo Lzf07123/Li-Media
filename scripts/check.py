@@ -8,16 +8,17 @@ compose 语法与空白错误始终校验。
 用法:
     python3 scripts/check.py          # 常规门禁（不含 e2e）
     python3 scripts/check.py --e2e    # 追加 Playwright 全量 e2e（需运行中的栈）
+
+环境变量 BUILD_JOBS 控制容器内编译并发（默认 4），低配机可设 2。
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
-
-from check_frontend_sources import check_frontend_sources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +44,11 @@ def container_running(name: str) -> bool:
     return completed.returncode == 0 and completed.stdout.strip() == "true"
 
 
+def build_jobs() -> str:
+    """编译并发上限:默认 4,避免门禁本身打满整机;可用 BUILD_JOBS 覆盖。"""
+    return os.environ.get("BUILD_JOBS", "4")
+
+
 def check_backend() -> None:
     if not container_running("limedia-go-dev"):
         print("\n[check] 跳过 Go 检查:limedia-go-dev 未运行(见 AGENTS.md 开发环境)")
@@ -51,10 +57,13 @@ def check_backend() -> None:
         [
             "docker",
             "exec",
+            "-e",
+            f"BUILD_JOBS={build_jobs()}",
             "limedia-go-dev",
             "sh",
             "-c",
-            "cd /work && go build ./... && go vet ./... && go test ./... -count=1",
+            'cd /work && go build -p "$BUILD_JOBS" ./... && go vet ./... '
+            '&& go test -p "$BUILD_JOBS" ./... -count=1',
         ]
     )
 
@@ -67,6 +76,8 @@ def check_frontend() -> None:
         [
             "docker",
             "exec",
+            "-e",
+            f"CARGO_BUILD_JOBS={build_jobs()}",
             "limedia-rust-dev",
             "sh",
             "-c",
@@ -88,8 +99,7 @@ def main() -> None:
     run(["git", "diff", "--check"])
 
     print("\n[check] design tokens and brand source")
-    check_frontend_sources()
-    print("design tokens and brand sources OK")
+    run([sys.executable, str(ROOT / "scripts" / "check_frontend_sources.py")])
 
     check_backend()
     check_frontend()
