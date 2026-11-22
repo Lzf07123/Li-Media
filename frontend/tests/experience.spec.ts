@@ -732,6 +732,10 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
   releasePageTwo?.();
   await expect(page.locator(".masonry .post-card")).toHaveCount(36);
   await expect(page.locator('[data-append-probe="first"]')).toHaveCount(1);
+  // 续载页不做交错入场延迟:新卡片立即以占位态可见,图片随后淡入。
+  const appendedCard = page.locator(".masonry .post-card").last();
+  await expect(appendedCard).not.toHaveClass(/canvas-card-enter/);
+  await expect(appendedCard).toHaveCSS("opacity", "1");
   await expect(page.locator(".pagination")).toHaveCount(0);
   await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "end");
   await expect(page.getByTestId("canvas-footer")).toContainText("已经到底了");

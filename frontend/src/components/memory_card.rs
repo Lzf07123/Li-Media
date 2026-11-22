@@ -48,6 +48,8 @@ pub fn MemoryCard(
     #[prop(default = false)] priority: bool,
     /// 画布交错入场的全局序号:映射为 --card-enter-index,延迟上限由 CSS 收口。
     #[prop(default = 0)] enter_index: u32,
+    /// 续载页关闭入场动画:占位态立即出现,避免整行透明造成空白。
+    #[prop(default = true)] animate_enter: bool,
 ) -> impl IntoView {
 
     let media_state = RwSignal::new(MediaLifecycleMap::new());
@@ -436,6 +438,7 @@ pub fn MemoryCard(
     view! {
         <div
             class="post-card relative block w-full overflow-hidden"
+            class:canvas-card-enter=animate_enter
             data-preview-state={move || media_state.get().preview.as_str()}
             on:focus=move |_: web_sys::FocusEvent| prefetch_callback()
             on:pointerenter=move |_: web_sys::PointerEvent| prefetch_callback()

@@ -3758,12 +3758,12 @@ html {
     transform: none;
   }
 }
-.infinite-canvas .post-card {
+.infinite-canvas .post-card.canvas-card-enter {
   animation: canvas-card-in 420ms var(--limedia-ease-out) both;
   animation-delay: calc(min(var(--card-enter-index, 0), 12) * 35ms);
 }
 @media (prefers-reduced-motion: reduce) {
-  .infinite-canvas .post-card {
+  .infinite-canvas .post-card.canvas-card-enter {
     animation: none;
   }
 }

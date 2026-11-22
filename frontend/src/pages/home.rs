@@ -275,6 +275,9 @@ pub fn HomePage() -> impl IntoView {
     let preheat_status_ref = RwSignal::new(Option::<String>::None);
     let is_loading_initial = RwSignal::new(true);
     let is_loading_more = RwSignal::new(false);
+    // 只有首屏/换筛后的第一批卡片做交错入场;续载页直接以占位态出现,
+    // 避免新卡片在动画延迟里整行透明,形成空白区。
+    let allow_enter_animation = RwSignal::new(true);
     let error = RwSignal::new(Option::<String>::None);
     let load_more_error = RwSignal::new(Option::<String>::None);
     let request_token = RwSignal::new(0u64);
@@ -351,10 +354,12 @@ pub fn HomePage() -> impl IntoView {
         request_token.set(token);
         if replace {
             is_loading_initial.set(true);
+            allow_enter_animation.set(true);
             memories.set(Vec::new());
             viewer_missing.set(false);
         } else {
             is_loading_more.set(true);
+            allow_enter_animation.set(false);
         }
         let kind = active_kind.get_untracked();
         let keyword_value = keyword.get_untracked();
@@ -1945,6 +1950,8 @@ pub fn HomePage() -> impl IntoView {
                                                                             .contains(&memory.id);
                                                                         view! {
                                                                             <MemoryCard
+                                                                                animate_enter={allow_enter_animation
+                                                                                    .get_untracked()}
                                                                                 enter_index={enter_index}
                                                                                 memory={memory}
                                                                                 on_open={on_open_viewer}
