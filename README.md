@@ -19,10 +19,17 @@ cp .env.example .env
 
 基础镜像（Rust/Go/Alpine）、rustup 组件、crates.io 索引、PostgreSQL/Redis 与 Alpine 软件源默认走 `docker.m.daocloud.io` 与 USTC；可在 `.env` 中调整 `IMAGE_REGISTRY`、`RUSTUP_DIST_SERVER`、`CARGO_REGISTRY_MIRROR`、`APT_MIRROR` 和 `GOPROXY`。`BUILD_JOBS` 控制编译并发（默认 4，低配机可设 2，CI 可升高），避免构建时打满整机。
 
-2. 启动服务：
+2. 构建并启动。推荐分段构建（前端与后端分开，避免同时编译把机器打满）：
 
 ```bash
-docker compose up --build
+scripts/build-image.sh
+docker compose up -d
+```
+
+一次性构建也可 `docker compose up --build`。只改了后端时可跳过前端阶段：
+
+```bash
+scripts/build-image.sh --no-frontend
 ```
 
 3. 打开唯一入口：

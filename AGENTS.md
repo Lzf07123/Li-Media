@@ -39,6 +39,10 @@ docker network create --subnet 172.30.0.0/24 --gateway 172.30.0.1 limedia-dev
 # 一键门禁(compose/空白/设计令牌 + 容器内 Go 测试 + Rust wasm 构建)
 python3 scripts/check.py
 
+# 分阶段镜像构建(先前端 stage,再后端镜像;低负载推荐)
+scripts/build-image.sh
+scripts/build-image.sh --no-frontend   # 仅后端变更时跳过前端编译
+
 # 后端
 docker exec limedia-go-dev sh -c 'cd /work && go build ./... && go vet ./... && go test ./... -count=1'
 

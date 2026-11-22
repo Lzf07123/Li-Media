@@ -27,11 +27,15 @@ ARG RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup
 ARG CARGO_REGISTRY_MIRROR=sparse+https://mirrors.ustc.edu.cn/crates.io-index/
 # 构建并发上限:默认 4,避免 Rust 依赖编译打满整机;CI 可调大(如 8/16),
 # 低配机可调到 2。CARGO_BUILD_JOBS 同时作用于工具安装与 trunk 的前端构建。
+# dev profile 的 codegen-units 默认 256:即便 jobs=4,每个 rustc 仍会
+# 并行大量代码生成单元,把负载顶到几十。压到 1 后 BUILD_JOBS 才是真正的
+# 并发上限;release 前端构建沿用 Cargo.toml 的 codegen-units=1。
 ARG BUILD_JOBS=4
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=$CARGO_NET_GIT_FETCH_WITH_CLI \
     RUSTUP_DIST_SERVER=$RUSTUP_DIST_SERVER \
     RUSTUP_UPDATE_ROOT=$RUSTUP_UPDATE_ROOT \
-    CARGO_BUILD_JOBS=$BUILD_JOBS
+    CARGO_BUILD_JOBS=$BUILD_JOBS \
+    CARGO_PROFILE_DEV_CODEGEN_UNITS=1
 RUN if [ -n "$CARGO_REGISTRY_MIRROR" ]; then \
         mkdir -p "$CARGO_HOME" \
         && printf '[source.crates-io]\nreplace-with = "mirror"\n\n[source.mirror]\nregistry = "%s"\n\n[net]\nretry = 5\n' "$CARGO_REGISTRY_MIRROR" > "$CARGO_HOME/config.toml"; \

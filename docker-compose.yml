@@ -1,3 +1,17 @@
+# 构建参数集中定义:分阶段构建的前端 stage 与最终镜像必须完全一致,
+# 否则 BuildKit 缓存不会命中,分段构建就失去意义。
+x-build-args: &build-args
+  IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}
+  RUST_IMAGE: ${RUST_IMAGE:-rust:1-slim}
+  GO_IMAGE: ${GO_IMAGE:-golang:1.26-alpine}
+  RUN_IMAGE: ${RUN_IMAGE:-alpine:3.20}
+  GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+  APT_MIRROR: ${APT_MIRROR:-}
+  RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://mirrors.ustc.edu.cn/rust-static}
+  RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://mirrors.ustc.edu.cn/rust-static/rustup}
+  CARGO_REGISTRY_MIRROR: ${CARGO_REGISTRY_MIRROR:-sparse+https://mirrors.ustc.edu.cn/crates.io-index/}
+  BUILD_JOBS: ${BUILD_JOBS:-4}
+
 services:
   # 单容器:Go 二进制内嵌前端产物,同时服务静态资源与 /api。
   backend:
@@ -5,17 +19,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.single
-      args:
-        IMAGE_REGISTRY: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}
-        RUST_IMAGE: ${RUST_IMAGE:-rust:1-slim}
-        GO_IMAGE: ${GO_IMAGE:-golang:1.26-alpine}
-        RUN_IMAGE: ${RUN_IMAGE:-alpine:3.20}
-        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
-        APT_MIRROR: ${APT_MIRROR:-}
-        RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://mirrors.ustc.edu.cn/rust-static}
-        RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://mirrors.ustc.edu.cn/rust-static/rustup}
-        CARGO_REGISTRY_MIRROR: ${CARGO_REGISTRY_MIRROR:-sparse+https://mirrors.ustc.edu.cn/crates.io-index/}
-        BUILD_JOBS: ${BUILD_JOBS:-4}
+      args: *build-args
     restart: unless-stopped
     env_file: .env
     environment:
@@ -63,6 +67,17 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # 仅用于分阶段构建:先单独编译前端 stage(重活),再由 backend 复用缓存。
+  # 不参与默认 up;`docker compose --profile build build frontend-stage`。
+  frontend-stage:
+    profiles: ["build"]
+    image: ${APP_IMAGE_REGISTRY:-uhub.service.ucloud.cn/li-media/}limedia-web-stage:${APP_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.single
+      target: web
+      args: *build-args
 
   db:
     image: ${IMAGE_REGISTRY:-docker.m.daocloud.io/library/}postgres:16-alpine
