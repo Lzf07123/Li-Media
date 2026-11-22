@@ -192,8 +192,8 @@ func (h *AdminHandler) BatchStatus(w http.ResponseWriter, r *http.Request) {
 		Total:          len(ids),
 	}
 	if _, err := h.Pool.Exec(r.Context(),
-		`INSERT INTO admin_background_jobs (id, action, status, filter_snapshot, resource_ids, total, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, now(), now())`,
+		`INSERT INTO admin_background_jobs (id, action, status, filter_snapshot, resource_ids, total, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, now())`,
 		job.ID, job.Action, job.Status, job.FilterSnapshot, job.ResourceIDs, job.Total); err != nil {
 		ErrorDetail(w, http.StatusInternalServerError, "database error")
 		return
@@ -217,7 +217,6 @@ func (h *AdminHandler) BatchStatus(w http.ResponseWriter, r *http.Request) {
 	if fresh == nil {
 		fresh = job
 	}
-	w.WriteHeader(http.StatusAccepted)
 	WriteJSON(w, http.StatusAccepted, h.jobToRead(fresh))
 }
 

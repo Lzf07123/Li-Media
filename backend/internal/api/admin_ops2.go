@@ -326,7 +326,6 @@ func (h *AdminHandler) PreheatStart(w http.ResponseWriter, r *http.Request) {
 		Registry:    registry,
 	}
 	go runner.Run(job.ID)
-	w.WriteHeader(http.StatusAccepted)
 	WriteJSON(w, http.StatusAccepted, toPreheatJobPayload(job))
 }
 
@@ -423,8 +422,8 @@ func (h *AdminHandler) CompatProbeStart(w http.ResponseWriter, r *http.Request) 
 		Total:          limit,
 	}
 	if _, err := h.Pool.Exec(r.Context(),
-		`INSERT INTO admin_background_jobs (id, action, status, filter_snapshot, resource_ids, total, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, now(), now())`,
+		`INSERT INTO admin_background_jobs (id, action, status, filter_snapshot, resource_ids, total, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, now())`,
 		job.ID, job.Action, job.Status, job.FilterSnapshot, job.ResourceIDs, job.Total); err != nil {
 		ErrorDetail(w, http.StatusInternalServerError, "database error")
 		return
@@ -442,14 +441,13 @@ func (h *AdminHandler) CompatProbeStart(w http.ResponseWriter, r *http.Request) 
 	if fresh == nil {
 		fresh = job
 	}
-	w.WriteHeader(http.StatusAccepted)
 	WriteJSON(w, http.StatusAccepted, h.jobToRead(fresh))
 }
 
 // CompatProbeLatest 最近一次探测任务(无则 404,契约样本 31)。
 func (h *AdminHandler) CompatProbeLatest(w http.ResponseWriter, r *http.Request) {
 	row := h.Pool.QueryRow(r.Context(),
-		`SELECT id FROM admin_background_jobs WHERE action = 'browser_probe_batch'
+		`SELECT id FROM admin_background_jobs WHERE action = 'browser_compatibility_probe'
 		 ORDER BY created_at DESC LIMIT 1`)
 	var id uuid.UUID
 	if err := row.Scan(&id); err != nil {

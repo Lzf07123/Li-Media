@@ -94,6 +94,7 @@ func adminRouter(t *testing.T, settings *config.Settings, pool *pgxpool.Pool, ma
 		Settings: settings,
 		Pool:     pool,
 		Query:    &repo.MemoryQuery{Pool: pool, DerivativeVersion: settings.MediaDerivativeVersion},
+		Governor: services.NewTaskGovernor(settings),
 		Sessions: &services.AdminSessions{Pool: pool},
 		Limiter:  services.NewAdminLoginRateLimiter(maxAttempts, 0, 0),
 	}
@@ -468,5 +469,111 @@ func TestAdminCleanupReturnsNestedStats(t *testing.T) {
 	}
 	if payload.CompletedAt != nil {
 		t.Fatalf("dry-run completed_at = %v, want null", *payload.CompletedAt)
+	}
+}
+
+func TestAdminBackgroundJobsCanBeCreated(t *testing.T) {
+	pool := apiTestPool(t)
+	settings := apiTestSettings(t, nil)
+	handler := adminRouter(t, settings, pool, 5)
+
+	login := postLogin(t, handler, `{"token":"test-admin-token"}`, nil)
+	if login.Code != http.StatusNoContent {
+		t.Fatalf("登录状态 = %d, want 204", login.Code)
+	}
+	cookies := login.Result().Cookies()
+
+	post := func(path, body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		for _, cookie := range cookies {
+			req.AddCookie(cookie)
+		}
+		handler.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	// 两个后台任务创建路径都必须能写入 admin_background_jobs。
+	if recorder := post("/api/v1/admin/memories/batch-status",
+		`{"target_status":"published","confirm":true}`); recorder.Code != http.StatusAccepted {
+		t.Fatalf("批量状态任务状态 = %d, want 202 (%s)", recorder.Code, recorder.Body.String())
+	}
+	if recorder := post("/api/v1/admin/browser-compatibility/probe",
+		`{"limit":5}`); recorder.Code != http.StatusAccepted {
+		t.Fatalf("兼容探测任务状态 = %d, want 202 (%s)", recorder.Code, recorder.Body.String())
+	}
+
+	var count int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM admin_background_jobs
+		 WHERE action IN ('batch_status_published', 'browser_compatibility_probe')`).Scan(&count); err != nil {
+		t.Fatalf("读取后台任务失败: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("后台任务数 = %d, want 2", count)
+	}
+
+	// latest 查询的 action 必须与创建时一致,否则管理页永远看不到任务。
+	get := func(path string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		for _, cookie := range cookies {
+			req.AddCookie(cookie)
+		}
+		handler.ServeHTTP(recorder, req)
+		return recorder
+	}
+	for _, path := range []string{
+		"/api/v1/admin/memories/batch-status/latest",
+		"/api/v1/admin/browser-compatibility/probe/latest",
+	} {
+		if recorder := get(path); recorder.Code != http.StatusOK {
+			t.Fatalf("%s 状态 = %d, want 200 (%s)", path, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+func TestAdminReadEndpointsReturnOK(t *testing.T) {
+	pool := apiTestPool(t)
+	// 无效 Redis 地址让健康探测立即返回 unavailable,避免测试等待连接超时。
+	settings := apiTestSettings(t, map[string]string{"REDIS_URL": "::invalid::"})
+	handler := adminRouter(t, settings, pool, 5)
+
+	login := postLogin(t, handler, `{"token":"test-admin-token"}`, nil)
+	if login.Code != http.StatusNoContent {
+		t.Fatalf("登录状态 = %d, want 204", login.Code)
+	}
+	cookies := login.Result().Cookies()
+
+	get := func(path string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		for _, cookie := range cookies {
+			req.AddCookie(cookie)
+		}
+		handler.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	// 后台管理读接口会直接走库/schema,逐一确认没有列名或表名漂移。
+	for _, path := range []string{
+		"/api/v1/admin/memories",
+		"/api/v1/admin/remote-config",
+		"/api/v1/admin/remote-scan/latest",
+		"/api/v1/admin/memories/batch-status/latest",
+		"/api/v1/admin/tasks/metrics",
+		"/api/v1/admin/system/status",
+		"/api/v1/admin/thumbnails/preheat/latest",
+		"/api/v1/admin/thumbnails/preheat/preview",
+	} {
+		if recorder := get(path); recorder.Code != http.StatusOK {
+			t.Fatalf("%s 状态 = %d, want 200 (%s)", path, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// 无探测历史时按契约返回 404。
+	if recorder := get("/api/v1/admin/browser-compatibility/latest"); recorder.Code != http.StatusNotFound {
+		t.Fatalf("兼容探测历史状态 = %d, want 404 (%s)", recorder.Code, recorder.Body.String())
 	}
 }
