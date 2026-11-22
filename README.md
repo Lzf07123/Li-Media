@@ -17,7 +17,7 @@
 cp .env.example .env
 ```
 
-基础镜像（Rust/Go/Alpine）、PostgreSQL/Redis 与 Alpine 软件源默认走 `docker.m.daocloud.io` 与 USTC；可在 `.env` 中调整 `IMAGE_REGISTRY`、`APT_MIRROR` 和 `GOPROXY`。
+基础镜像（Rust/Go/Alpine）、rustup 组件、PostgreSQL/Redis 与 Alpine 软件源默认走 `docker.m.daocloud.io` 与 USTC；可在 `.env` 中调整 `IMAGE_REGISTRY`、`RUSTUP_DIST_SERVER`、`APT_MIRROR` 和 `GOPROXY`。
 
 2. 启动服务：
 

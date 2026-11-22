@@ -12,6 +12,8 @@ services:
         RUN_IMAGE: ${RUN_IMAGE:-alpine:3.20}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         APT_MIRROR: ${APT_MIRROR:-}
+        RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://mirrors.ustc.edu.cn/rust-static}
+        RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://mirrors.ustc.edu.cn/rust-static/rustup}
     restart: unless-stopped
     env_file: .env
     environment:
