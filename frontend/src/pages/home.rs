@@ -736,6 +736,10 @@ pub fn HomePage() -> impl IntoView {
         }
         unique
     });
+    // 画布分支判定用独立 Memo:外层视图直接读 canvas_memories.with(is_empty)
+    // 会在每次追加时重建整段 masonry,卡片 DOM 与图片请求全部重置,表现为
+    // 续载瞬间整屏空白。空/非空只在首屏数据到达时翻转一次。
+    let canvas_empty = Memo::new(move |_| canvas_memories.with(Vec::is_empty));
 
     let has_next_page = Memo::new(move |_| {
         let length = memories.with(Vec::len);
@@ -1388,7 +1392,7 @@ pub fn HomePage() -> impl IntoView {
 
     let on_prefetch_stub = Callback::new(move |_: ()| {});
     let canvas_footer_state = Memo::new(move |_| {
-        if canvas_memories.with(Vec::is_empty) {
+        if canvas_empty.get() {
             CanvasFooterState::Hidden
         } else if load_more_error.get().is_some() {
             CanvasFooterState::Retry
@@ -1857,7 +1861,7 @@ pub fn HomePage() -> impl IntoView {
                             }
                             .into_any();
                         }
-                        if canvas_memories.with(Vec::is_empty) {
+                        if canvas_empty.get() {
                             return view! {
                                 <div class="mt-8">
                                     <EmptyState

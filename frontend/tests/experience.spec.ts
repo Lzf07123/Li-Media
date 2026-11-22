@@ -718,12 +718,20 @@ test("infinite canvas appends segmented thumbnail pages while scrolling", async 
   await expect(page.locator(".masonry .post-card")).toHaveCount(18);
   await expect.poll(() => requestedPages).toContain("1");
 
+  // 追加下一页时不得重建已有卡片:DOM 被替换会让图片请求与占位态归零,
+  // 续载瞬间出现整屏空白。
+  await page
+    .locator(".masonry .post-card")
+    .first()
+    .evaluate((card) => card.setAttribute("data-append-probe", "first"));
+
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect.poll(() => requestedPages).toContain("2");
   await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "loading");
   await expect(page.getByTestId("canvas-footer")).toContainText("正在加载更多回忆");
   releasePageTwo?.();
   await expect(page.locator(".masonry .post-card")).toHaveCount(36);
+  await expect(page.locator('[data-append-probe="first"]')).toHaveCount(1);
   await expect(page.locator(".pagination")).toHaveCount(0);
   await expect(page.getByTestId("canvas-footer")).toHaveAttribute("data-state", "end");
   await expect(page.getByTestId("canvas-footer")).toContainText("已经到底了");
