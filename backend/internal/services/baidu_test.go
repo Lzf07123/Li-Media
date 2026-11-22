@@ -1,12 +1,14 @@
 package services
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"limedia/backend/internal/config"
+	"limedia/backend/internal/models"
 )
 
 func TestDownloadUrlCacheTTLAndFIFO(t *testing.T) {
@@ -154,5 +156,34 @@ func TestErrorMessagesMatchContract(t *testing.T) {
 	}
 	if got := apiError(111).Error(); got != "百度网盘访问凭证已过期，请重新授权" {
 		t.Errorf("apiError(111) = %q", got)
+	}
+}
+
+func TestCreateRemoteScanTaskInitializesCounters(t *testing.T) {
+	pool := servicesTestPool(t)
+	ctx := context.Background()
+
+	task, err := CreateRemoteScanTask(ctx, pool, "/apps/Li2Media", 8, 5000, false)
+	if err != nil {
+		t.Fatalf("创建扫描任务失败: %v", err)
+	}
+	if task.Status != models.RemoteScanStatusRunning {
+		t.Fatalf("status = %q, want %q", task.Status, models.RemoteScanStatusRunning)
+	}
+	if task.Cursor == nil || *task.Cursor == "" {
+		t.Fatal("cursor 应初始化为根目录游标")
+	}
+	if task.ProcessedItems != 0 || task.ScannedFiles != 0 || task.ScannedDirectories != 0 ||
+		task.Discovered != 0 || task.Refreshed != 0 || task.Skipped != 0 {
+		t.Fatalf("初始计数应全为 0: %+v", task)
+	}
+
+	// 已有运行中任务时复用,不重复插入。
+	again, err := CreateRemoteScanTask(ctx, pool, "/other", 1, 10, true)
+	if err != nil {
+		t.Fatalf("复用扫描任务失败: %v", err)
+	}
+	if again.ID != task.ID {
+		t.Fatalf("应复用运行中任务: %s != %s", again.ID, task.ID)
 	}
 }

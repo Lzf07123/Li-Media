@@ -424,9 +424,12 @@ func insertScanTask(ctx context.Context, q dbtx, remoteDir string, maxDepth, max
 	if maxItems < 1 {
 		maxItems = 1
 	}
+	// 计数字段在库中为 NOT NULL 且无服务端默认值(原 SQLAlchemy 模型只在
+	// 客户端补 default=0),这里显式写入 0,避免 INSERT 违反非空约束。
 	task, err := scanRemoteTask(q.QueryRow(ctx,
-		`INSERT INTO remote_scan_tasks (id, remote_dir, status, cursor, max_depth, max_items, delete_missing)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO remote_scan_tasks (id, remote_dir, status, cursor, max_depth, max_items,
+		 delete_missing, processed_items, scanned_files, scanned_directories, discovered, refreshed, skipped)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, 0, 0)
 		 RETURNING `+remoteScanTaskColumns,
 		uuid.New(), remoteDir, models.RemoteScanStatusRunning, cursor, maxDepth, maxItems, deleteMissing))
 	if err != nil {
