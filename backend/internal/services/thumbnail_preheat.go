@@ -1448,6 +1448,10 @@ func processPairSizes(
 			}, nil
 		}
 		downloadedRemoteSource = *downloadedPath
+		// 远程源下载后,派生必须使用本地临时文件(Python 版把下载路径
+		// 重新赋给 source_path)。遗漏此步会导致后续 *sourcePath 空指针
+		// panic,预热任务连同进程一起中断。
+		sourcePath = downloadedPath
 		RegisterTemporaryPath(absPath(downloadedRemoteSource))
 		defer func() {
 			_ = os.Remove(downloadedRemoteSource)
@@ -1697,7 +1701,13 @@ func processCandidate(
 		default:
 			slog.Error("thumbnail preheat candidate failed",
 				"memory_id", memoryID, "file_id", memoryFileID, "error", err)
-			failureKind := string(ClassifyDerivativeException(err))
+			// 先按远端错误分类(凭证/限流/不存在等),再回落到 ffmpeg
+			// 等派生错误分类,避免凭证或 ID 问题只落成 unknown。
+			kind := classifyRemoteError(err)
+			if kind == models.DerivativeFailureUnknown {
+				kind = ClassifyDerivativeException(err)
+			}
+			failureKind := string(kind)
 			governor.Metrics.RecordFailed(TaskTypePreheat)
 			markPreheatFailure(pool, memoryFileID, failureKind)
 			markUnexpectedCacheFailure(pool, settings, memoryFileID, sizes, failureKind)
@@ -1804,6 +1814,12 @@ func (r *ThumbnailPreheatRunner) Run(jobID uuid.UUID) {
 
 	cancelled := false
 	exhausted := false
+	failureKinds := map[string]int{}
+	recordFailure := func(result *PreheatCandidateResult) {
+		if result != nil && result.FailureKind != "" {
+			failureKinds[result.FailureKind]++
+		}
+	}
 	for !cancelled && !exhausted {
 		if jobCtx.Err() != nil {
 			cancelled = true
@@ -1817,6 +1833,7 @@ func (r *ThumbnailPreheatRunner) Run(jobID uuid.UUID) {
 			}
 			registry.MarkItemProcessed(jobID, result.Outcomes,
 				result.SourceBytesDownloaded, result.DerivativeDurationMS)
+			recordFailure(result)
 			if anyOutcome(result.Outcomes, "cancelled") {
 				cancelled = true
 			}
@@ -1838,7 +1855,22 @@ func (r *ThumbnailPreheatRunner) Run(jobID uuid.UUID) {
 		return
 	}
 
-	registry.MarkCompleted(jobID, nil)
+	// 有失败项时把原因写进任务消息,管理页不再只显示失败计数。
+	var message *string
+	if snapshot := registry.Snapshot(jobID); snapshot != nil && snapshot.Failed > 0 {
+		reasons := make([]string, 0, len(failureKinds))
+		for kind := range failureKinds {
+			reasons = append(reasons, kind)
+		}
+		sort.Strings(reasons)
+		if len(reasons) == 0 {
+			reasons = []string{"unknown"}
+		}
+		text := fmt.Sprintf("failed=%d;reason=%s;retry=check_remote_access_or_rescan",
+			snapshot.Failed, strings.Join(reasons, ","))
+		message = &text
+	}
+	registry.MarkCompleted(jobID, message)
 	registry.persistJob(jobID, r.Settings)
 	runtime.GC()
 	r.Governor.Metrics.RecordGC(0)

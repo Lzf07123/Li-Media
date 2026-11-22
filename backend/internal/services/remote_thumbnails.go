@@ -177,7 +177,8 @@ func classifyRemoteError(err error) models.DerivativeFailureKind {
 		return models.DerivativeFailureRemoteAuth
 	case strings.Contains(message, "限流"):
 		return models.DerivativeFailureBaiduRateLimited
-	case strings.Contains(message, "不存在") || strings.Contains(message, "路径已变化"):
+	case strings.Contains(message, "不存在") || strings.Contains(message, "路径已变化") ||
+		strings.Contains(message, "ID 无效"):
 		return models.DerivativeFailureRemoteNotFound
 	case strings.Contains(message, "不可用") || strings.Contains(message, "暂时无法读取"):
 		return models.DerivativeFailureRemoteUnavail
