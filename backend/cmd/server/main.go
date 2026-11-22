@@ -37,6 +37,11 @@ func main() {
 	for _, warning := range settings.CredentialWarnings() {
 		logger.Warn("credential check: " + warning)
 	}
+	// 进程被杀/崩溃留下的临时文件会占满 tmp 的文件数上限,让后续
+	// 预热与远程缩略图全部误报 disk_quota。启动时先清理僵尸文件。
+	if removed := services.CleanupStaleRemoteTemporaryFiles(settings.MediaRoot); removed > 0 {
+		logger.Info("清理孤儿临时文件", "count", removed)
+	}
 
 	ctx := context.Background()
 

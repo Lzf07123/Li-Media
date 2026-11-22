@@ -252,6 +252,8 @@ func temporaryDirectoryHasCapacity(settings *config.Settings, temporaryDir strin
 }
 
 // CleanupStaleRemoteTemporaryFiles 启动前清理被杀死 worker 留下的孤儿临时文件。
+// tmp 目录只存临时文件(下载源、兼容探测采样),因此不按后缀过滤:
+// 旧探测的 .media 与旧下载的 .source.tmp 都会占用文件数上限。
 func CleanupStaleRemoteTemporaryFiles(mediaRoot string) int {
 	temporaryDir := filepath.Join(mediaRoot, "tmp")
 	if _, err := os.Stat(temporaryDir); err != nil {
@@ -260,12 +262,14 @@ func CleanupStaleRemoteTemporaryFiles(mediaRoot string) int {
 	removed := 0
 	entries, _ := os.ReadDir(temporaryDir)
 	for _, entry := range entries {
-		path := filepath.Join(temporaryDir, entry.Name())
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tmp") {
+		if entry.IsDir() {
 			continue
 		}
-		if !IsTemporaryPathActive(absPath(path)) {
-			_ = os.Remove(path)
+		path := filepath.Join(temporaryDir, entry.Name())
+		if IsTemporaryPathActive(absPath(path)) {
+			continue
+		}
+		if err := os.Remove(path); err == nil {
 			removed++
 		}
 	}

@@ -141,7 +141,9 @@ func Load() (*Settings, error) {
 		RemoteThumbnailVideoSourceMaxBytes: envInt64("REMOTE_THUMBNAIL_VIDEO_SOURCE_MAX_BYTES", 64*1024*1024),
 		SourceDownloadTimeoutSec:           envFloat("SOURCE_DOWNLOAD_TIMEOUT_SECONDS", 600),
 		RemoteThumbnailDiskQuotaBytes:      envInt64("REMOTE_THUMBNAIL_DISK_QUOTA_BYTES", 4*1024*1024*1024),
-		RemoteThumbnailMaxTempFiles:        envInt("REMOTE_THUMBNAIL_MAX_TEMP_FILES", 8),
+		// 文件数上限是并发硬上限:预热(最多 8)+ 兼容探测(最多 16)可能
+		// 同时各持有一个临时文件,默认值必须覆盖并发峰值而不是充当节流阀。
+		RemoteThumbnailMaxTempFiles: envInt("REMOTE_THUMBNAIL_MAX_TEMP_FILES", 32),
 		BrowserProbeMaxBytes:               envInt64("BROWSER_PROBE_MAX_BYTES", 2*1024*1024),
 		BrowserProbeTimeoutSec:             envFloat("BROWSER_PROBE_TIMEOUT_SECONDS", 12.0),
 

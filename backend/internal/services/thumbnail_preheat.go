@@ -1424,6 +1424,15 @@ func processPairSizes(
 		}
 		failureKind = remoteFailureSink["kind"]
 		if downloadedPath == nil {
+			// 临时目录容量不足是环境问题,不是文件本身不可用:记 skipped
+			// 并保留原状态,避免 retryable 冷却把全部候选挡在下一轮之外。
+			if failureKind == string(models.DerivativeFailureDiskQuota) {
+				return &PreheatCandidateResult{
+					Outcomes:              allSkippedOutcomes(sizes),
+					SourceBytesDownloaded: sourceBytesDownloaded,
+					FailureKind:           failureKind,
+				}, nil
+			}
 			file.ThumbnailState = repo.ClassifyThumbnailFailureState(strPtrOrNil(failureKind))
 			if failureKind != "" {
 				file.ThumbnailFailureKind = &failureKind
@@ -1855,9 +1864,10 @@ func (r *ThumbnailPreheatRunner) Run(jobID uuid.UUID) {
 		return
 	}
 
-	// 有失败项时把原因写进任务消息,管理页不再只显示失败计数。
+	// 有失败/环境性跳过时把原因写进任务消息,管理页不再只有计数。
 	var message *string
-	if snapshot := registry.Snapshot(jobID); snapshot != nil && snapshot.Failed > 0 {
+	if snapshot := registry.Snapshot(jobID); snapshot != nil &&
+		(snapshot.Failed > 0 || len(failureKinds) > 0) {
 		reasons := make([]string, 0, len(failureKinds))
 		for kind := range failureKinds {
 			reasons = append(reasons, kind)
@@ -1866,8 +1876,17 @@ func (r *ThumbnailPreheatRunner) Run(jobID uuid.UUID) {
 		if len(reasons) == 0 {
 			reasons = []string{"unknown"}
 		}
-		text := fmt.Sprintf("failed=%d;reason=%s;retry=check_remote_access_or_rescan",
-			snapshot.Failed, strings.Join(reasons, ","))
+		retry := "check_remote_access_or_rescan"
+		switch {
+		case failureKinds[string(models.DerivativeFailureDiskQuota)] > 0:
+			retry = "clean_tmp_or_raise_disk_quota"
+		case failureKinds[string(models.DerivativeFailureRemoteAuth)] > 0:
+			retry = "check_baidu_authorization"
+		case failureKinds[string(models.DerivativeFailureRemoteNotFound)] > 0:
+			retry = "rescan_remote_directory"
+		}
+		text := fmt.Sprintf("failed=%d;skipped=%d;reason=%s;retry=%s",
+			snapshot.Failed, snapshot.Skipped, strings.Join(reasons, ","), retry)
 		message = &text
 	}
 	registry.MarkCompleted(jobID, message)

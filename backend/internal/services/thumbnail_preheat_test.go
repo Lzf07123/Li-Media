@@ -249,3 +249,120 @@ func TestThumbnailPreheatRunnerRecordsFailureReason(t *testing.T) {
 		t.Fatalf("thumbnail_failure_kind = %v, want remote_not_found", failureKind)
 	}
 }
+
+func TestCleanupStaleRemoteTemporaryFilesRemovesOrphans(t *testing.T) {
+	mediaRoot := t.TempDir()
+	temporaryDir := filepath.Join(mediaRoot, "tmp")
+	if err := os.MkdirAll(temporaryDir, 0o755); err != nil {
+		t.Fatalf("创建 tmp 失败: %v", err)
+	}
+	staleDownload := filepath.Join(temporaryDir, ".source.tmp")
+	staleProbe := filepath.Join(temporaryDir, ".browser-probe-x.media")
+	active := filepath.Join(temporaryDir, "active-download.tmp")
+	for _, path := range []string{staleDownload, staleProbe, active} {
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatalf("写入临时文件失败: %v", err)
+		}
+	}
+	RegisterTemporaryPath(absPath(active))
+	defer UnregisterTemporaryPath(absPath(active))
+
+	if removed := CleanupStaleRemoteTemporaryFiles(mediaRoot); removed != 2 {
+		t.Fatalf("removed = %d, want 2", removed)
+	}
+	if _, err := os.Stat(active); err != nil {
+		t.Fatalf("活跃临时文件不应被删除: %v", err)
+	}
+}
+
+func TestThumbnailPreheatRunnerSkipsOnDiskQuota(t *testing.T) {
+	pool := servicesTestPool(t)
+	ctx := context.Background()
+
+	mediaRoot := t.TempDir()
+	settings := testSettings()
+	settings.MediaRoot = mediaRoot
+	settings.BaiduAccessToken = "token"
+	// 把文件数上限压到 0,模拟 tmp 已满。
+	settings.RemoteThumbnailMaxTempFiles = 0
+	settings.DerivativeConcurrencyLimit = 2
+	settings.DerivativeQueueLimit = 4
+	settings.DerivativeWaitTimeoutSec = 5
+	settings.PreheatConcurrencyLimit = 2
+	settings.PreheatQueueLimit = 4
+	settings.PreheatWaitTimeoutSec = 5
+
+	governor := NewTaskGovernor(settings)
+	registry := NewThumbnailPreheatRegistry()
+	runner := &ThumbnailPreheatRunner{
+		Pool:     pool,
+		Settings: settings,
+		Governor: governor,
+		Derivatives: &DerivativeTasks{
+			Settings: settings,
+			Governor: governor,
+			InFlight: NewInFlightRegistry(governor.Metrics),
+		},
+		Registry: registry,
+	}
+
+	memoryID := uuid.New()
+	fileID := uuid.New()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO memories (id, title, kind, status, captured_at)
+		 VALUES ($1, $2, $3, $4, now())`,
+		memoryID, "容量不足", models.MemoryKindPhoto, models.MemoryStatusPublished); err != nil {
+		t.Fatalf("插入 memory 失败: %v", err)
+	}
+	file := &models.MemoryFile{
+		ID:                   fileID,
+		MemoryID:             &memoryID,
+		Source:               "baidupan",
+		RemotePath:           "/remote/photo.jpg",
+		RemoteID:             ptrString("424242"),
+		MimeType:             "image/jpeg",
+		Status:               models.MemoryFileStatusMatched,
+		RemoteState:          models.RemoteFileStateReady,
+		ThumbnailState:       models.RemoteThumbnailStateMissing,
+		StreamState:          models.RemoteStreamStateReady,
+		BrowserCompatibility: models.BrowserCompatibilityStateSupported,
+	}
+	if err := insertMemoryFile(ctx, pool, file); err != nil {
+		t.Fatalf("插入 memory file 失败: %v", err)
+	}
+
+	job, started := registry.Start([]int{240}, nil, 0,
+		settings.PreheatConcurrencyLimit, settings.PreheatQueueLimit, false)
+	if !started {
+		t.Fatal("预热任务应能启动")
+	}
+	runner.Run(job.ID)
+
+	snapshot := registry.Snapshot(job.ID)
+	if snapshot == nil {
+		t.Fatal("任务快照丢失")
+	}
+	if snapshot.Status != PreheatJobCompleted {
+		t.Fatalf("任务状态 = %q, want completed", snapshot.Status)
+	}
+	if snapshot.Failed != 0 || snapshot.Skipped != 1 {
+		t.Fatalf("failed=%d skipped=%d, want 0/1", snapshot.Failed, snapshot.Skipped)
+	}
+	if snapshot.Message == nil ||
+		!strings.Contains(*snapshot.Message, "reason=disk_quota") ||
+		!strings.Contains(*snapshot.Message, "retry=clean_tmp_or_raise_disk_quota") {
+		t.Fatalf("任务消息缺少 disk_quota 诊断, got %v", snapshot.Message)
+	}
+
+	// 环境性失败不能把文件写成 retryable,否则下一轮会被冷却期排除。
+	var state string
+	var kind *string
+	if err := pool.QueryRow(ctx,
+		`SELECT thumbnail_state::text, thumbnail_failure_kind FROM memory_files WHERE id = $1`,
+		fileID).Scan(&state, &kind); err != nil {
+		t.Fatalf("读取文件状态失败: %v", err)
+	}
+	if state != "missing" || kind != nil {
+		t.Fatalf("文件状态 = (%v, %v), want (missing, nil)", state, kind)
+	}
+}

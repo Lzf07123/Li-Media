@@ -24,6 +24,10 @@ const baselineVersion = 1
 // 存量库升级路径:曾由 Alembic(0001..0010)建表、但从未运行过本迁移链
 // 的数据库,会被识别为「已完成基线」——直接登记版本 1 并退役
 // alembic_version 表,不重放 0001(CREATE TABLE 会撞已存在的表)。
+// 存量库升级路径:曾由 Alembic(0001..0010)建表、但从未运行过本迁移链
+// 的数据库,会被识别为「已完成基线」——直接登记版本 1 并退役
+// alembic_version 表,不重放 0001(CREATE TABLE 会撞已存在的表);
+// 随后继续执行基线之后的迁移(如 0002 数据修复)。
 // 全新数据库则正常执行迁移链。
 func MigrateUp(databaseURL string) error {
 	conn, err := sql.Open("pgx", databaseURL)
@@ -36,7 +40,6 @@ func MigrateUp(databaseURL string) error {
 		if err := adoptLegacyDatabase(conn); err != nil {
 			return err
 		}
-		return nil
 	}
 
 	source, err := iofs.New(migrations, "migrations")
