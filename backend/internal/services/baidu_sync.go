@@ -975,19 +975,37 @@ func persistMemoryFile(ctx context.Context, q dbtx, file *models.MemoryFile) err
 }
 
 func insertMemoryFile(ctx context.Context, q dbtx, file *models.MemoryFile) error {
+	// source_path 与库中其余 NOT NULL 计数字段一样没有服务端默认值(原
+	// SQLAlchemy 模型只在客户端补 default="")。源文件不落本地是审计不变量
+	// (见 source_zero.go),这里显式写入空串。
+	//
+	// 版本号与两个 JSON 摘要同理走客户端默认值(v1 / {})。显式传 nil 或空串
+	// 会覆盖库里的服务端默认值并违反非空约束,因此在持久化边界统一兜底。
+	version := file.BrowserCompatibilityVersion
+	if version == "" {
+		version = BrowserCompatibilityVersion
+	}
+	formatSummary := file.BrowserFormatSummary
+	if len(formatSummary) == 0 {
+		formatSummary = json.RawMessage(`{}`)
+	}
+	rawSummary := file.RawMetadataSummary
+	if len(rawSummary) == 0 {
+		rawSummary = json.RawMessage(`{}`)
+	}
 	_, err := q.Exec(ctx,
-		`INSERT INTO memory_files (id, memory_id, source, remote_path, remote_id, mime_type,
+		`INSERT INTO memory_files (id, memory_id, source, remote_path, remote_id, source_path, mime_type,
 		 size_bytes, remote_md5, parent_path, filename, extension, modified_at,
 		 raw_metadata_summary, status, remote_state, thumbnail_state, stream_state,
 		 browser_compatibility, browser_format_summary,
 		 browser_compatibility_version, browser_compatibility_checked_at,
 		 last_synced_at, last_scan_task_id)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
-		file.ID, file.MemoryID, file.Source, file.RemotePath, file.RemoteID, file.MimeType,
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+		file.ID, file.MemoryID, file.Source, file.RemotePath, file.RemoteID, file.SourcePath, file.MimeType,
 		file.SizeBytes, file.RemoteMD5, file.ParentPath, file.Filename, file.Extension, file.ModifiedAt,
-		file.RawMetadataSummary, file.Status, file.RemoteState, file.ThumbnailState, file.StreamState,
-		file.BrowserCompatibility, file.BrowserFormatSummary,
-		file.BrowserCompatibilityVersion, file.BrowserCompatibilityCheckedAt,
+		rawSummary, file.Status, file.RemoteState, file.ThumbnailState, file.StreamState,
+		file.BrowserCompatibility, formatSummary,
+		version, file.BrowserCompatibilityCheckedAt,
 		file.LastSyncedAt, file.LastScanTaskID,
 	)
 	if err != nil {

@@ -2,10 +2,15 @@ package services
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"limedia/backend/internal/config"
 	"limedia/backend/internal/models"
@@ -185,5 +190,120 @@ func TestCreateRemoteScanTaskInitializesCounters(t *testing.T) {
 	}
 	if again.ID != task.ID {
 		t.Fatalf("应复用运行中任务: %s != %s", again.ID, task.ID)
+	}
+}
+
+func TestInsertMemoryFileAppliesClientDefaults(t *testing.T) {
+	pool := servicesTestPool(t)
+	ctx := context.Background()
+
+	// 模拟扫描流程新建文件:未显式设置 source_path、版本号与两个 JSON 摘要。
+	// 这些列均为 NOT NULL,原 SQLAlchemy 模型在客户端补默认值。
+	file := &models.MemoryFile{
+		ID:                   uuid.New(),
+		Source:               "baidupan",
+		RemotePath:           "/apps/Li2Media/photo.jpg",
+		MimeType:             "image/jpeg",
+		Status:               models.MemoryFileStatusMatched,
+		RemoteState:          models.RemoteFileStateReady,
+		ThumbnailState:       models.RemoteThumbnailStateMissing,
+		StreamState:          models.RemoteStreamStateReady,
+		BrowserCompatibility: models.BrowserCompatibilityStateSupported,
+	}
+	if err := insertMemoryFile(ctx, pool, file); err != nil {
+		t.Fatalf("插入 memory file 失败: %v", err)
+	}
+
+	loaded, err := loadMemoryFileByID(ctx, pool, file.ID)
+	if err != nil {
+		t.Fatalf("读取 memory file 失败: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("插入后应能读回 memory file")
+	}
+	if loaded.SourcePath != "" {
+		t.Fatalf("source_path 应为空(源文件不入库), got %q", loaded.SourcePath)
+	}
+	if loaded.BrowserCompatibilityVersion != BrowserCompatibilityVersion {
+		t.Fatalf("browser_compatibility_version = %q, want %q",
+			loaded.BrowserCompatibilityVersion, BrowserCompatibilityVersion)
+	}
+	if string(loaded.BrowserFormatSummary) != "{}" {
+		t.Fatalf("browser_format_summary = %s, want {}", loaded.BrowserFormatSummary)
+	}
+	if string(loaded.RawMetadataSummary) != "{}" {
+		t.Fatalf("raw_metadata_summary = %s, want {}", loaded.RawMetadataSummary)
+	}
+	if loaded.RemotePath != file.RemotePath || loaded.MimeType != file.MimeType {
+		t.Fatalf("字段往返不一致: %+v", loaded)
+	}
+}
+
+func TestListPagePreservesLargeFsID(t *testing.T) {
+	// fs_id 是 15 位整数,经 float64 解码会被格式化成科学计数法,
+	// 导致后续 filemetas 的 ParseInt 失败。必须保留原始十进制字面量。
+	const payload = `{"errno":0,"list":[{
+		"path":"/apps/Li2Media/image-00001.webp",
+		"server_filename":"image-00001.webp",
+		"fs_id":987464465087449,
+		"isdir":0,
+		"size":1330856,
+		"server_mtime":1759563087,
+		"md5":"2398eca0",
+		"category":3,
+		"dlink":"https://example.invalid/dlink"
+	}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, payload)
+	}))
+	defer server.Close()
+
+	settings := &config.Settings{
+		BaiduAPIBaseURL:    server.URL,
+		BaiduSyncPageSize:  100,
+		BaiduRetryAttempts: 1,
+	}
+	client := &BaiduPanClient{settings: settings, accessToken: "token", httpClient: server.Client()}
+	page, err := client.ListPage(context.Background(), "/apps/Li2Media", 0, nil)
+	if err != nil {
+		t.Fatalf("列目录失败: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(page.Items))
+	}
+
+	item := page.Items[0]
+	if item.RemoteID != "987464465087449" {
+		t.Fatalf("remote_id = %q, want 987464465087449", item.RemoteID)
+	}
+	if summaryID, _ := item.RawMetadataSummary["fs_id"].(string); summaryID != item.RemoteID {
+		t.Fatalf("摘要 fs_id = %q, want %q", summaryID, item.RemoteID)
+	}
+	if item.SizeBytes == nil || *item.SizeBytes != 1330856 {
+		t.Fatalf("size_bytes = %v, want 1330856", item.SizeBytes)
+	}
+	if item.ModifiedAt == nil || item.ModifiedAt.Unix() != 1759563087 {
+		t.Fatalf("modified_at = %v, want unix 1759563087", item.ModifiedAt)
+	}
+	if item.IsDir {
+		t.Fatal("文件条目不应判定为目录")
+	}
+	if item.Category == nil || *item.Category != "3" {
+		t.Fatalf("category = %v, want 3", item.Category)
+	}
+}
+
+func TestParseRemoteFSIDAcceptsLegacyScientificNotation(t *testing.T) {
+	// 历史 Go 版本把 fs_id 经 float64 格式化后入库,存量数据形如 9.87e+14。
+	id, err := parseRemoteFSID("9.87464465087449e+14")
+	if err != nil {
+		t.Fatalf("科学计数法 fs_id 应可解析: %v", err)
+	}
+	if id != 987464465087449 {
+		t.Fatalf("fs_id = %d, want 987464465087449", id)
+	}
+	if _, err := parseRemoteFSID("placeholder-0017"); err == nil {
+		t.Fatal("非数字 fs_id 应拒绝")
 	}
 }

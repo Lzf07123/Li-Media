@@ -3,10 +3,12 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -260,12 +262,26 @@ func (c *BaiduPanClient) GetFileMetadata(ctx context.Context, remoteID string) (
 	return metadata, err
 }
 
+// parseRemoteFSID 解析 fs_id。除十进制整数外,兼容历史 Go 版本把
+// int64 经 float64 格式化后写入库的科学计数法(如 9.87e+14),避免
+// 存量数据导致预热/刷新永久失败。超过 2^53 的值无法可靠还原,仍拒绝。
+func parseRemoteFSID(raw string) (int64, error) {
+	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return id, nil
+	}
+	if value, err := strconv.ParseFloat(raw, 64); err == nil &&
+		value == math.Trunc(value) && math.Abs(value) < 1<<53 {
+		return int64(value), nil
+	}
+	return 0, baiduPanError("百度网盘文件 ID 无效")
+}
+
 // getFileMetadataWithDlink 一次 filemetas 同时取元数据与原始 dlink;
 // dlink 含访问凭证,只在返回值里流转,绝不进持久化摘要或日志。
 func (c *BaiduPanClient) getFileMetadataWithDlink(ctx context.Context, remoteID string) (*BaiduRemoteItem, string, error) {
-	fsID, err := strconv.ParseInt(remoteID, 10, 64)
+	fsID, err := parseRemoteFSID(remoteID)
 	if err != nil {
-		return nil, "", baiduPanError("百度网盘文件 ID 无效")
+		return nil, "", err
 	}
 	fsids, _ := json.Marshal([]int64{fsID})
 	payload, err := c.get(ctx, "multimedia", map[string]any{
@@ -455,6 +471,34 @@ func probeDirectURL(ctx context.Context, rawURL string) bool {
 	return resp.StatusCode == 200 || resp.StatusCode == 206
 }
 
+// jsonInt64 读取 JSON 数字。get 使用 UseNumber,数字为 json.Number;
+// 同时兼容 float64 以覆盖测试或历史调用方。
+func jsonInt64(value any) (int64, bool) {
+	switch v := value.(type) {
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return n, true
+		}
+		if f, err := v.Float64(); err == nil {
+			return int64(f), true
+		}
+	case float64:
+		return int64(v), true
+	case int64:
+		return v, true
+	}
+	return 0, false
+}
+
+// jsonScalarText 输出 JSON 标量文本。json.Number 保留原始十进制字面量,
+// 避免大整数(fs_id)被 float64 转成科学计数法(对齐 Python str(int))。
+func jsonScalarText(value any) string {
+	if n, ok := value.(json.Number); ok {
+		return n.String()
+	}
+	return fmt.Sprintf("%v", value)
+}
+
 func toRemoteItem(item map[string]any) *BaiduRemoteItem {
 	remotePath, _ := item["path"].(string)
 	parentPath := path.Dir(remotePath)
@@ -476,21 +520,21 @@ func toRemoteItem(item map[string]any) *BaiduRemoteItem {
 		result.ParentPath = parentPath
 	}
 
-	if fsID, ok := item["fs_id"]; ok {
-		result.RemoteID = fmt.Sprintf("%v", fsID)
+	if fsID, ok := item["fs_id"]; ok && fsID != nil {
+		result.RemoteID = jsonScalarText(fsID)
 	}
 	isDir := false
-	if v, ok := item["isdir"].(float64); ok && int(v) == 1 {
+	if v, ok := jsonInt64(item["isdir"]); ok && v == 1 {
 		isDir = true
 	}
 	result.IsDir = isDir
 
-	if v, ok := item["size"].(float64); ok {
-		size := int64(v)
+	if v, ok := jsonInt64(item["size"]); ok {
+		size := v
 		result.SizeBytes = &size
 	}
-	if v, ok := item["server_mtime"].(float64); ok {
-		at := time.Unix(int64(v), 0).UTC()
+	if v, ok := jsonInt64(item["server_mtime"]); ok {
+		at := time.Unix(v, 0).UTC()
 		result.ModifiedAt = &at
 	}
 	if v, ok := item["md5"].(string); ok && v != "" {
@@ -621,12 +665,15 @@ func (c *BaiduPanClient) get(ctx context.Context, resource string, params map[st
 			return nil, transportError(resp.StatusCode)
 		}
 
+		// UseNumber 保留数字原始字面量:fs_id 等大整数不能先经过 float64。
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.UseNumber()
 		var payload map[string]any
-		if err := json.Unmarshal(body, &payload); err != nil {
+		if err := decoder.Decode(&payload); err != nil {
 			sleepBackoff(c.settings, attempt)
 			continue
 		}
-		if errno, _ := payload["errno"].(float64); errno != 0 {
+		if errno, ok := jsonInt64(payload["errno"]); ok && errno != 0 {
 			return nil, apiError(int(errno))
 		}
 		return payload, nil
