@@ -677,3 +677,99 @@ test("admin cleanup confirms before clearing local index", async ({ page }) => {
   await expect(page.locator(".table-empty-row td")).toHaveAttribute("colSpan", "8");
   await expect(page.getByText("网盘中还没有照片或视频；请先完成接入步骤，再点击扫描。")).toBeVisible();
 });
+
+test("batch job advances from queued to completed without extra interaction", async ({ page }) => {
+  let batchStarted = false;
+  let latestPolls = 0;
+  let listRequests = 0;
+
+  const queuedJob = {
+    id: "9f0c8a0e-6e2a-4d5b-9d37-1f3a2b4c5d6e",
+    action: "batch_status_published",
+    status: "queued",
+    filter_snapshot: {},
+    resource_ids: [],
+    total: 1,
+    processed: 0,
+    changed: 0,
+    skipped: 0,
+    failed: 0,
+    error_message: null,
+    created_at: "2026-09-07T08:00:00Z",
+    started_at: null,
+    completed_at: null,
+  };
+  const completedJob = {
+    ...queuedJob,
+    status: "completed",
+    processed: 1,
+    changed: 1,
+    started_at: "2026-09-07T08:00:01Z",
+    completed_at: "2026-09-07T08:00:02Z",
+  };
+
+  await page.route("**/api/v1/admin/memories/batch-status/latest", async (route) => {
+    latestPolls += 1;
+    await route.fulfill({ json: batchStarted ? (latestPolls <= 1 ? queuedJob : completedJob) : null });
+  });
+  await page.route("**/api/v1/admin/memories/batch-status", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    batchStarted = true;
+    await route.fulfill({ status: 202, json: queuedJob });
+  });
+  await page.route("**/api/v1/admin/memories/batch-preview", async (route) => {
+    await route.fulfill({
+      json: {
+        filter_snapshot: { kind: "all", display: "all", status: "all" },
+        total: 1,
+        counts: { photo: 1, video: 0 },
+        status_counts: { published: 1, unpublished: 0 },
+        display_counts: { displayable: 1, excluded: 0 },
+        browser_counts: { supported: 0, unsupported: 0, unknown: 0 },
+        is_full_library: false,
+      },
+    });
+  });
+  await page.route("**/api/v1/admin/memories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/admin/memories" && route.request().method() === "GET") {
+      listRequests += 1;
+      await route.fulfill({ json: adminListResponse });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route("**/api/v1/admin/browser-compatibility/probe/latest", async (route) => {
+    await route.fulfill({ json: null });
+  });
+  await page.route("**/api/v1/admin/remote-config", async (route) => {
+    await route.fulfill({ json: { configured: true, scan_dir: "/apps/Li&Media" } });
+  });
+  await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
+    await route.fulfill({ json: null });
+  });
+  await page.route("**/api/v1/admin/system/status", async (route) => {
+    await route.fulfill({ json: systemStatus });
+  });
+  await page.route("**/api/v1/admin/thumbnails/preheat/latest", async (route) => {
+    await route.fulfill({ json: null });
+  });
+
+  await page.goto("/admin");
+  await page.getByRole("tab", { name: "内容管理" }).click();
+  await page.getByRole("button", { name: "发布当前筛选" }).click();
+  await expect(page.getByText("确认批量状态变更？")).toBeVisible();
+  await page.getByRole("button", { name: "开始执行" }).click();
+
+  // 202 只给出 queued 快照;轮询必须在无任何额外点击的情况下推进到 completed。
+  await expect(page.getByText("queued", { exact: true })).toBeVisible();
+  await expect(page.getByText("completed", { exact: true })).toBeVisible({
+    timeout: 8_000,
+  });
+  await expect.poll(() => latestPolls).toBeGreaterThan(1);
+  // 完成后的列表刷新也应自动发生。
+  await expect.poll(() => listRequests).toBeGreaterThan(1);
+});

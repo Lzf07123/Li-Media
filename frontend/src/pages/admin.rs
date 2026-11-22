@@ -74,6 +74,11 @@ enum CountsState {
     Error,
 }
 
+/// 后台作业是否仍在推进(轮询与完成判定共用)。
+fn job_is_waiting(status: &str) -> bool {
+    status == "queued" || status == "running"
+}
+
 fn format_bytes_admin(bytes: u64) -> String {
     crate::lib::format::format_bytes(Some(bytes)).unwrap_or_else(|| format!("{} B", bytes))
 }
@@ -321,6 +326,11 @@ pub fn AdminPage() -> impl IntoView {
             is_admin.set(false);
             memories.set(Vec::new());
             error.set(None);
+            // 清空作业快照,顺带停止活跃任务轮询。
+            scan_task.set(None);
+            preheat_job.set(None);
+            batch_job.set(None);
+            probe_job.set(None);
         });
     });
 
@@ -338,6 +348,103 @@ pub fn AdminPage() -> impl IntoView {
             is_refreshing_status.set(false);
         });
     }));
+
+    // 活跃任务轮询:对齐 React AdminPage 的 1s 轮询。启动扫描/预热/批量
+    // 状态/兼容探测后只拿到 202 快照,必须持续拉取 latest 才能看到 queued →
+    // running → completed 的推进;任务结束再刷新列表与系统状态。
+    let is_polling_jobs = RwSignal::new(false);
+    let poll_jobs = StoredValue::new(Arc::new(move || {
+        if is_polling_jobs.get_untracked() {
+            return;
+        }
+        is_polling_jobs.set(true);
+        let load_memories = load_memories.get_value();
+        let refresh_system_status = refresh_system_status.get_value();
+        spawn_local(async move {
+            let previous_scan = scan_task.get_untracked().map(|task| task.status);
+            let previous_preheat = preheat_job.get_untracked().map(|job| job.status);
+            let previous_batch = batch_job.get_untracked().map(|job| job.status);
+            let previous_probe = probe_job.get_untracked().map(|job| job.status);
+
+            let next_scan = admin_api::get_latest_remote_scan().await;
+            let next_preheat = admin_api::get_latest_thumbnail_preheat().await;
+            let next_batch = admin_api::get_latest_batch_status_job().await;
+            let next_probe = admin_api::get_latest_browser_compatibility_probe().await;
+
+            let mut reload_memories = false;
+            if let Ok(next) = next_scan {
+                let finished = previous_scan.as_deref() == Some("running")
+                    && next.as_ref().is_none_or(|task| task.status != "running");
+                reload_memories |= finished;
+                scan_task.set(next);
+            }
+            if let Ok(next) = next_preheat {
+                let finished = previous_preheat.as_deref().is_some_and(job_is_waiting)
+                    && next.as_ref().is_none_or(|job| !job_is_waiting(&job.status));
+                if finished {
+                    reload_memories = true;
+                    refresh_system_status();
+                }
+                preheat_job.set(next);
+            }
+            if let Ok(next) = next_batch {
+                let finished = previous_batch.as_deref().is_some_and(job_is_waiting)
+                    && next.as_ref().is_none_or(|job| !job_is_waiting(&job.status));
+                reload_memories |= finished;
+                batch_job.set(next);
+            }
+            if let Ok(next) = next_probe {
+                let finished = previous_probe.as_deref().is_some_and(job_is_waiting)
+                    && next.as_ref().is_none_or(|job| !job_is_waiting(&job.status));
+                reload_memories |= finished;
+                probe_job.set(next);
+            }
+            if reload_memories {
+                load_memories();
+            }
+            is_polling_jobs.set(false);
+        });
+    }));
+
+    // 仅在任一任务 queued/running 时挂 1s 定时器,任务结束后自动停止。
+    // Closure 用 mem::forget 常驻(页面生命周期内最多一个,与 toast 定时器
+    // 同策略);StoredValue 只保存可清理的 interval handle。
+    let poll_interval: StoredValue<Option<i32>> = StoredValue::new(None);
+    Effect::new(move |_| {
+        let active = scan_task.get().is_some_and(|task| task.status == "running")
+            || preheat_job.get().is_some_and(|job| job_is_waiting(&job.status))
+            || batch_job.get().is_some_and(|job| job_is_waiting(&job.status))
+            || probe_job.get().is_some_and(|job| job_is_waiting(&job.status));
+        if active {
+            if poll_interval.get_value().is_none() {
+                if let Some(window) = web_sys::window() {
+                    let callback: Closure<dyn Fn()> =
+                        Closure::new(move || poll_jobs.get_value()());
+                    if let Ok(handle) = window
+                        .set_interval_with_callback_and_timeout_and_arguments_0(
+                            callback.as_ref().unchecked_ref(),
+                            1000,
+                        )
+                    {
+                        poll_interval.set_value(Some(handle));
+                        std::mem::forget(callback);
+                    }
+                }
+            }
+        } else if let Some(handle) = poll_interval.get_value() {
+            if let Some(window) = web_sys::window() {
+                window.clear_interval_with_handle(handle);
+            }
+            poll_interval.set_value(None);
+        }
+    });
+    on_cleanup(move || {
+        if let Some(handle) = poll_interval.get_value() {
+            if let Some(window) = web_sys::window() {
+                window.clear_interval_with_handle(handle);
+            }
+        }
+    });
 
     let do_authorize = Callback::new(move |_: ()| {
         is_authorizing.set(true);
@@ -409,7 +516,11 @@ pub fn AdminPage() -> impl IntoView {
                         ToastTone::Success,
                     );
                 }
-                Err(_) => error.set(Some(brand::copy::ADMIN_PREHEAT_FAILED_TOAST.to_string())),
+                Err(err) => error.set(Some(if err.message.is_empty() {
+                    brand::copy::ADMIN_PREHEAT_FAILED_TOAST.to_string()
+                } else {
+                    err.message
+                })),
             }
             is_preheating.set(false);
         });
