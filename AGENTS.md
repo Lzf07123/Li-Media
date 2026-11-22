@@ -43,6 +43,9 @@ python3 scripts/check.py
 scripts/build-image.sh
 scripts/build-image.sh --no-frontend   # 仅后端变更时跳过前端编译
 
+# 多架构镜像(默认 amd64+arm64;多架构会 push 到镜像仓库)
+scripts/build-multiarch.sh
+
 # 后端
 docker exec limedia-go-dev sh -c 'cd /work && go build ./... && go vet ./... && go test ./... -count=1'
 

@@ -32,6 +32,23 @@ docker compose up -d
 scripts/build-image.sh --no-frontend
 ```
 
+多架构镜像（默认 `linux/amd64` + `linux/arm64`，推送到镜像仓库）：
+
+```bash
+docker login uhub.service.ucloud.cn
+scripts/build-multiarch.sh
+
+# 单架构只构建到本地
+PLATFORMS=linux/arm64 scripts/build-multiarch.sh
+```
+
+前端与 Go 在构建平台编译一次，Go 按目标架构交叉编译；只有运行时 `apk`
+安装按目标架构执行。Linux 构建机首次跨架构构建需安装 binfmt：
+
+```bash
+docker run --privileged --rm tonistiigi/binfmt --install all
+```
+
 3. 打开唯一入口：
 
 ```text

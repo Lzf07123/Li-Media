@@ -17,7 +17,9 @@ ARG GO_IMAGE=golang:1.26-alpine
 ARG RUN_IMAGE=alpine:3.20
 
 # ---- 1. 前端 ----
-FROM ${IMAGE_REGISTRY}${RUST_IMAGE} AS web
+# 前端产物与架构无关:始终在构建平台(BUILDPLATFORM)编译一次,
+# 多架构构建时不会为每个目标架构重跑 Rust/trunk。
+FROM --platform=$BUILDPLATFORM ${IMAGE_REGISTRY}${RUST_IMAGE} AS web
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=true
 # rustup 组件(dist/rust-std)与自更新走镜像源;官方源可改为
 # https://static.rust-lang.org / https://update.rustup.rs
@@ -71,10 +73,14 @@ RUN --mount=type=cache,target=/src/target,sharing=locked \
     trunk build --release
 
 # ---- 2. 后端(嵌入前端产物) ----
-FROM ${IMAGE_REGISTRY}${GO_IMAGE} AS api
+# 同样在 BUILDPLATFORM 上按 TARGETARCH 交叉编译(CGO 关闭,产物静态),
+# 避免为 arm64/amd64 各跑一遍完整 Go 工具链。
+FROM --platform=$BUILDPLATFORM ${IMAGE_REGISTRY}${GO_IMAGE} AS api
 ARG GOPROXY=https://goproxy.cn,direct
 # 与 Rust 阶段同口径的并发上限,避免多包并行编译叠加负载。
 ARG BUILD_JOBS=4
+ARG TARGETOS
+ARG TARGETARCH
 ENV GOPROXY=$GOPROXY CGO_ENABLED=0
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
@@ -87,9 +93,13 @@ RUN rm -rf internal/web/dist && mkdir -p internal/web/dist
 COPY --from=web /src/dist/ ./internal/web/dist/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    target_os="${TARGETOS:-linux}"; \
+    target_arch="${TARGETARCH:-$(go env GOARCH)}"; \
+    GOOS="$target_os" GOARCH="$target_arch" \
     go build -p "$BUILD_JOBS" -trimpath -ldflags="-s -w" -o /out/limedia ./cmd/server
 
 # ---- 3. 运行时 ----
+# 运行时镜像默认跟随目标架构(多架构构建时 apk 安装对应架构的 ffmpeg)。
 FROM ${IMAGE_REGISTRY}${RUN_IMAGE} AS runtime
 ARG APT_MIRROR=""
 # apk 索引与包缓存挂载:镜像层变化时无需重新下载 ffmpeg 依赖树。
