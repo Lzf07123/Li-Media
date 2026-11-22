@@ -773,3 +773,42 @@ test("batch job advances from queued to completed without extra interaction", as
   // 完成后的列表刷新也应自动发生。
   await expect.poll(() => listRequests).toBeGreaterThan(1);
 });
+
+test("admin footer stays at document bottom", async ({ page }) => {
+  await page.route("**/api/v1/admin/memories**", async (route) => {
+    await route.fulfill({ json: adminListResponse });
+  });
+  await mockAdminJobRoutes(page);
+  await page.route("**/api/v1/admin/remote-config", async (route) => {
+    await route.fulfill({ json: { configured: false } });
+  });
+  await page.route("**/api/v1/admin/remote-scan/latest", async (route) => {
+    await route.fulfill({ json: null });
+  });
+  await page.route("**/api/v1/admin/system/status", async (route) => {
+    await route.fulfill({ json: systemStatus });
+  });
+  await page.route("**/api/v1/admin/thumbnails/preheat/latest", async (route) => {
+    await route.fulfill({ json: null });
+  });
+  await page.route("**/api/v1/admin/thumbnails/preheat/preview*", async (route) => {
+    await route.fulfill({ json: { total: 0 } });
+  });
+
+  await page.goto("/admin");
+  await expect(page.locator("#admin-title")).toBeVisible();
+
+  // 首页的 300vh 启动占位不得泄漏到管理页:页脚应贴在文档流末端。
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const footer = document.querySelector(".site-footer");
+        if (!footer) {
+          return -1;
+        }
+        return document.documentElement.scrollHeight -
+          Math.round(footer.getBoundingClientRect().bottom + window.scrollY);
+      }),
+    )
+    .toBeLessThanOrEqual(1);
+});

@@ -17,13 +17,20 @@
     <link data-trunk rel="copy-dir" href="public/assets" />
     <!-- 启动占位高度:React 版骨架在 JS 同步渲染阶段就位,首屏可滚;
          WASM 异步引导,需要等价的启动期文档高度,让「引导期滚到底」
-         的用户意图在数据就位后立刻续载(HomePage 消费)。 -->
+         的用户意图在数据就位后立刻续载(HomePage 消费)。
+         仅首页生效:管理页/404 等路由没有 HomePage 回收逻辑,若保留
+         300vh 会把页脚推到文档中段并在下方留下整屏空白。 -->
     <style>
-      html,
-      body {
+      html.boot-home,
+      html.boot-home body {
         min-height: 300vh;
       }
     </style>
+    <script>
+      if (window.location.pathname === "/") {
+        document.documentElement.classList.add("boot-home");
+      }
+    </script>
     <!-- 查看器模块 chunk:React 版为懒加载分包;WASM 单包无法分包,
          保留同名资源请求以维持「首页渲染即预取查看器 chunk」的契约。 -->
     <script defer src="/assets/MediaViewer-9f8e7d6c.js"></script>
